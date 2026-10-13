@@ -75,6 +75,8 @@ public final class TerminalView extends View {
 
     /** Continuously updated zoom scale during pinch gesture. Reset to 1.0 after commit. */
     float mZoomScale = 1.0f;
+    /** Screen-space focus point where the current zoom gesture is anchored. */
+    float mZoomFocusX, mZoomFocusY;
     final GestureAndScaleRecognizer mGestureRecognizer;
 
     /** Keep track of where mouse touch event started which we report as mouse scroll. */
@@ -166,6 +168,8 @@ public final class TerminalView extends View {
                 if (mZoomScale != 1.0f) {
                     float finalScale = mZoomScale;
                     mZoomScale = 1.0f;
+                    mZoomFocusX = 0f;
+                    mZoomFocusY = 0f;
                     if (Math.abs(finalScale - 1.0f) > 0.08f)
                         mClient.onScale(finalScale);
                 }
@@ -213,9 +217,15 @@ public final class TerminalView extends View {
             @Override
             public boolean onScale(float focusX, float focusY, float scale) {
                 if (mEmulator == null || isSelectingText()) return true;
-                // Accumulate zoom scale. No font size change happens during gesture — only
-                // visual canvas scaling from top-left (like native terminal zoom). The actual
-                // font resize is committed in onUp() when fingers lift.
+                // Anchor the zoom at the point where the pinch started so the content under
+                // the fingers stays under the fingers instead of zooming into the top-left
+                // corner. Focus is captured once per gesture and kept fixed — touch
+                // coordinate mapping in getColumnAndRow()/getCursorX()/getPointX() uses the
+                // same anchor so taps land on the right cell while zoomed.
+                if (mZoomScale == 1.0f) {
+                    mZoomFocusX = focusX;
+                    mZoomFocusY = focusY;
+                }
                 mZoomScale *= scale;
                 mZoomScale = Math.max(0.25f, Math.min(4.0f, mZoomScale));
                 invalidate();
@@ -377,8 +387,11 @@ public final class TerminalView extends View {
             private boolean mIcHasPendingReplace = false;
             private String mIcPendingReplaceText = "";
             /** True when finishComposingText() already sent text to terminal,
-             * so commitText() must not double-send. */
+             * so commitText() must not double-send. Stores the exact text sent so
+             * only the matching follow-up commit is skipped — a *different* text
+             * arriving later is real new input and must not be swallowed. */
             private boolean mIcTextSentInFinish = false;
+            private String mIcSentInFinishText = "";
             // ─── Type history ring buffer for IME context ────────────────────
             private static final int IC_TYPE_HISTORY_SIZE = 256;
             private final char[] mIcTypeHistory = new char[IC_TYPE_HISTORY_SIZE];
@@ -485,7 +498,14 @@ public final class TerminalView extends View {
                 if (composingText.length() > 0) {
                     sendTextToTerminal(composingText);
                     mIcTextSentInFinish = true;
+                    mIcSentInFinishText = composingText.toString();
                 }
+                // Clear the internal Editable like upstream does — it is only an IME
+                // scratch buffer. If it is kept, the next finishComposingText() reads
+                // the accumulated text (previous words included) and re-sends
+                // everything to the terminal as duplicated input.
+                Editable after = getEditable();
+                if (after != null) after.clear();
                 return true;
             }
 
@@ -494,18 +514,27 @@ public final class TerminalView extends View {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) {
                     mClient.logInfo(LOG_TAG, "IME: commitText(\"" + text + "\", " + newCursorPosition + ")");
                 }
-                // If finishComposingText() already sent the text to terminal,
+                // If finishComposingText() already sent THIS EXACT text to terminal,
                 // skip everything — no DEL, no send, just clean up and return.
-                if (mIcTextSentInFinish) {
+                // Only skip when the text matches what was sent: a different text
+                // arriving afterwards is real new input (Gboard word-picking flow)
+                // and swallowing it would drop characters.
+                if (mIcTextSentInFinish && text != null && text.toString().equals(mIcSentInFinishText)) {
                     mIcTextSentInFinish = false;
+                    mIcSentInFinishText = "";
                     mIcIsComposing = false;
                     mIcPreComposeText = "";
                     mIcHasPendingReplace = false;
                     mIcPendingReplaceText = "";
                     super.commitText(text, newCursorPosition);
-                    if (text != null) icAppendTypeHistory(text.toString());
+                    icAppendTypeHistory(text.toString());
+                    Editable skipped = getEditable();
+                    if (skipped != null) skipped.clear();
                     return true;
                 }
+                // Whatever comes next is not the finishComposingText() echo — reset the flag.
+                mIcTextSentInFinish = false;
+                mIcSentInFinishText = "";
                 // Snapshot composition state BEFORE super.commitText() —
                 // super may internally trigger finishComposingText on the Editable,
                 // which would clear our flags.
@@ -550,6 +579,11 @@ public final class TerminalView extends View {
                 // — sending it doubles the input.
                 sendTextToTerminal(text);
                 icAppendTypeHistory(text.toString());
+                // Clear the IME scratch buffer (upstream behaviour) so it never
+                // accumulates — otherwise a later finishComposingText() would
+                // re-send every previously committed word.
+                Editable sent = getEditable();
+                if (sent != null) sent.clear();
                 return true;
             }
 
@@ -746,8 +780,11 @@ public final class TerminalView extends View {
         float x = event.getX();
         float y = event.getY();
         if (mZoomScale != 1.0f) {
-            x /= mZoomScale;
-            y /= mZoomScale;
+            // Inverse of the anchored zoom transform applied in onDraw():
+            // screen = focus + (logical - focus) * scale
+            // => logical = focus + (screen - focus) / scale
+            x = mZoomFocusX + (x - mZoomFocusX) / mZoomScale;
+            y = mZoomFocusY + (y - mZoomFocusY) / mZoomScale;
         }
         int column = (int) (x / mRenderer.mFontWidth);
         int row = (int) ((y - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
@@ -1225,7 +1262,9 @@ public final class TerminalView extends View {
             boolean zooming = (mZoomScale != 1.0f);
             if (zooming) {
                 canvas.save();
-                canvas.scale(mZoomScale, mZoomScale);
+                // Scale around the pinch focus point so content under the fingers stays
+                // under the fingers (canvas.scale(sx, sy, px, py) keeps px,py fixed).
+                canvas.scale(mZoomScale, mZoomScale, mZoomFocusX, mZoomFocusY);
             }
 
             // render the terminal view and highlight any selected text
@@ -1254,12 +1293,12 @@ public final class TerminalView extends View {
     }
 
     public int getCursorX(float x) {
-        if (mZoomScale != 1.0f) x /= mZoomScale;
+        if (mZoomScale != 1.0f) x = mZoomFocusX + (x - mZoomFocusX) / mZoomScale;
         return (int) (x / mRenderer.mFontWidth);
     }
 
     public int getCursorY(float y) {
-        if (mZoomScale != 1.0f) y /= mZoomScale;
+        if (mZoomScale != 1.0f) y = mZoomFocusY + (y - mZoomFocusY) / mZoomScale;
         return (int) (((y - 40) / mRenderer.mFontLineSpacing) + mTopRow);
     }
 
@@ -1268,12 +1307,14 @@ public final class TerminalView extends View {
             cx = mEmulator.mColumns;
         }
         float px = cx * mRenderer.mFontWidth;
-        return mZoomScale != 1.0f ? Math.round(px * mZoomScale) : Math.round(px);
+        if (mZoomScale != 1.0f) px = mZoomFocusX + (px - mZoomFocusX) * mZoomScale;
+        return Math.round(px);
     }
 
     public int getPointY(int cy) {
         float py = (cy - mTopRow) * mRenderer.mFontLineSpacing;
-        return mZoomScale != 1.0f ? Math.round(py * mZoomScale) : Math.round(py);
+        if (mZoomScale != 1.0f) py = mZoomFocusY + (py - mZoomFocusY) * mZoomScale;
+        return Math.round(py);
     }
 
     public int getTopRow() {
