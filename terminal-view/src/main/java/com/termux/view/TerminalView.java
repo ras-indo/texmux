@@ -381,17 +381,6 @@ public final class TerminalView extends View {
 
         return new BaseInputConnection(this, true) {
 
-            // ─── IME composing text tracking ────────────────────────────────
-            private boolean mIcIsComposing = false;
-            private String mIcPreComposeText = "";
-            private boolean mIcHasPendingReplace = false;
-            private String mIcPendingReplaceText = "";
-            /** True when finishComposingText() already sent text to terminal,
-             * so commitText() must not double-send. Stores the exact text sent so
-             * only the matching follow-up commit is skipped — a *different* text
-             * arriving later is real new input and must not be swallowed. */
-            private boolean mIcTextSentInFinish = false;
-            private String mIcSentInFinishText = "";
             // ─── Type history ring buffer for IME context ────────────────────
             private static final int IC_TYPE_HISTORY_SIZE = 256;
             private final char[] mIcTypeHistory = new char[IC_TYPE_HISTORY_SIZE];
@@ -453,22 +442,6 @@ public final class TerminalView extends View {
             public boolean setComposingText(CharSequence text, int newCursorPosition) {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logInfo(LOG_TAG, "IME: setComposingText(\"" + text + "\", " + newCursorPosition + ")");
-                // Track composing state for commitText replacement logic
-                if (!mIcIsComposing && text != null && text.length() > 0) {
-                    mIcIsComposing = true;
-                    // Cancel any previous pending replace — fresh composing starts
-                    mIcHasPendingReplace = false;
-                    mIcPendingReplaceText = "";
-                    // Save the Editable content BEFORE super call updates it
-                    Editable e = getEditable();
-                    mIcPreComposeText = (e != null) ? e.toString() : "";
-                }
-                if (text == null || text.length() == 0) {
-                    mIcIsComposing = false;
-                    mIcPreComposeText = "";
-                    mIcHasPendingReplace = false;
-                    mIcPendingReplaceText = "";
-                }
                 return super.setComposingText(text, newCursorPosition);
             }
 
@@ -476,36 +449,18 @@ public final class TerminalView extends View {
             public boolean finishComposingText() {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logInfo(LOG_TAG, "IME: finishComposingText()");
-                // Save composing state to pending before super clears spans —
-                // IME suggestion flow: setComposingText -> finishComposingText -> commitText
-                // commitText() needs the pre-compose text for proper DEL replacement.
-                if (mIcIsComposing && mIcPreComposeText.length() > 0) {
-                    mIcHasPendingReplace = true;
-                    mIcPendingReplaceText = mIcPreComposeText;
-                }
-                mIcIsComposing = false;
-                mIcPreComposeText = "";
-                // Save Editable content BEFORE super.finishComposingText() —
-                // after super call the Editable may have composing spans stripped
-                // but the text remains.
-                Editable e = getEditable();
-                CharSequence composingText = (e != null) ? e.toString() : "";
                 super.finishComposingText();
-                // Some IMEs use finishComposingText() as the final commit without
-                // calling commitText() afterwards. Send the text now to ensure it
-                // reaches the terminal. commitText() checks mIcTextSentInFinish
-                // to avoid double-sending.
-                if (composingText.length() > 0) {
-                    sendTextToTerminal(composingText);
-                    mIcTextSentInFinish = true;
-                    mIcSentInFinishText = composingText.toString();
+                // Upstream pattern: the Editable holds the text entered but not yet
+                // forwarded to the terminal. Send it, then clear it so it never
+                // accumulates across words (accumulation caused duplicated input).
+                // Some IMEs finish composing here without a follow-up commitText(),
+                // so the text must go out now.
+                Editable content = getEditable();
+                if (content != null && content.length() > 0) {
+                    sendTextToTerminal(content.toString());
+                    icAppendTypeHistory(content.toString());
+                    content.clear();
                 }
-                // Clear the internal Editable like upstream does — it is only an IME
-                // scratch buffer. If it is kept, the next finishComposingText() reads
-                // the accumulated text (previous words included) and re-sends
-                // everything to the terminal as duplicated input.
-                Editable after = getEditable();
-                if (after != null) after.clear();
                 return true;
             }
 
@@ -514,76 +469,24 @@ public final class TerminalView extends View {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) {
                     mClient.logInfo(LOG_TAG, "IME: commitText(\"" + text + "\", " + newCursorPosition + ")");
                 }
-                // If finishComposingText() already sent THIS EXACT text to terminal,
-                // skip everything — no DEL, no send, just clean up and return.
-                // Only skip when the text matches what was sent: a different text
-                // arriving afterwards is real new input (Gboard word-picking flow)
-                // and swallowing it would drop characters.
-                if (mIcTextSentInFinish && text != null && text.toString().equals(mIcSentInFinishText)) {
-                    mIcTextSentInFinish = false;
-                    mIcSentInFinishText = "";
-                    mIcIsComposing = false;
-                    mIcPreComposeText = "";
-                    mIcHasPendingReplace = false;
-                    mIcPendingReplaceText = "";
-                    super.commitText(text, newCursorPosition);
-                    icAppendTypeHistory(text.toString());
-                    Editable skipped = getEditable();
-                    if (skipped != null) skipped.clear();
-                    return true;
-                }
-                // Whatever comes next is not the finishComposingText() echo — reset the flag.
-                mIcTextSentInFinish = false;
-                mIcSentInFinishText = "";
-                // Snapshot composition state BEFORE super.commitText() —
-                // super may internally trigger finishComposingText on the Editable,
-                // which would clear our flags.
-                boolean hadComposition = mIcIsComposing;
-                String preComposeText = mIcPreComposeText;
-                boolean hadPendingReplace = mIcHasPendingReplace;
-                String pendingReplaceText = mIcPendingReplaceText;
-                // Clear all state — any subsequent IME callback sees clean state
-                mIcIsComposing = false;
-                mIcPreComposeText = "";
-                mIcHasPendingReplace = false;
-                mIcPendingReplaceText = "";
-
                 super.commitText(text, newCursorPosition);
-
                 if (mEmulator == null) return true;
-
-                // Determine which text needs DEL replacement in terminal
-                String oldText = null;
-                if (hadComposition && preComposeText.length() > 0) {
-                    oldText = preComposeText;
-                } else if (hadPendingReplace && pendingReplaceText.length() > 0) {
-                    oldText = pendingReplaceText;
-                }
-
-                if (oldText != null) {
-                    // IME is replacing composed text. Delete only the last word
-                    // that was sent to terminal, not everything before it.
-                    int lastSpace = oldText.lastIndexOf(' ');
-                    int lastNewline = oldText.lastIndexOf('\n');
-                    int boundary = Math.max(lastSpace, lastNewline);
-                    int charsToDelete = oldText.length() - (boundary + 1);
-
-                    for (int i = 0; i < charsToDelete; i++) {
-                        if (mTermSession != null) mTermSession.write("\u007f");
+                // Upstream pattern: super.commitText() inserted the text into the
+                // Editable (replacing any composing region). Forward the WHOLE Editable
+                // — not just `text` — then clear it. Forwarding the editable is correct
+                // because after the previous send it was cleared, so it holds exactly
+                // the not-yet-forwarded text. No DEL/backspace replacement is needed:
+                // the editable is the single source of truth, so picking a suggestion
+                // naturally replaces the composing text here instead of sending stray
+                // backspaces that deleted the wrong characters.
+                Editable content = getEditable();
+                if (content != null) {
+                    if (content.length() > 0) {
+                        sendTextToTerminal(content.toString());
+                        icAppendTypeHistory(content.toString());
                     }
+                    content.clear();
                 }
-
-                // Use `text` not getEditable(): when the keyboard commits a
-                // suggestion (finishComposingText -> commitText), getEditable()
-                // carries BOTH the previously-committed chars AND the new word
-                // — sending it doubles the input.
-                sendTextToTerminal(text);
-                icAppendTypeHistory(text.toString());
-                // Clear the IME scratch buffer (upstream behaviour) so it never
-                // accumulates — otherwise a later finishComposingText() would
-                // re-send every previously committed word.
-                Editable sent = getEditable();
-                if (sent != null) sent.clear();
                 return true;
             }
 
@@ -592,12 +495,10 @@ public final class TerminalView extends View {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) {
                     mClient.logInfo(LOG_TAG, "IME: deleteSurroundingText(" + leftLength + ", " + rightLength + ")");
                 }
-                // User manually deleting — old pending replace is stale
-                mIcHasPendingReplace = false;
-                mIcPendingReplaceText = "";
-                // If composing text exists, don't send KEYCODE_DEL to terminal
-                // — the composing text was never sent to terminal, so DEL would
-                // delete the wrong character.
+                // If composing text exists in the Editable, let super handle it — the
+                // composing text was never sent to the terminal, so a DEL here would
+                // delete the wrong character. Only forward DEL when there is no
+                // composing region (a real backspace on already-displayed text).
                 Editable e = getEditable();
                 boolean hasComposingText = e != null && BaseInputConnection.getComposingSpanEnd(e) >= 0;
                 if (!hasComposingText) {
