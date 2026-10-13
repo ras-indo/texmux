@@ -355,6 +355,31 @@ public final class TerminalView extends View {
         return new BaseInputConnection(this, true) {
 
             @Override
+            public CharSequence getTextBeforeCursor(int length, int flags) {
+                // Give the IME the real current terminal line (up to the cursor) as its
+                // suggestion context. The Editable is cleared after every commit, so
+                // without this the keyboard has no context and its suggestions become
+                // poor or vanish — especially after deleting a long line. Reading the
+                // terminal screen keeps the context accurate and always in-sync, unlike
+                // a separate history buffer which can go stale. The terminal cursor sits
+                // before any not-yet-committed composing word, so this returns exactly
+                // the "previous words" context the IME combines with its own composing
+                // text. This is read-only and does not touch the commit/finish flow.
+                if (mEmulator != null && length > 0) {
+                    int row = mEmulator.getCursorRow();
+                    int col = mEmulator.getCursorCol();
+                    if (col > 0) {
+                        String line = mEmulator.getSelectedText(0, row, col, row);
+                        if (line != null && !line.isEmpty()) {
+                            return line.length() > length ? line.substring(line.length() - length) : line;
+                        }
+                    }
+                    return "";
+                }
+                return super.getTextBeforeCursor(length, flags);
+            }
+
+            @Override
             public boolean finishComposingText() {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logInfo(LOG_TAG, "IME: finishComposingText()");
