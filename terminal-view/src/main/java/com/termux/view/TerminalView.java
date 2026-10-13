@@ -418,6 +418,32 @@ public final class TerminalView extends View {
                 }
                 return super.deleteSurroundingText(leftLength, rightLength);
             }
+
+            @Override
+            public boolean performContextMenuAction(int id) {
+                if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
+                    mClient.logInfo(LOG_TAG, "IME: performContextMenuAction(id=" + id + ")");
+                // The keyboard's suggestion strip shows Undo ("Urungkan") / Redo
+                // ("Ulangi") after a backspace. It invokes these via
+                // performContextMenuAction(android.R.id.undo/redo). The default
+                // BaseInputConnection does not handle undo/redo, so the tap leaks
+                // through and the IME falls back to emitting an editor action that
+                // reaches the terminal as a stray carriage return (looks like Enter).
+                //
+                // A terminal cannot meaningfully undo/redo the IME buffer anyway —
+                // our Editable is cleared after every commit, so it holds no history
+                // to restore. Consume undo/redo (and selectAll/cut, which are equally
+                // meaningless here) as a clean no-op so taps on those strip buttons
+                // do nothing instead of injecting stray input. Paste is left to super
+                // since a keyboard's paste button should still insert clipboard text
+                // (which commitText() then forwards to the terminal).
+                if (id == android.R.id.undo || id == android.R.id.redo
+                    || id == android.R.id.selectAll || id == android.R.id.cut) {
+                    return true;
+                }
+                return super.performContextMenuAction(id);
+            }
+
             void sendTextToTerminal(CharSequence text) {
                 stopTextSelectionMode();
                 final int textLengthInChars = text.length();
