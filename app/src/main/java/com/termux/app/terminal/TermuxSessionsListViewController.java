@@ -21,6 +21,7 @@ import android.widget.ArrayAdapter;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ListView;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -30,6 +31,8 @@ import com.termux.app.TermuxActivity;
 import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.terminal.TerminalSession;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,6 +43,10 @@ public class TermuxSessionsListViewController extends ArrayAdapter<TermuxSession
 
     final StyleSpan boldSpan = new StyleSpan(Typeface.BOLD);
     final StyleSpan italicSpan = new StyleSpan(Typeface.ITALIC);
+
+    /** Menu item ids for the session row overflow menu. */
+    private static final int MENU_RENAME = 1;
+    private static final int MENU_DELETE = 2;
 
     private static final long LONG_PRESS_DURATION = 180;
     private static final int TOUCH_SLOP = 8;
@@ -343,10 +350,52 @@ public class TermuxSessionsListViewController extends ArrayAdapter<TermuxSession
 
         editButton.setOnClickListener(v -> {
             mLastEditClickTime = System.currentTimeMillis();
-            mActivity.getTermuxTerminalSessionClient().renameSession(sessionAtRow);
+            showSessionOptionsMenu(v, sessionAtRow);
         });
 
         return sessionRowView;
+    }
+
+    /** Show the overflow menu (rename / delete) anchored to a session row's options button. */
+    private void showSessionOptionsMenu(View anchor, final TerminalSession session) {
+        PopupMenu popup = new PopupMenu(mActivity, anchor);
+        popup.getMenu().add(0, MENU_RENAME, 0, mActivity.getString(com.texmux.R.string.title_rename_session))
+            .setIcon(com.texmux.R.drawable.ic_edit_black_24dp);
+        popup.getMenu().add(0, MENU_DELETE, 1, mActivity.getString(com.texmux.R.string.action_delete_session))
+            .setIcon(com.texmux.R.drawable.ic_delete_black_24dp);
+
+        // PopupMenu hides item icons by default — force them visible via reflection.
+        try {
+            Field[] fields = popup.getClass().getDeclaredFields();
+            for (Field field : fields) {
+                if ("mPopup".equals(field.getName())) {
+                    field.setAccessible(true);
+                    Object menuPopupHelper = field.get(popup);
+                    Class<?> classPopupHelper = Class.forName(menuPopupHelper.getClass().getName());
+                    Method setForceShowIcon = classPopupHelper.getMethod("setForceShowIcon", boolean.class);
+                    setForceShowIcon.invoke(menuPopupHelper, true);
+                    break;
+                }
+            }
+        } catch (Exception ignored) {
+            // Icons are cosmetic — menu still works if reflection is blocked.
+        }
+
+        popup.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case MENU_RENAME:
+                    mLastEditClickTime = System.currentTimeMillis();
+                    mActivity.getTermuxTerminalSessionClient().renameSession(session);
+                    return true;
+                case MENU_DELETE:
+                    mLastEditClickTime = System.currentTimeMillis();
+                    mActivity.getTermuxTerminalSessionClient().removeSession(session);
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        popup.show();
     }
 
     @Override

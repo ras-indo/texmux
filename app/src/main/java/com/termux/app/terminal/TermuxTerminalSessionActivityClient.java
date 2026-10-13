@@ -469,6 +469,30 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         }
     }
 
+    /**
+     * Remove a session from the sessions list, whether it is still running or already
+     * finished. Used by the session row overflow menu (trash icon).
+     *
+     * A running session must be told to exit first: {@link TermuxSession#finish()} is a
+     * no-op while the underlying process is alive, so we call
+     * {@link TerminalSession#finishIfRunning()} to send it a signal. Once it exits, the
+     * {@link #onTermuxSessionExited(TermuxSession)} callback removes it from the service
+     * list and refreshes the drawer. A session that already finished just gets removed
+     * directly.
+     *
+     * @param sessionToRemove The session to remove.
+     */
+    public void removeSession(TerminalSession sessionToRemove) {
+        if (sessionToRemove == null) return;
+
+        if (sessionToRemove.isRunning()) {
+            // Kill the still-running process; the exit callback finishes the removal.
+            sessionToRemove.finishIfRunning();
+        } else {
+            removeFinishedSession(sessionToRemove);
+        }
+    }
+
     public void termuxSessionListNotifyUpdated() {
         mActivity.termuxSessionListNotifyUpdated();
     }
