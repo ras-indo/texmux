@@ -1,0 +1,111 @@
+#!@TERMUX_PREFIX@/bin/bash
+#
+# NAME
+#     termux-wallpaper — Change wallpaper on device
+#
+# SYNOPSIS
+#     termux-wallpaper [-f file] [-u url] [-l]
+#
+# DESCRIPTION
+#     Set the device home screen wallpaper from a local image file or
+#     a remote URL. The image is applied as the device wallpaper.
+#
+#     On Android 7.0 (Nougat, API 24) and later, the -l flag sets the
+#     wallpaper specifically for the lockscreen instead of the home
+#     screen. On older Android versions, the -l flag is ignored and
+#     the wallpaper is always applied to both screens.
+#
+#     Exactly one of -f (file) or -u (URL) must be specified, not both.
+#     The file path must point to an existing, readable image file.
+#     Supported image formats include JPEG, PNG, and BMP.
+#
+# OPTIONS
+#     -f file  set wallpaper from file
+#     -u url   set wallpaper from URL resource
+#     -l       set wallpaper for lockscreen (Nougat and later)
+#
+# EXAMPLES
+#     # Set wallpaper from a file
+#     termux-wallpaper -f ~/images/wallpaper.jpg
+#
+#     # Set lockscreen wallpaper from a URL
+#     termux-wallpaper -u https://example.com/wallpaper.jpg -l
+#
+set -e
+
+SCRIPTNAME=termux-wallpaper
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [options]
+
+Set the device wallpaper from a file or URL. Supports both home screen
+and lock screen wallpapers on Android 7+ (API 24+).
+
+OUTPUT:
+  No JSON output. Wallpaper is set directly.
+  Exit code 0 on success, 1 on failure.
+
+PERMISSIONS:
+  android.permission.SET_WALLPAPER
+  android.permission.INTERNET (for -u URL downloads)
+  READ_EXTERNAL_STORAGE (for -f file access on older Android)
+
+OPTIONS:
+  -h          Show this help message.
+  -f <file>   Set wallpaper from a local image file path.
+  -u <url>    Download and set wallpaper from a URL.
+  -l          Set wallpaper for the lock screen instead of home
+              screen. Only supported on Android 7+ (API 24+).
+
+EXAMPLES:
+  # Set wallpaper from a local image
+  $SCRIPTNAME -f /sdcard/wallpaper.jpg
+
+  # Set wallpaper from a URL
+  $SCRIPTNAME -u "https://example.com/image.jpg"
+
+  # Set lock screen wallpaper (Android 7+)
+  $SCRIPTNAME -l -f /sdcard/lockscreen.jpg
+
+  # Set both home and lock screen
+  $SCRIPTNAME -f /sdcard/wallpaper.jpg
+EOF
+    exit 1
+}
+
+OPT_LS=""
+OPT_FILE=""
+OPT_URL=""
+
+while getopts :h,:l,f:,u: option
+do
+	case "$option" in
+		h) show_usage ;;
+		l) OPT_LS="true" ;;
+		f) path="$(realpath "$OPTARG")"
+			if [[ ! -f "$path" ]]; then
+				echo "$SCRIPTNAME: $path is not a file!"
+				exit 1
+			fi
+			OPT_FILE="$path" ;;
+		u) OPT_URL="$OPTARG" ;;
+		?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1 ;;
+	esac
+done
+
+if [[ -z "$OPT_FILE""$OPT_URL" ]]; then
+	echo "$SCRIPTNAME: you must specify either -f or -u"
+	exit 1
+elif [[ -n "$OPT_FILE" ]] && [[ -n "$OPT_URL" ]]; then
+	echo "$SCRIPTNAME: you must specify either -f or -u, but not both"
+	exit 1
+fi
+
+shift $((OPTIND - 1))
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+set --
+[ -n "$OPT_LS" ]   && set -- "$@" --ez lockscreen "$OPT_LS"
+[ -n "$OPT_FILE" ] && set -- "$@" --es file "$OPT_FILE"
+[ -n "$OPT_URL" ]  && set -- "$@" --es url "$OPT_URL"
+@TERMUX_PREFIX@/bin/termux-api Wallpaper "$@"

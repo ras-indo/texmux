@@ -1,0 +1,74 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-saf-mkdir — Membuat direktori melalui SAF
+#
+# SYNOPSIS
+#     termux-saf-mkdir parent-uri name
+#
+# DESCRIPTION
+#     Membuat direktori baru melalui SAF (Storage Access Framework, API level 19+).
+#     SAF memungkinkan aplikasi mengakses dokumen dari berbagai penyedia penyimpanan
+#     melalui sistem picker UI. Direktori induk (parent-uri) harus sudah diizinkan
+#     aksesnya oleh pengguna.
+#     Berperilaku seperti termux-saf-create, tetapi untuk direktori.
+#     Output adalah objek JSON yang berisi URI direktori yang dibuat, dikembalikan
+#     melalui termux-api.
+#     Menggunakan tipe MIME 'vnd.android.document/directory'.
+#
+# OPTIONS
+#     Tidak ada opsi.
+#
+# EXAMPLES
+#     # Membuat direktori baru
+#     termux-saf-mkdir content://com.android.externalstorage/doc/home/ subfolder
+#
+set -e -u
+
+SCRIPTNAME=termux-saf-mkdir
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <parent-uri> <name>
+
+Create a new subdirectory inside a SAF-managed folder. Behaves like
+termux-saf-create but creates a directory instead of a file.
+
+OUTPUT:
+  The URI of the created directory is printed to stdout. Use this
+  URI with termux-saf-ls to list its contents.
+
+PERMISSIONS:
+  No special permissions required (SAF, API 19+).
+
+OPTIONS:
+  -h          Show this help message.
+
+ARGUMENTS:
+  parent-uri  URI of the parent directory.
+  name        Name for the new directory.
+
+EXAMPLES:
+  # Create a directory inside a managed folder
+  PARENT=\$(termux-saf-dirs | jq -r '.[0].uri')
+  $SCRIPTNAME "\$PARENT" "MyDocuments"
+
+  # Create a nested structure
+  SUBDIR=\$($SCRIPTNAME "\$PARENT" "Projects")
+  $SCRIPTNAME "\$SUBDIR" "termux-scripts"
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 2 ]; then echo "$SCRIPTNAME: Invalid argument count"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api SAF --es safmethod createDocument --es treeuri "$1" --es filename "$2" --es mimetype 'vnd.android.document/directory'
+ 

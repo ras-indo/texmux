@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night (dark) overrides for Material 3 colors -->
+    <color name="m3_primary">@color/m3_primary_dark</color>
+    <color name="m3_on_primary">@color/m3_on_primary_dark</color>
+    <color name="m3_primary_container">@color/m3_primary_container_dark</color>
+    <color name="m3_on_primary_container">@color/m3_on_primary_container_dark</color>
+    <color name="m3_secondary">@color/m3_secondary_dark</color>
+    <color name="m3_on_secondary">@color/m3_on_secondary_dark</color>
+    <color name="m3_secondary_container">@color/m3_secondary_container_dark</color>
+    <color name="m3_on_secondary_container">@color/m3_on_secondary_container_dark</color>
+    <color name="m3_tertiary">@color/m3_tertiary_dark</color>
+    <color name="m3_on_tertiary">@color/m3_on_tertiary_dark</color>
+    <color name="m3_error">@color/m3_error_dark</color>
+    <color name="m3_on_error">@color/m3_on_error_dark</color>
+    <color name="m3_background">@color/m3_background_dark</color>
+    <color name="m3_on_background">@color/m3_on_background_dark</color>
+    <color name="m3_surface">@color/m3_surface_dark</color>
+    <color name="m3_on_surface">@color/m3_on_surface_dark</color>
+</resources>

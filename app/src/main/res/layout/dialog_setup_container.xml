@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark glassmorphism setup dialog matching the design reference -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/dialog_bg_setup"
+    android:padding="28dp">
+
+    <!-- Title: "# Setting up environment..." -->
+    <TextView
+        android:id="@+id/setup_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/proot_setup_body"
+        android:textColor="#EAF0FF"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:letterSpacing="-0.02"
+        android:layout_marginBottom="18dp" />
+
+    <!-- Progress bar with glass track -->
+    <ProgressBar
+        android:id="@+id/setup_progress_bar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="10dp"
+        android:indeterminate="true"
+        android:progressDrawable="@drawable/progress_bar_setup_track"
+        android:progressTint="#7C9CFF"
+        android:progressBackgroundTint="#1AFFFFFF"
+        android:layout_marginBottom="18dp" />
+
+    <!-- Log panel inside a rounded sub-container -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#0DFFFFFF"
+        android:padding="16dp">
+
+        <ScrollView
+            android:id="@+id/setup_log_scroller"
+            android:layout_width="match_parent"
+            android:layout_height="240dp"
+            android:fillViewport="true">
+
+            <TextView
+                android:id="@+id/setup_log_view"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:textColor="#D6DEF0"
+                android:lineSpacingExtra="4dp"
+                android:fontFamily="sans-serif"
+                android:textIsSelectable="false" />
+        </ScrollView>
+    </LinearLayout>
+
+</LinearLayout>

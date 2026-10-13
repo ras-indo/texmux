@@ -1,0 +1,94 @@
+#!/bin/bash
+#
+# NAME
+#     termux-volume — Change or display volume of audio streams
+#
+# SYNOPSIS
+#     termux-volume [stream volume]
+#
+# DESCRIPTION
+#     Query or set the volume level of individual audio streams on the
+#     device. When called with no arguments, returns a JSON object
+#     showing the current volume level and maximum volume for each
+#     audio stream (alarm, music, notification, ring, system, call).
+#
+#     When called with two arguments (stream name and volume number),
+#     sets the specified stream's volume to the given level. The volume
+#     must be a valid integer between 0 and the stream's maximum value.
+#     Valid stream names: alarm, music, notification, ring, system, call.
+#
+# OPTIONS
+#     stream  audio stream name (alarm, music, notification, ring, system, call)
+#     volume  volume level (numeric value)
+#
+# EXAMPLES
+#     # Show current volume information
+#     termux-volume
+#
+#     # Set music volume to 10
+#     termux-volume music 10
+#
+set -e -u
+
+SCRIPTNAME=termux-volume
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [stream] [volume]
+       $SCRIPTNAME (no args — show info for all streams)
+
+Get or set the volume of an audio stream. When called without arguments,
+displays current volume levels and max volume for each stream as JSON.
+
+OUTPUT:
+  JSON object (when called without args) with per-stream info:
+    streamName  (string) — Name of the audio stream
+    volume      (int)    — Current volume level (0-max)
+    maxVolume   (int)    — Maximum volume level for the stream
+
+OPTIONS:
+  -h          Show this help message.
+
+ARGUMENTS:
+  stream      Audio stream to adjust. Valid values:
+              alarm, music, notification, ring, system, call
+  volume      Volume level (integer). Must be between 0 and the
+              stream's maximum volume.
+
+EXAMPLES:
+  # Show all stream volumes
+  $SCRIPTNAME
+
+  # Set music volume to 10
+  $SCRIPTNAME music 10
+
+  # Set notification volume to 5
+  $SCRIPTNAME notification 5
+
+  # Set alarm to maximum
+  $SCRIPTNAME alarm 15
+EOF
+    exit 0
+}
+
+ARGS=""
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_usage
+fi
+
+# If we have arguments, we must have 2
+# Otherwise we will just return JSON info to user
+if [ $# -gt 0 ]; then
+    if [ $# -ne 2 ]; then
+        echo "Invalid argument count"
+        show_usage
+    fi
+
+    if ! [[ $2 =~ ^[0-9]+$ ]]; then
+        echo "ERROR: Volume must be a number"
+        show_usage
+    fi
+    ARGS="-a set-volume --es stream $1 --ei volume $2"
+fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api Volume $ARGS

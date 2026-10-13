@@ -1,0 +1,23 @@
+#!/bin/bash
+#
+# NAME
+#     termux-callback — Execute the callback command trampoline
+#
+# SYNOPSIS
+#     termux-callback [args...]
+#
+# DESCRIPTION
+#     Internal helper that executes the command specified in the
+#     TERMUX_CALLBACK environment variable with the given arguments.
+#     Used as a trampoline by termux-api commands for callback-based
+#     operations.
+#
+# OPTIONS
+#     (No options; passes all arguments to the callback command.)
+#
+# EXAMPLES
+#     # Typically called internally by termux-api
+#     termux-callback --es key value
+#
+set -e -u
+$TERMUX_CALLBACK "$@"

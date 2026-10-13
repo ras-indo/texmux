@@ -1,0 +1,100 @@
+#!/bin/sh
+#
+# NAME
+#     termux-telephony-deviceinfo — Get device telephony information
+#
+# SYNOPSIS
+#     termux-telephony-deviceinfo
+#
+# DESCRIPTION
+#     Retrieve detailed telephony device information. Returns a JSON
+#     object containing: IMEI (if available), MEID, IMSI, software
+#     version, network operator name, network operator MCC/MNC, SIM
+#     operator name, SIM country ISO, SIM serial number (ICCID),
+#     voice mail number, device ID, phone type (GSM/CDMA/SIP), network
+#     type, roaming status, SIM state, signal strength, and whether
+#     the device has voice capability.
+#
+#     Some fields (especially IMEI/IMSI) require READ_PHONE_STATE
+#     permission and may not be available on all devices or Android
+#     versions due to privacy restrictions.
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # Show device telephony info
+#     termux-telephony-deviceinfo
+#
+set -e -u
+
+SCRIPTNAME=termux-telephony-deviceinfo
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Get detailed information about the device's telephony hardware, SIM
+cards, and network registration. Useful for identifying device IDs,
+carrier information, and network status.
+
+OUTPUT:
+  JSON object with fields:
+    deviceId              (string) — IMEI (GSM) or MEID (CDMA)
+    imei                  (string) — IMEI number (API 26+)
+    meid                  (string) — MEID number (CDMA)
+    softwareVersion       (string) — IMEI SVN
+    simInfo               (string) — SIM card state info
+    simOperator           (string) — MCC+MNC of SIM operator
+    simOperatorName       (string) — Carrier name from SIM
+    simCountryIso         (string) — SIM country ISO code
+    simSerialNumber       (string) — ICCID (SIM serial)
+    networkOperator       (string) — MCC+MNC of current network
+    networkOperatorName   (string) — Current network carrier name
+    networkCountryIso     (string) — Current network country
+    networkType           (string) — "gprs", "edge", "umts", "hsdpa",
+                                      "hspa+", "lte", "nr", "unknown"
+    phoneType             (string) — "gsm", "cdma", "sip", "none"
+    dataState             (string) — "disconnected", "connecting",
+                                      "connected", "suspended"
+    dataActivity          (string) — "none", "in", "out", "inout", "dormant"
+    isRoaming             (boolean)— Whether the device is roaming
+    mmsAlphabet           (int)    — MMS alphabet setting
+    mmsUAProfUrl          (string) — MMS user agent profile URL
+    mmsUa                 (string) — MMS user agent string
+    mmsVersion            (string) — MMS version
+    voicemailNumber       (string) — Voicemail number
+    voicemailCount        (int)    — Count of voicemails (if known)
+
+PERMISSIONS:
+  android.permission.READ_PHONE_STATE (Android 6+, API 23)
+  android.permission.READ_PRIVILEGED_PHONE_STATE (Android 10+, API 29)
+    Required for IMEI/MEID/ICCID on newer Android versions.
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # Show all device telephony info
+  $SCRIPTNAME
+
+  # Extract IMEI and carrier name
+  $SCRIPTNAME | jq '{imei, simOperatorName, networkOperatorName}'
+
+  # Check roaming status
+  $SCRIPTNAME | jq '.isRoaming'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api TelephonyDeviceInfo

@@ -1,0 +1,81 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-vibrate — Vibrate the device
+#
+# SYNOPSIS
+#     termux-vibrate [-d duration] [-f]
+#
+# DESCRIPTION
+#     Activate the device vibrator motor for a specified duration.
+#     Default vibration time is 1000 milliseconds (1 second) if -d
+#     is not specified.
+#
+#     The -f (force) flag allows vibration even when the device is
+#     in silent or vibrate-only mode. Without -f, vibration may be
+#     suppressed by the system's current ringer mode setting.
+#     Returns the result as JSON via termux-api.
+#
+# OPTIONS
+#     -d duration  the duration to vibrate in ms (default: 1000)
+#     -f           force vibration even in silent mode
+#
+# EXAMPLES
+#     # Vibrate for 2 seconds
+#     termux-vibrate -d 2000
+#
+#     # Vibrate forcefully in silent mode
+#     termux-vibrate -d 500 -f
+#
+set -e -u
+
+SCRIPTNAME=termux-vibrate
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [-d duration] [-f]
+
+Vibrate the device using the system Vibrator service. Useful for
+haptic feedback, alarms, and notifications.
+
+OUTPUT:
+  No JSON output. The device vibrates for the specified duration.
+  Exit code 0 on success.
+
+PERMISSIONS:
+  android.permission.VIBRATE
+
+OPTIONS:
+  -h            Show this help message.
+  -d <duration> Vibration duration in milliseconds. Default: 1000.
+  -f            Force vibration even if the device is in silent
+                or vibration-off mode.
+
+EXAMPLES:
+  # Vibrate for 1 second (default)
+  $SCRIPTNAME
+
+  # Vibrate for 500ms
+  $SCRIPTNAME -d 500
+
+  # Force vibration in silent mode
+  $SCRIPTNAME -f -d 2000
+EOF
+    exit 0
+}
+
+PARAMS=""
+
+while getopts :hfd: option
+do
+    case "$option" in
+	h) show_usage;;
+	d) PARAMS="$PARAMS --ei duration_ms $OPTARG";;
+	f) PARAMS="$PARAMS --ez force true";;
+	?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api Vibrate $PARAMS

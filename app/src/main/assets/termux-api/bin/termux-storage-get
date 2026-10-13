@@ -1,0 +1,72 @@
+#!/bin/sh
+#
+# NAME
+#     termux-storage-get — Request a file from the system
+#
+# SYNOPSIS
+#     termux-storage-get output-file
+#
+# DESCRIPTION
+#     Open the Android system file picker (SAF - Storage Access Framework)
+#     to let the user select an arbitrary file from any accessible location
+#     (internal storage, SD card, cloud storage providers, etc.). The
+#     selected file's content is then copied to the specified output path.
+#
+#     The output path must be writable by Termux. The original file is
+#     NOT modified — a copy is made to the output location. If the user
+#     cancels the file picker, no file is written.
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # Save a system-selected file locally
+#     termux-storage-get /sdcard/Download/document.pdf
+#
+set -e -u
+
+SCRIPTNAME=termux-storage-get
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <output-file>
+
+Open the system file picker (ACTION_OPEN_DOCUMENT) to let the user
+choose a file. The selected file's content is copied to the specified
+output path. Useful for accessing files from cloud storage providers,
+document providers, or other non-standard locations.
+
+OUTPUT:
+  The selected file's content is written to <output-file>.
+  Exit code 0 on success, non-zero if no file was selected.
+
+PERMISSIONS:
+  None required (uses SAF intent, API 19+).
+  The user grants access per-file through the system picker.
+
+ARGUMENTS:
+  output-file  Path where the chosen file's content will be written.
+
+EXAMPLES:
+  # Pick a file and save it locally
+  $SCRIPTNAME /sdcard/downloaded_file.pdf
+
+  # Pick a file from cloud storage
+  $SCRIPTNAME ~/storage/shared/backup.zip
+EOF
+    exit 0
+}
+
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# -gt 1 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+if [ $# -lt 1 ]; then echo "$SCRIPTNAME: no output file specified"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api StorageGet --es file "$(realpath "$1")"

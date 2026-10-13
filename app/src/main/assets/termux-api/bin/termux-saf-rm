@@ -1,0 +1,80 @@
+#!/bin/sh
+#
+# NAME
+#     termux-saf-rm — Menghapus file atau folder melalui SAF
+#
+# SYNOPSIS
+#     termux-saf-rm uri
+#
+# DESCRIPTION
+#     Menghapus file atau folder pada URI yang diberikan melalui SAF (Storage Access Framework, API level 19+).
+#     SAF memungkinkan aplikasi mengelola dokumen di berbagai penyedia penyimpanan melalui
+#     sistem picker UI. File atau folder harus berada di direktori yang sudah diizinkan
+#     oleh pengguna sebelumnya. Penghapusan bersifat permanen dan tidak dapat dibatalkan
+#     (recycle bin tidak didukung oleh SAF).
+#     Output dikembalikan melalui termux-api.
+#     Mengembalikan 0 jika sukses, 1 jika file/folder tidak dapat dihapus,
+#     dan 2 jika terjadi kesalahan lain.
+#
+# OPTIONS
+#     Tidak ada opsi.
+#
+# EXAMPLES
+#     # Menghapus file
+#     termux-saf-rm content://com.android.externalstorage/doc/home/document.txt
+#
+set -e -u
+
+SCRIPTNAME=termux-saf-rm
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <uri>
+
+Delete a file or empty directory at the given SAF URI. Use with
+caution — deleted files may not go to a trash/recycle bin.
+
+OUTPUT:
+  No output on success. Use exit code to determine result.
+
+EXIT CODES:
+  0  — Success (file/folder deleted).
+  1  — File or folder could not be deleted (may be non-empty
+       directory, read-only, or permission denied).
+  2  — Other error occurred.
+
+PERMISSIONS:
+  No special permissions required (SAF, API 19+).
+
+OPTIONS:
+  -h          Show this help message.
+
+ARGUMENTS:
+  uri         Document URI of the file or directory to delete.
+
+EXAMPLES:
+  # Delete a file
+  $SCRIPTNAME content://.../document/file.txt
+
+  # Check if deletion succeeded
+  if $SCRIPTNAME "\$URI"; then
+    echo "Deleted successfully"
+  else
+    echo "Failed to delete"
+  fi
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 1 ]; then echo "$SCRIPTNAME: Invalid argument count"; exit 1; fi
+
+exit "$(/data/data/com.texmux/files/apps/com.texmux/bin/termux-api SAF --es safmethod removeDocument --es uri "$1")"
+

@@ -1,0 +1,71 @@
+#!/bin/sh
+#
+# NAME
+#     termux-telephony-call — Initiate a phone call
+#
+# SYNOPSIS
+#     termux-telephony-call <number>
+#
+# DESCRIPTION
+#     Initiate a phone call to the specified phone number using the
+#     device's telephony capabilities. Opens the system dialer with
+#     the number pre-filled, requiring the user to press the call
+#     button to actually place the call.
+#
+#     The number is passed to the system's ACTION_DIAL intent. Only
+#     standard phone numbers are supported (no special characters
+#     like * or # for USSD codes).
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # Call a phone number
+#     termux-telephony-call 1234567890
+#
+set -e -u
+
+SCRIPTNAME=termux-telephony-call
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <number>
+
+Initiate a phone call to the specified number. Opens the system dialer
+with the number pre-filled; the user must press the call button.
+
+OUTPUT:
+  No JSON output. The system dialer is launched via ACTION_DIAL intent.
+  Exit code 0 on success, non-zero on failure.
+
+PERMISSIONS:
+  android.permission.CALL_PHONE (for direct call via ACTION_CALL)
+  Uses ACTION_DIAL by default, which requires no special permission.
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # Open dialer with a phone number
+  $SCRIPTNAME 1234567890
+
+  # Open dialer with an international number
+  $SCRIPTNAME +15551234567
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+	h) show_usage;;
+	?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# = 1 ]; then
+	/data/data/com.texmux/files/apps/com.texmux/bin/termux-api TelephonyCall --es number "$1"
+else
+	echo "$SCRIPTNAME: No single number to call specified." >&2
+	exit 1
+fi

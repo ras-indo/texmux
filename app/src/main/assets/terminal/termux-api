@@ -1,0 +1,84 @@
+#!/system/bin/sh
+#
+# termux-api — invoke Termux API methods via direct socket communication.
+#
+# Fast path: connects to the persistent API daemon (zero fork, zero JVM).
+# Fallback:  uses app_process with TermuxApiClient (legacy).
+#
+# Usage:  termux-api <api_method> [extra_args...]
+#
+# Examples:
+#   termux-api BatteryStatus
+#   termux-api Clipboard --es get text
+#   termux-api Toast --es text "Hello World" --ez short false
+
+PACKAGE_NAME="com.texmux"
+DAEMON_SOCKET="/data/data/${PACKAGE_NAME}/api-daemon.sock"
+C_CLIENT="/data/data/${PACKAGE_NAME}/files/usr/bin/termux-api-daemon-client"
+
+# ── Fast path: C daemon client (if compiled and installed) ──────────
+if [ -x "$C_CLIENT" ]; then
+    exec "$C_CLIENT" "$@"
+fi
+
+# ── Medium path: pipe JSON directly to daemon via nc ───────────────
+# Construct a minimal JSON request in pure shell.  Only handles
+# simple cases; complex args fall through to app_process.
+if [ -S "$DAEMON_SOCKET" ] && command -v nc >/dev/null 2>&1; then
+    # Check if the method has no extra args — trivial case
+    if [ $# -eq 1 ]; then
+        JSON="{\"method\":\"$1\",\"args\":{}}"
+        printf '%s' "$JSON" | nc -U "$DAEMON_SOCKET" 2>/dev/null && exit 0
+    fi
+
+    # For simple --es key "value" patterns, build JSON inline.
+    # This avoids app_process for the vast majority of API calls.
+    JSON="{\"method\":\"$1\",\"args\":{"
+    shift
+    FIRST=true
+    while [ $# -ge 3 ]; do
+        FLAG="$1"
+        KEY="$2"
+        VAL="$3"
+        shift 3
+
+        if [ "$FIRST" = false ]; then JSON="$JSON,"; fi
+        FIRST=false
+
+        # Escape JSON special chars in key
+        KEY_ESC=$(printf '%s' "$KEY" | sed 's/"/\\"/g; s/\\/\\\\/g; s/\n/\\n/g; s/\r/\\r/g; s/\t/\\t/g')
+        VAL_ESC=$(printf '%s' "$VAL" | sed 's/"/\\"/g; s/\\/\\\\/g; s/\n/\\n/g; s/\r/\\r/g; s/\t/\\t/g')
+
+        case "$FLAG" in
+            --es|-e)
+                JSON="$JSON\"$KEY_ESC\":\"$VAL_ESC\"" ;;
+            --ez)
+                case "$VAL" in
+                    true|t|1) JSON="$JSON\"$KEY_ESC\":true" ;;
+                    *)        JSON="$JSON\"$KEY_ESC\":false" ;;
+                esac ;;
+            --ei|--ef)
+                JSON="$JSON\"$KEY_ESC\":$VAL" ;;
+            --esa)
+                JSON="$JSON\"$KEY_ESC\":[\"$VAL_ESC\"]" ;;
+            --eia|--ela)
+                JSON="$JSON\"$KEY_ESC\":[$VAL]" ;;
+        esac
+    done
+    JSON="$JSON}}"
+
+    printf '%s' "$JSON" | nc -U "$DAEMON_SOCKET" 2>/dev/null && exit 0
+fi
+
+# ── Slow path: app_process (legacy) ─────────────────────────────────
+APK_PATH=$(pm path "$PACKAGE_NAME" --user 0 2>/dev/null | head -1 | cut -d: -f2)
+if [ -z "$APK_PATH" ]; then
+    APK_PATH=$(pm path "$PACKAGE_NAME" 2>/dev/null | head -1 | cut -d: -f2)
+fi
+
+if [ -z "$APK_PATH" ]; then
+    echo "ERROR: Could not find APK path for $PACKAGE_NAME" >&2
+    exit 1
+fi
+
+CLASSPATH="$APK_PATH" exec app_process /system/bin com.termux.api.client.TermuxApiClient "$@"

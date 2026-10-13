@@ -1,0 +1,104 @@
+#!@TERMUX_PREFIX@/bin/bash
+#
+# NAME
+#     termux-notification-channel — Manage notification channels
+#
+# SYNOPSIS
+#     termux-notification-channel -d channel-id
+#     termux-notification-channel channel-id channel-name
+#
+# DESCRIPTION
+#     Mengelola notification channel Android (diperkenalkan di Android
+#     Oreo 8.0, API 26). Channel mengelompokkan notifikasi dan memberi
+#     kontrol kepada pengguna untuk mengatur perilaku notifikasi per
+#     channel (suara, getar, LED, prioritas, bypass DND, dll.).
+#
+#     Untuk membuat channel: berikan channel-id dan channel-name sebagai
+#     dua argumen. Channel-id digunakan untuk merujuk channel saat
+#     mengirim notifikasi via termux-notification --channel. Nama
+#     channel akan terlihat di Settings > Notifications.
+#
+#     Untuk menghapus channel: gunakan -d <channel-id>. Catatan:
+#     membuat ulang channel dengan ID yang sudah pernah dihapus akan
+#     mengembalikan pengaturan user sebelumnya (Android limitation).
+#
+# OPTIONS
+#     -d channel-id  Delete the specified notification channel
+#
+# EXAMPLES
+#     # Create a notification channel
+#     termux-notification-channel my_channel "My Channel"
+#
+#     # Delete a notification channel
+#     termux-notification-channel -d my_channel
+#
+set -e -u
+
+SCRIPTNAME=termux-notification-channel
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <channel-id> <channel-name>   (create/update)
+       $SCRIPTNAME -d <channel-id>                (delete)
+
+Create, update, or delete a notification channel. Notification channels
+allow users to control notification behavior per-category in system
+settings. Only available on Android 8.0+ (API 26+).
+
+OUTPUT:
+  No direct JSON output. Channel is created or deleted.
+  Created channels can be used with termux-notification --channel <id>.
+
+PERMISSIONS:
+  None required. Uses NotificationManager notification channel APIs.
+
+NOTE:
+  - Creating a channel with an existing ID updates its settings, but
+    respects user overrides.
+  - Deleting a channel and re-creating it restores the original user
+    settings of the deleted channel.
+  - Channel names are visible in Settings → Apps → Termux:API →
+    Notifications.
+
+OPTIONS:
+  -h              Show this help message.
+  -d <channel-id> Delete the specified notification channel.
+
+EXAMPLES:
+  # Create a "downloads" channel
+  $SCRIPTNAME downloads "Download Progress"
+
+  # Create an "alerts" channel
+  $SCRIPTNAME alerts "System Alerts"
+
+  # Delete a channel
+  $SCRIPTNAME -d downloads
+
+  # Use a channel in a notification
+  termux-notification --channel alerts -t "Alert" -c "System updated"
+EOF
+    exit 0
+}
+
+ARGS=""
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_usage
+fi
+
+if [ "$1" = "-d" ]; then
+    shift
+    if [ $# == 1 ]; then
+      ARGS="--ez delete true --es id $1"
+    else
+      show_usage
+    fi
+else
+    if [ $# == 2 ]; then
+      ARGS="--es id $1 --es name $2"
+    else
+      show_usage
+    fi
+fi
+
+
+@TERMUX_PREFIX@/bin/termux-api NotificationChannel $ARGS

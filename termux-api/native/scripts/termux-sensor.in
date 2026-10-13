@@ -1,0 +1,201 @@
+#!@TERMUX_PREFIX@/bin/bash
+#
+# NAME
+#     termux-sensor — Access device sensors
+#
+# SYNOPSIS
+#     termux-sensor -a | -c | -l | -s sensors [-d delay] [-n limit]
+#
+# DESCRIPTION
+#     Akses dan baca data dari sensor hardware device (accelerometer,
+#     gyroscope, magnetometer, light sensor, proximity, pressure,
+#     humidity, temperature, step counter, heart rate, dll.).
+#
+#     -l untuk mendaftar semua sensor yang tersedia beserta vendor,
+#       tipe, dan resolusi maksimum.
+#     -s <nama> untuk membaca data dari sensor tertentu (partial name
+#       match — cukup sebagian nama sensor).
+#     -a untuk membaca semua sensor sekaligus (perhatikan dampak baterai).
+#     -d <ms> mengatur interval pembacaan dalam milidetik.
+#     -n <N> membatasi jumlah pembacaan (default: continuous).
+#     -c untuk membersihkan resource sensor (dipanggil otomatis via
+#       signal handler SIGINT/SIGTERM).
+#
+#     Output: JSON stream dengan timestamp, accuracy, dan nilai sensor.
+#
+# OPTIONS
+#     -a, --all       Listen to all sensors (may impact battery)
+#     -c, --cleanup   Release sensor resources
+#     -l, --list      List available sensors
+#     -s, --sensors   Sensors to listen to (partial name match)
+#     -d, --delay ms  Delay between sensor updates (milliseconds)
+#     -n, --limit n   Number of readings (default: continuous, min: 1)
+#
+# EXAMPLES
+#     # List available sensors
+#     termux-sensor -l
+#
+#     # Read data from a specific sensor with delay and limit
+#     termux-sensor -s accelerometer -d 100 -n 10
+#
+#     # Read all sensors continuously
+#     termux-sensor -a
+#
+set -e -u
+
+SCRIPTNAME=termux-sensor
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [options]
+
+Access device sensors (accelerometer, gyroscope, magnetometer, light,
+pressure, proximity, humidity, temperature, heart rate, etc.) and
+receive live sensor data. Can list available sensors, listen to
+specific sensors, or monitor all sensors at once.
+
+OUTPUT:
+  -l (list): JSON array of sensor objects with:
+    name         (string) — Sensor name
+    vendor       (string) — Sensor vendor
+    type         (int)    — Sensor type constant
+    maximumRange (float)  — Maximum measurement range
+    resolution   (float)  — Measurement resolution
+    power        (float)  — Power consumption in mA
+    minDelay     (int)    — Minimum sampling period in us
+
+  Live data (-s): JSON objects streamed to stdout with:
+    sensorName    (string) — Name of the sensor
+    values        (array)  — Sensor values (varies by sensor type)
+    accuracy      (int)    — Accuracy: 0=unreliable, 1=low, 2=med, 3=high
+    timestamp     (long)   — Event time in nanoseconds
+
+PERMISSIONS:
+  android.permission.BODY_SENSORS (for heart rate, API 20+)
+  No special permissions for most other sensors.
+
+OPTIONS:
+  -h, --help              Show this help message.
+  -a, --all               Listen to ALL available sensors (may impact
+                          battery life significantly).
+  -c, --cleanup           Release sensor resources and stop listening.
+  -l, --list              List available sensors on the device.
+  -s, --sensors <names>   Comma-separated sensor names to monitor.
+                          Partial names are matched (e.g., "accel"
+                          matches "ACCELEROMETER").
+  -d, --delay <ms>        Sampling delay in milliseconds.
+  -n, --limit <num>       Number of sensor readings before stopping.
+                          Default: continuous (unlimited). Minimum: 1.
+
+EXAMPLES:
+  # List all available sensors
+  $SCRIPTNAME -l
+
+  # Monitor accelerometer at 100ms intervals
+  $SCRIPTNAME -s accelerometer -d 100
+
+  # Get 5 readings from accelerometer and gyroscope
+  $SCRIPTNAME -s "accelerometer,gyroscope" -n 5
+
+  # Monitor all sensors
+  $SCRIPTNAME -a
+EOF
+    exit 0
+}
+
+# ensure we properly release resources if needed on ^C
+trap handle_interrupt  SIGTERM SIGINT
+
+if [ $# -eq 0 ]; then
+	echo "No arguments supplied!"
+	show_usage
+	exit 1;
+fi
+
+SENSOR_FLAG=1
+ALL_SENSORS_FLAG=2
+LIST_FLAG=4
+CLEANUP_FLAG=8
+DELAY_FLAG=16
+LIMIT_FLAG=32
+FLAGS=0
+
+handle_interrupt () {
+	echo "Caught interrupt.. Finishing..."
+	cleanup
+}
+
+cleanup () {
+	if [ $((FLAGS & (ALL_SENSORS_FLAG | SENSOR_FLAG))) != 0 ]; then
+		echo "Performing sensor cleanup"
+		call_api -a cleanup
+	else
+		echo "No cleanup necessary"
+	fi
+}
+
+get_sensors () {
+	if [ $# -gt 1 ]; then
+		usage_error "Sensor arg should be a comma delimited string!"
+	fi
+}
+
+get_delay () {
+	if [ $# -gt 1 ]; then
+		usage_error "Too many arguments for -d delay"
+	elif ! [[ $1 =~ ^[0-9]+$ ]]; then
+		usage_error "Illegal argument! -d delay arg should be a number!"
+	fi
+}
+
+get_limit () {
+	if [ $# -gt 1 ]; then
+		usage_error "Too many arguments for -n limit"
+	elif ! [[ $1 =~ ^[0-9]+$ ]]; then
+		usage_error "Illegal argument! -n limit arg should be a number!"
+	fi
+}
+
+call_api () {
+	@TERMUX_PREFIX@/bin/termux-api Sensor "$@"
+}
+
+set_flag () {
+	FLAGS=$((FLAGS | $1));
+}
+
+usage_error () {
+	echo "ERROR: $*"
+	show_usage
+	exit 1
+}
+
+
+PARAMS=()
+while getopts :h,a,c,l,s:d:n: option
+do
+	case "$option" in
+		h) show_usage ;;
+		a) set_flag $ALL_SENSORS_FLAG; PARAMS+=(-a sensors --ez all true);;
+		c) set_flag $CLEANUP_FLAG; PARAMS=(-a cleanup) ;;
+		l) set_flag $LIST_FLAG; PARAMS=(-a list) ;;
+		s) set_flag $SENSOR_FLAG; get_sensors "$OPTARG"; PARAMS+=(-a sensors --es sensors "$OPTARG") ;;
+		d) set_flag $DELAY_FLAG; get_delay "$OPTARG"; PARAMS+=(--ei delay "$OPTARG") ;;
+		n) set_flag $LIMIT_FLAG; get_limit "$OPTARG"; PARAMS+=(--ei limit "$OPTARG") ;;
+		?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+	esac
+done
+shift $((OPTIND -1))
+
+# Validate options were set properly
+
+if [ $((FLAGS & CLEANUP_FLAG)) -ne 0 ] && [ $FLAGS -ne $CLEANUP_FLAG ]; then
+	usage_error "No other options should be specified with -c cleanup!"
+elif [ $((FLAGS & LIST_FLAG)) -ne 0 ] && [ $FLAGS -ne $LIST_FLAG ]; then
+	usage_error "No other options should be specified with -l list!"
+elif [ $((FLAGS & DELAY_FLAG)) -ne 0 ] && [ $((FLAGS & (ALL_SENSORS_FLAG | SENSOR_FLAG))) -eq 0 ]; then
+	usage_error "Use -s <sensors> or -a option when using -d delay!"
+elif [ $((FLAGS & ALL_SENSORS_FLAG)) -ne 0 ] && [ $((FLAGS & SENSOR_FLAG)) -ne 0 ]; then
+	usage_error "Listed sensors will be ignored with -a all option!"
+fi
+
+call_api "${PARAMS[@]}"

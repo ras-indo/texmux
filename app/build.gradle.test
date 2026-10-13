@@ -1,0 +1,16 @@
+task testNdk {
+    doLast {
+        def ndkDir
+        try {
+            ndkDir = android.ndkDirectory.absolutePath
+            println "NDK dir from android.ndkDirectory: ${ndkDir}"
+        } catch (Exception e) {
+            ndkDir = ""
+            println "Exception getting ndkDirectory: ${e.message}"
+        }
+        def toolchainFile = "${ndkDir}/build/cmake/android.toolchain.cmake"
+        println "Toolchain file path: ${toolchainFile}"
+        def f = file(toolchainFile)
+        println "File exists: ${f.exists()}"
+    }
+}

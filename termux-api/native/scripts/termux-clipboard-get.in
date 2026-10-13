@@ -1,0 +1,80 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-clipboard-get — Get system clipboard text
+#
+# SYNOPSIS
+#     termux-clipboard-get
+#
+# DESCRIPTION
+#     Read the current text content stored in the system clipboard.
+#     Returns a JSON object with a "text" field containing the clipboard
+#     content, or an empty string if the clipboard is empty or contains
+#     non-text data.
+#
+#     The clipboard is shared across all apps on the device. Content
+#     copied from any app (browser, messaging, etc.) can be retrieved.
+#     Use termux-clipboard-set to write text to the clipboard.
+#
+# OPTIONS
+#     -h, --help  Display this help message and exit.
+#
+# EXAMPLES
+#     termux-clipboard-get
+#
+set -e -u
+
+SCRIPTNAME=termux-clipboard-get
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Read the current text content stored in the system clipboard. The clipboard
+is shared across all apps on the device. Returns the raw clipboard text
+directly to stdout (not wrapped in JSON).
+
+If the clipboard is empty or contains non-text data (e.g. images, URIs),
+the output will be empty. Use in pipelines to capture clipboard content
+into variables, files, or pipe into other commands.
+
+OUTPUT:
+  Raw text printed to stdout. No JSON wrapping in the default API version.
+  If empty, prints nothing (not even a newline). Supports multi-item clips
+  — all text items are concatenated.
+
+PERMISSIONS:
+  Android 1+ — No special permissions required on most devices.
+  Android 10+ (API 29) — Apps in the background may not access clipboard;
+  foreground access is unrestricted.
+
+OPTIONS:
+  -h, --help    Display this help message and exit.
+
+EXAMPLES:
+  # Get clipboard content
+  $SCRIPTNAME
+
+  # Capture clipboard into a variable
+  CLIP=$($SCRIPTNAME)
+
+  # Pipe clipboard to another command
+  $SCRIPTNAME | grep "pattern"
+
+  # Save clipboard to a file
+  $SCRIPTNAME > clipboard.txt
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+	h) show_usage;;
+	?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api Clipboard

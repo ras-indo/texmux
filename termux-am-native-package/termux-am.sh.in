@@ -1,0 +1,97 @@
+#!@TERMUX_PREFIX@/bin/bash
+# shellcheck disable=SC2039,SC2059
+TERMUX_AM_SOCKET_VERSION=1.5.0
+
+COMMAND_TYPE="am_command_run" # Default to "am_command_run"
+NOOP_COMMAND=0 # Default to 0
+
+main() {
+    if [ $# -ne 0 ]; then
+        process_arguments "$@" || return $?
+        [ "$NOOP_COMMAND" = "1" ] && return 0
+    else
+        show_help || return $?
+        return 0
+    fi
+
+    if [[ "$TERMUX_APP__AM_SOCKET_SERVER_ENABLED" == "false" ]]; then
+        echo "TermuxAm server is not enabled. Make sure \"run-termux-am-socket-server=false\" is not added to the \"~/.termux/termux.properties\" file" 1>&2
+        return 1;
+    fi
+
+    local am_command_string
+
+    if [[ "$COMMAND_TYPE" == "am_command_run" ]]; then
+        if [ $# -ne 0 ]; then
+            printf -v "am_command_string" "%q " "$@" || return $?
+        fi
+    elif [[ "$COMMAND_TYPE" == "am_command_help" ]]; then
+        :
+    else
+        echo "Invalid COMMAND_TYPE \"$COMMAND_TYPE\" set" 1>&2
+        return 1
+    fi
+
+    termux-am-socket "$am_command_string"
+}
+
+process_arguments() {
+    local opt; local arg; local OPTARG; local OPTIND
+    while getopts ":h-:" opt; do
+        case "${opt}" in
+            -)
+                arg="${OPTARG#*=}"
+                case "${OPTARG}" in
+                    am-help)
+                        COMMAND_TYPE="am_command_help"
+                        ;;
+                    help)
+                        show_help
+                        NOOP_COMMAND=1; return 0
+                        ;;
+                    version)
+                        echo "$TERMUX_AM_SOCKET_VERSION"
+                        NOOP_COMMAND=1; return 0
+                        ;;
+                    *)
+                        :;;
+                esac
+                ;;
+            h)
+                show_help
+                NOOP_COMMAND=1; return 0
+                ;;
+            \?)
+                :;;
+        esac
+    done
+    shift $((OPTIND - 1))
+    return 0;
+}
+
+show_help() {
+    cat <<'HELP_EOF'
+
+termux-am is a wrapper script that converts the arguments array
+passed to a single string that can be reused as shell input with the
+bash 'printf "%q"' built-in and passes the string to am-socket.
+
+Usage:
+  termux-am [command_options]
+
+Available command_options:
+  [ -h | --help ]    Display termux-am help screen.
+  [ --am-help ]      Display am command help screen.
+  [ --version ]      Display version.
+
+am-socket sends the converted string to
+@SOCKET_PATH@
+local unix socket server that is run by termux-app if enabled, which
+executes it as an android activity manager (am) command from within
+termux-app java process via termux/termux-am-library.
+
+HELP_EOF
+echo "TERMUX_APP__AM_SOCKET_SERVER_ENABLED=$TERMUX_APP__AM_SOCKET_SERVER_ENABLED"
+}
+
+main "$@"

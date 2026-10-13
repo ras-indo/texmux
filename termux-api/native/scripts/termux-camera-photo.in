@@ -1,0 +1,87 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-camera-photo — Take a photo and save to file
+#
+# SYNOPSIS
+#     termux-camera-photo [-c camera-id] output-file
+#
+# DESCRIPTION
+#     Capture a photo using the device camera and save it as a JPEG
+#     file to the specified path. The output file path must be writable
+#     by the Termux app (use a path under /sdcard/ for external storage
+#     or a path within the app's private directory).
+#
+#     By default uses camera ID 0 (typically the rear camera). Use
+#     termux-camera-info to list available cameras and their IDs.
+#     Camera ID 1 is typically the front-facing camera.
+#
+#     The photo is captured at the camera's default resolution. The
+#     file argument is created if it does not exist. The output is
+#     standard JPEG format.
+#
+# OPTIONS
+#     -c <camera-id>  ID of the camera to use (default: 0)
+#     -h, --help      Display this help message
+#
+# EXAMPLES
+#     # Take a photo with default camera
+#     termux-camera-photo /sdcard/photo.jpg
+#
+#     # Take a photo with camera ID 1
+#     termux-camera-photo -c 1 /sdcard/photo.jpg
+#
+set -e -u
+
+SCRIPTNAME=termux-camera-photo
+show_usage () {
+    cat <<EOF
+Usage: termux-camera-photo [-c camera-id] output-file
+
+Capture a photo using the device camera and save it as a JPEG file.
+
+OPTIONS
+    -c <camera-id>  Camera ID to use (default: 0). See termux-camera-info
+                    for available cameras on your device.
+    -h, --help      Show this help
+
+OUTPUT
+    A JPEG image file written to the specified path. The path must be
+    in a location writable by Termux -- use /sdcard/ for external
+    storage or a path under the app's private directory.
+
+PERMISSIONS
+    android.permission.CAMERA (Android 6+, API level 23)
+
+EXAMPLES
+    # Take a photo with the default (rear) camera
+    termux-camera-photo /sdcard/photo.jpg
+
+    # Take a photo with the front-facing camera
+    termux-camera-photo -c 1 /sdcard/selfie.jpg
+
+    # List available cameras before choosing
+    termux-camera-info
+EOF
+    exit 0
+}
+
+
+PARAMS=""
+while getopts :hc: option
+do
+    case "$option" in
+        h) show_usage;;
+        c) PARAMS="--es camera $OPTARG";;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# = 0 ]; then echo "$SCRIPTNAME: missing file argument"; exit 1; fi
+if [ $# != 1 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+touch "$1"
+PARAMS="$PARAMS --es file `realpath $1`"
+
+@TERMUX_PREFIX@/bin/termux-api CameraPhoto $PARAMS

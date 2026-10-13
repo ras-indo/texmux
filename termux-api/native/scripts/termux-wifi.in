@@ -1,0 +1,781 @@
+#!@TERMUX_PREFIX@/bin/bash
+#
+# NAME
+#     termux-wifi — Unified WiFi API
+#
+# SYNOPSIS
+#     termux-wifi <command> [options]
+#
+# DESCRIPTION
+#     Mengelola koneksi WiFi, melakukan scan jaringan, mengaktifkan hotspot,
+#     WiFi Direct (P2P), WiFi Aware, RTT ranging, dan network suggestions.
+#
+#     Semua perintah mengembalikan output dalam format JSON.
+#
+# CONNECTION COMMANDS
+#     Informasi koneksi WiFi saat ini.
+#
+#     connection-info
+#         Menampilkan informasi koneksi WiFi aktif: SSID, BSSID, RSSI,
+#         frekuensi, channel, link speed, IP address, MAC address,
+#         supplicant state, dan generasi WiFi (802.11n/ac/ax/be).
+#
+# SCAN COMMANDS
+#     Menemukan jaringan WiFi di sekitar.
+#
+#     scan-info
+#         Menampilkan hasil scan jaringan WiFi terakhir.
+#         Output: daftar SSID, BSSID, RSSI, frekuensi, channel,
+#         kemampuan (WPA2/WPA3), dan standar WiFi.
+#         Catatan: Memerlukan Location dalam keadaan aktif di device.
+#
+# ENABLE COMMANDS
+#     Menghidupkan atau mematikan WiFi.
+#
+#     enable [--on|--off]
+#         --on     Menghidupkan WiFi (default)
+#         --off    Mematikan WiFi
+#
+# HOTSPOT COMMANDS
+#     LocalOnlyHotspot (Android 8.0+ / API 26+).
+#
+#     hotspot
+#         Memulai LocalOnlyHotspot. Sistem akan menampilkan dialog
+#         konfirmasi ke pengguna. Setelah disetujui, hotspot berjalan
+#         dengan SSID dan password acak yang dikembalikan dalam JSON.
+#
+#         Memerlukan izin:
+#         - NEARBY_WIFI_DEVICES (Android 13+)
+#         - ACCESS_FINE_LOCATION (system requirement)
+#
+#         Catatan: Hanya satu hotspot aktif per aplikasi.
+#
+# P2P (WiFi DIRECT) COMMANDS
+#     Komunikasi peer-to-peer tanpa access point.
+#
+#     p2p-discover [--timeout ms]
+#         Menemukan perangkat P2P di sekitar.
+#         --timeout <ms>  Waktu tunggu dalam ms (default: 10000)
+#         Output: daftar device name, address, dan status.
+#
+#     p2p-connect --address <mac>
+#         Connect ke P2P device yang sudah ditemukan.
+#         --address <mac>  Alamat MAC device tujuan.
+#
+#     p2p-group
+#         Menampilkan informasi group P2P saat ini (jika terhubung).
+#         Output: network name, passphrase, interface, dan daftar clients.
+#
+# WIFI AWARE COMMANDS
+#     Neighbor Awareness Networking (NAN) — Android 8.0+.
+#
+#     aware-attach
+#         Attach ke subsystem WiFi Aware. Wajib dijalankan sebelum
+#         publish atau subscribe.
+#
+#     aware-publish --service <name> [--service-info <text>]
+#         Mempublish service di jaringan WiFi Aware.
+#         --service <name>      Nama service yang dipublish
+#         --service-info <text> Informasi tambahan (optional)
+#
+#     aware-subscribe --service <name>
+#         Mencari service tertentu di jaringan WiFi Aware.
+#         --service <name>  Nama service yang dicari
+#
+# RTT COMMANDS
+#     Wi-Fi Round Trip Time (RTT) — Android 9.0+.
+#
+#     rtt-range --bssid <mac>
+#         Melakukan ranging (pengukuran jarak) ke access point
+#         yang mendukung Wi-Fi RTT (IEEE 802.11mc).
+#         --bssid <mac>  BSSID dari access point tujuan.
+#         Output: jarak dalam meter, standard deviation.
+#
+# SUGGEST COMMANDS
+#     Network Suggestions API — Android 10+.
+#
+#     suggest --ssid <ssid> [options]
+#         Menambahkan rekomendasi jaringan ke sistem agar device
+#         otomatis terhubung.
+#         --ssid <ssid>          Nama jaringan WiFi (wajib)
+#         --password <pass>      Password jaringan
+#         --security <type>      Tipe keamanan (WPA2, WPA3, dll)
+#         --hidden               Tandai sebagai jaringan hidden
+#
+# OPTIONS
+#     --address <mac>          MAC address untuk P2P connection
+#     --timeout <ms>           Timeout dalam milidetik (default: 10000)
+#     --service <name>         Nama service untuk WiFi Aware
+#     --service-info <text>    Informasi tambahan untuk Aware publish
+#     --bssid <mac>            BSSID untuk RTT ranging
+#     --ssid <ssid>            Nama jaringan WiFi
+#     --password <pass>        Password jaringan WiFi
+#     --security <type>        Tipe keamanan: WPA2, WPA3, WPA2_WPA3
+#     --hidden                 Tandai jaringan sebagai hidden
+#     --on / --off             Hidupkan/matikan WiFi
+#     -h, --help               Tampilkan panduan ini
+#
+# EXAMPLES
+#     # Melihat informasi koneksi WiFi saat ini
+#     termux-wifi connection-info
+#
+#     # Melihat hasil scan jaringan sekitar
+#     termux-wifi scan-info
+#
+#     # Mematikan WiFi
+#     termux-wifi enable --off
+#
+#     # Menyalakan hotspot (butuh konfirmasi user + izin)
+#     termux-wifi hotspot
+#
+#     # Mencari perangkat P2P di sekitar
+#     termux-wifi p2p-discover --timeout 15000
+#
+#     # Connect ke P2P device
+#     termux-wifi p2p-connect --address "AA:BB:CC:DD:EE:FF"
+#
+#     # Attach ke WiFi Aware
+#     termux-wifi aware-attach
+#
+#     # Publish service di WiFi Aware
+#     termux-wifi aware-publish --service "com.example.chat"
+#
+#     # Range ke access point via RTT
+#     termux-wifi rtt-range --bssid "AA:BB:CC:DD:EE:FF"
+#
+#     # Menyarankan jaringan ke sistem
+#     termux-wifi suggest --ssid "Kantor" --password "rahasia123"
+#
+#     # Menyarankan jaringan hidden
+#     termux-wifi suggest --ssid "RuangRapat" --password "meeting123" --hidden
+
+set -e -u
+
+SCRIPTNAME=termux-wifi
+
+show_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME <command> [options]
+
+Mengelola koneksi WiFi — informasi koneksi, scan jaringan, hotspot,
+WiFi Direct (P2P), WiFi Aware, RTT ranging, dan network suggestions.
+Semua perintah mengembalikan output JSON.
+
+COMMANDS:
+  connection-info              Show current WiFi connection info (JSON)
+  scan-info                    Show last WiFi scan results (JSON array)
+  enable [--on|--off]          Enable or disable WiFi
+  hotspot                      Start LocalOnlyHotspot (Android 8.0+)
+  p2p-discover [--timeout ms]  Discover P2P peers
+  p2p-connect --address <mac>  Connect to a P2P peer
+  p2p-group                    Show current P2P group info
+  aware-attach                 Attach to Wi-Fi Aware subsystem (8.0+)
+  aware-publish --service <name>  Publish an Aware service
+  aware-subscribe --service <name> Subscribe to an Aware service
+  rtt-range --bssid <mac>      Wi-Fi RTT ranging (Android 9.0+)
+  suggest --ssid <ssid> [...]  Suggest network for auto-join (10.0+)
+
+PERMISSIONS:
+  ACCESS_FINE_LOCATION (required for scan, hotspot, P2P, RTT)
+  CHANGE_WIFI_STATE / ACCESS_WIFI_STATE (enable/disable)
+  NEARBY_WIFI_DEVICES (Android 13+ for hotspot, P2P, Aware, RTT)
+
+OUTPUT:
+  Setiap perintah mengembalikan JSON — gunakan jq untuk memproses.
+  Lihat '$SCRIPTNAME <command> -h' untuk detail output per perintah.
+
+EXAMPLES:
+  # Show connection info
+  $SCRIPTNAME connection-info | jq '.ssid, .rssi'
+
+  # Scan available networks
+  $SCRIPTNAME scan-info | jq '.[].ssid'
+
+  # Start hotspot
+  $SCRIPTNAME hotspot
+
+  # Discover P2P devices for 5 seconds
+  $SCRIPTNAME p2p-discover --timeout 5000
+
+Run '$SCRIPTNAME <command> -h' for detailed command-specific help.
+EOF
+    exit 0
+}
+
+show_connection_info_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME connection-info
+
+Menampilkan informasi lengkap koneksi WiFi yang sedang aktif. Perangkat
+harus terhubung ke jaringan WiFi untuk mendapatkan hasil.
+
+Perintah ini tidak menerima argumen tambahan.
+
+Output JSON (field-field yang dikembalikan):
+  SSID               Nama jaringan WiFi yang terhubung
+  BSSID              Alamat MAC access point (Basic Service Set Identifier)
+  RSSI               Received Signal Strength Indicator dalam dBm
+                     (semakin mendekati 0, semakin kuat sinyal; -30 dBm sangat
+                     kuat, -90 dBm sangat lemah)
+  frequency          Frekuensi dalam MHz (2412–2472 untuk 2.4 GHz,
+                     5180–5825 untuk 5 GHz, 5955–7115 untuk 6 GHz)
+  channel            Nomor channel WiFi (turun dari frequency)
+  link_speed         Kecepatan koneksi dalam Mbps
+  ip_address         Alamat IPv4 perangkat pada jaringan lokal
+  mac_address        Alamat MAC interface WiFi perangkat
+  supplicant_state   Status koneksi (COMPLETED, SCANNING, AUTHENTICATING, dll)
+  wifi_generation    Generasi WiFi (802.11n, 802.11ac, 802.11ax, 802.11be)
+
+Requires:
+  - WiFi dalam keadaan ON dan terhubung ke suatu jaringan
+  - Tidak ada izin khusus yang diperlukan (informasi bersifat lokal)
+
+Contoh:
+  termux-wifi connection-info
+EOF
+}
+
+show_scan_info_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME scan-info
+
+Menampilkan daftar jaringan WiFi yang terdeteksi dari hasil scan terakhir.
+Data berasal dari scan terbaru yang dilakukan sistem (bukan real-time).
+
+Perintah ini tidak menerima argumen tambahan.
+
+Output JSON (setiap elemen dalam array):
+  SSID             Nama jaringan WiFi (dapat kosong untuk jaringan tersembunyi)
+  BSSID            Alamat MAC access point
+  RSSI             Received Signal Strength Indicator dalam dBm
+  frequency        Frekuensi dalam MHz
+  channel          Nomor channel WiFi
+  capabilities     Tipe keamanan/otentikasi: WPA2, WPA3, OWE (Enhanced Open),
+                   WPA2_WPA3, SAE, PSK, EAP, atau kombinasi
+  wifi_standard    Standar WiFi: 802.11b, 802.11g, 802.11n, 802.11ac, 802.11ax
+
+Catatan:
+  - Memerlukan Location dalam keadaan aktif (Android 8+ / API 26+)
+  - Izin ACCESS_FINE_LOCATION harus diberikan
+  - Hasil scan BUKAN real-time; sistem mengembalikan cache scan terakhir
+  - Panggil beberapa kali dengan jeda untuk mendapatkan hasil terbaru
+  - Di Android 12+, scan terbatas maksimal 4 kali per 2 menit per aplikasi
+
+Contoh:
+  termux-wifi scan-info
+EOF
+}
+
+show_enable_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME enable [--on|--off]
+
+Menghidupkan atau mematikan WiFi pada perangkat.
+
+Options:
+  --on     Menghidupkan WiFi (default jika opsi tidak diberikan)
+  --off    Mematikan WiFi
+
+Output JSON:
+  { "enabled": true|false }
+
+Catatan:
+  - Pada beberapa versi Android, sistem mungkin menampilkan dialog
+    konfirmasi sebelum mengubah status WiFi
+  - Aplikasi lain atau kebijakan sistem dapat mencegah perubahan status
+  - Gunakan tanpa argumen untuk menyalakan WiFi (default)
+
+Contoh:
+  termux-wifi enable         # menyalakan WiFi
+  termux-wifi enable --off   # mematikan WiFi
+  termux-wifi enable --on    # menyalakan WiFi (eksplisit)
+EOF
+}
+
+show_hotspot_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME hotspot
+
+Memulai LocalOnlyHotspot. Sistem akan menampilkan dialog konfirmasi
+ke pengguna. Setelah disetujui, hotspot berjalan dengan SSID dan
+password acak yang dikembalikan dalam JSON. Hotspot akan terus berjalan
+selama skrip berlangsung; tekan Ctrl+C untuk menghentikannya.
+
+Requires:
+  - Android 8.0+ (API 26+)
+  - NEARBY_WIFI_DEVICES (Android 13+ / API 33+)
+  - ACCESS_FINE_LOCATION (selalu diperlukan oleh system service)
+  - WiFi dalam keadaan ON
+
+Output JSON:
+  { "ssid": "DIRECT-...", "password": "xxxxx", "frequency": 2450 }
+
+  ssid       Nama jaringan hotspot (dibuat acak oleh sistem, tidak bisa
+             dikustomisasi)
+  password   Password jaringan (dibuat acak oleh sistem)
+  frequency  Frekuensi dalam MHz (2450 = 2.4 GHz, 5180 = 5 GHz)
+
+Catatan:
+  - Hanya SATU hotspot yang dapat aktif per UID (application) dalam satu waktu
+  - SSID dan password TIDAK dapat dikustomisasi—ditentukan oleh sistem
+  - Hotspot berhenti ketika tidak ada client yang terhubung (idle timeout)
+  - Pada beberapa device, hotspot berhenti saat aplikasi masuk ke background
+  - Gunakan Ctrl+C untuk menghentikan hotspot secara manual
+  - Jika hotspot ditolak (kebijakan device), lihat log sistem untuk detail
+
+Contoh:
+  termux-wifi hotspot
+EOF
+}
+
+show_p2p_discover_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME p2p-discover [--timeout ms]
+
+Menemukan perangkat WiFi Direct (P2P) di sekitar. Setelah penemuan,
+gunakan p2p-connect dengan alamat device yang ditemukan untuk
+membuat koneksi.
+
+Options:
+  --timeout <ms>  Durasi penemuan dalam milidetik (default: 10000 / 10 detik)
+
+Output JSON (array of objects):
+  { "peers": [
+      { "device_name": "NamaDevice", "device_address": "AA:BB:CC:DD:EE:FF",
+        "primary_device_type": "10-0050F204-5", "status": "available" },
+      ...
+    ] }
+
+  device_name       Nama perangkat yang ditemukan
+  device_address    Alamat MAC perangkat (digunakan untuk p2p-connect)
+  status            available, invited, connected, failed
+
+Requires:
+  - WiFi dalam keadaan ON
+  - Location dalam keadaan ON (Android 8+)
+  - Izin ACCESS_FINE_LOCATION harus diberikan
+
+Catatan:
+  - Gunakan --timeout yang cukup lama (min 10000) untuk penemuan optimal
+  - Perangkat tujuan juga harus menjalankan WiFi Direct discovery
+  - Hasil discovery bersifat sementara; gunakan alamat segera
+
+Contoh:
+  termux-wifi p2p-discover --timeout 15000
+EOF
+}
+
+show_p2p_connect_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME p2p-connect --address <mac>
+
+Melakukan koneksi ke perangkat WiFi Direct (P2P) yang sudah ditemukan
+sebelumnya melalui p2p-discover. Koneksi akan membuat P2P group secara
+otomatis antara kedua perangkat.
+
+Options:
+  --address <mac>  Alamat MAC perangkat tujuan (wajib). Dapat diperoleh
+                   dari hasil perintah p2p-discover.
+
+Output JSON:
+  { "status": "connected", "device_address": "AA:BB:CC:DD:EE:FF",
+    "group_owner": true|false }
+
+  status           Hasil koneksi: connected, failed, atau rejected
+  device_address   Alamat MAC perangkat yang dihubungi
+  group_owner      Apakah perangkat ini menjadi group owner (true/false)
+
+Requires:
+  - Alamat MAC yang valid dari hasil p2p-discover
+  - WiFi dalam keadaan ON
+
+Catatan:
+  - Gunakan p2p-group untuk melihat informasi koneksi setelah berhasil
+  - Koneksi bersifat peer-to-peer tanpa perlu access point
+  - Jika koneksi gagal, pastikan perangkat tujuan masih dalam jangkauan
+
+Contoh:
+  termux-wifi p2p-connect --address "AA:BB:CC:DD:EE:FF"
+EOF
+}
+
+show_p2p_group_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME p2p-group
+
+Menampilkan informasi group WiFi Direct (P2P) yang sedang aktif.
+Hanya berfungsi ketika perangkat sedang terhubung dalam suatu P2P group
+(setelah p2p-connect berhasil).
+
+Perintah ini tidak menerima argumen tambahan.
+
+Output JSON:
+  { "group_owner": true|false, "network_name": "DIRECT-...",
+    "passphrase": "xxxxx", "interface": "p2p-wlan0-...",
+    "clients": [ "AA:BB:CC:DD:EE:FF" ] }
+
+  group_owner    Apakah perangkat ini group owner
+  network_name   Nama jaringan P2P group (SSID)
+  passphrase     Passphrase untuk bergabung ke group
+  interface      Nama interface P2P yang digunakan
+  clients        Daftar alamat MAC client yang terhubung
+
+Catatan:
+  - Hanya menampilkan hasil jika sedang dalam P2P group yang aktif
+  - Setelah koneksi diputus, data group akan hilang
+
+Contoh:
+  termux-wifi p2p-group
+EOF
+}
+
+show_aware_attach_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME aware-attach
+
+Melakukan attach ke subsystem Wi-Fi Aware (NAN — Neighbor Awareness
+Networking). Perintah ini WAJIB dijalankan SEBELUM aware-publish atau
+aware-subscribe. Attach menyediakan session ID yang diperlukan untuk
+komunikasi Aware selanjutnya.
+
+Perintah ini tidak menerima argumen tambahan.
+
+Requires:
+  - Android 8.0+ (API 26+)
+  - WiFi dalam keadaan ON
+  - Location dalam keadaan ON
+  - Device harus mendukung Wi-Fi Aware (tidak semua device memilikinya)
+
+Output JSON:
+  { "status": "attached", "session_id": 123 }
+
+  session_id   ID session yang akan digunakan untuk publish/subscribe
+
+Catatan:
+  - Jika attach gagal, kemungkinan device tidak mendukung Wi-Fi Aware
+  - Attach berlaku untuk durasi tertentu; mungkin perlu re-attach
+    jika session berakhir karena idle
+
+Contoh:
+  termux-wifi aware-attach
+EOF
+}
+
+show_aware_publish_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME aware-publish --service <name> [--service-info <text>]
+
+Mempublikasikan suatu service di jaringan Wi-Fi Aware (NAN) agar dapat
+ditemukan oleh perangkat lain yang melakukan subscribe. Perintah ini
+hanya berfungsi setelah aware-attach berhasil.
+
+Options:
+  --service <name>       Nama atau tipe service yang dipublikasikan (wajib).
+                         Contoh: "com.example.chat", "_http._tcp"
+  --service-info <text>  Informasi tambahan berupa teks yang akan diterima
+                         oleh subscriber (optional)
+
+Output JSON:
+  { "status": "published", "service_name": "..." }
+
+Requires:
+  - aware-attach sudah dilakukan dan berhasil
+  - WiFi dalam keadaan ON
+
+Catatan:
+  - Service name harus unik dalam konteks penggunaan; gunakan format
+    reverse domain untuk menghindari konflik
+  - Perangkat lain hanya bisa menemukan service ini jika mereka melakukan
+    aware-subscribe dengan service name yang sama
+  - Publikasi bersifat sementara; berhenti saat session berakhir
+
+Contoh:
+  termux-wifi aware-publish --service "com.example.chat" --service-info "v1.0"
+EOF
+}
+
+show_aware_subscribe_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME aware-subscribe --service <name>
+
+Mencari (subscribe) service tertentu di jaringan Wi-Fi Aware (NAN).
+Ketika perangkat lain mempublikasikan service dengan nama yang cocok,
+sistem akan memberi notifikasi. Perintah ini hanya berfungsi setelah
+aware-attach berhasil.
+
+Options:
+  --service <name>  Nama service yang dicari (wajib). Harus sama dengan
+                    service name yang dipublikasikan oleh publisher.
+
+Output JSON:
+  { "status": "subscribed", "service_name": "...",
+    "peers": [ { "address": "...", "service_info": "..." } ] }
+
+  status         Status subscribe (subscribed / error)
+  service_name   Nama service yang dicari
+  peers          Daftar perangkat yang mempublikasikan service ini
+                 (terisi saat ditemukan)
+
+Requires:
+  - aware-attach sudah dilakukan dan berhasil
+  - WiFi dalam keadaan ON
+
+Catatan:
+  - Subscribe bersifat pasif; hasil akan muncul ketika ada publisher
+    dengan service name yang cocok dalam jangkauan
+  - Jika tidak ada hasil, kemungkinan belum ada perangkat yang
+    mempublikasikan service tersebut di sekitar
+
+Contoh:
+  termux-wifi aware-subscribe --service "com.example.chat"
+EOF
+}
+
+show_rtt_range_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME rtt-range --bssid <mac>
+
+Melakukan ranging (pengukuran jarak secara akurat) ke access point
+yang mendukung Wi-Fi Round Trip Time (IEEE 802.11mc). Teknologi ini
+memungkinkan estimasi jarak fisik dengan akurasi hingga 1–2 meter.
+
+Options:
+  --bssid <mac>  BSSID (alamat MAC) dari access point tujuan (wajib).
+                 Dapat diperoleh dari hasil perintah scan-info.
+
+Output JSON:
+  { "distance_mm": 4500, "distance_meters": 4.5,
+    "standard_deviation_mm": 500, "status": "success" }
+
+  distance_mm         Jarak estimasi dalam milimeter
+  distance_meters     Jarak estimasi dalam meter (float)
+  standard_deviation  Standar deviasi pengukuran dalam milimeter
+                      (semakin kecil semakin akurat)
+  status              success / failed / not_supported
+
+Requires:
+  - Android 9.0+ (API 28+)
+  - ACCESS_FINE_LOCATION (izin harus diberikan)
+  - Location dalam keadaan ON
+  - WiFi dalam keadaan ON
+  - Access point tujuan harus mendukung Wi-Fi RTT (802.11mc)
+  - Tidak semua access point mendukung fitur ini
+
+Catatan:
+  - Hanya berfungsi dengan access point yang memiliki chipset RTT-capable
+  - Akurasi bervariasi tergantung lingkungan (interferensi, multipath)
+  - Beberapa AP mungkin tidak merespon walau mendukung RTT
+  - Gunakan hasil scan-info untuk menemukan BSSID AP terdekat
+
+Contoh:
+  termux-wifi rtt-range --bssid "AA:BB:CC:DD:EE:FF"
+EOF
+}
+
+show_suggest_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME suggest --ssid <ssid> [options]
+
+Menambahkan rekomendasi jaringan WiFi ke sistem menggunakan Network
+Suggestions API (Android 10+ / API 29+). Sistem akan secara otomatis
+menghubungkan perangkat ke jaringan yang disarankan ketika dalam
+jangkauan, tanpa perlu interaksi manual pengguna.
+
+Options:
+  --ssid <ssid>        Nama jaringan WiFi (wajib)
+  --password <pass>    Password jaringan WiFi (jika ada)
+  --security <type>    Tipe keamanan jaringan:
+                       WPA2       WPA2-PSK (default)
+                       WPA3       WPA3-SAE
+                       WPA2_WPA3  Mixed mode (WPA2 atau WPA3)
+                       NONE       Open network (tanpa password)
+  --hidden             Tandai jaringan sebagai hidden (SSID tidak
+                       dipublikasikan; default: tidak hidden)
+
+Output JSON:
+  { "status": "suggested", "ssid": "...", "message": "..." }
+
+  status   suggested / error / duplicate
+  ssid     Nama jaringan yang disarankan
+
+Requires:
+  - Android 10.0+ (API 29+)
+  - Location dalam keadaan ON
+  - Izin ACCESS_FINE_LOCATION
+
+Catatan:
+  - Sistem mungkin menampilkan notasi bahwa jaringan dikelola oleh aplikasi
+  - Beberapa saran dapat ditambahkan dari waktu ke waktu
+  - Jika jaringan sudah tersimpan, saran baru akan menggantikannya
+  - Sistem tetap mempertimbangkan preferensi pengguna; jaringan yang
+    disarankan bisa diterima atau ditolak oleh pengguna di Settings
+  - Untuk jaringan terbuka (tanpa password), gunakan --security NONE
+
+Contoh:
+  termux-wifi suggest --ssid "Kantor" --password "rahasia123"
+  termux-wifi suggest --ssid "WiFi Umum" --security NONE
+  termux-wifi suggest --ssid "RuangRapat" --password "meeting123" --hidden
+EOF
+}
+
+call_api() {
+    @TERMUX_PREFIX@/bin/termux-api Wifi "$@"
+}
+
+cmd_connection_info() {
+    case "${1:-}" in
+        -h|--help) show_connection_info_usage; exit 0 ;;
+    esac
+    call_api --es command connection-info
+}
+
+cmd_scan_info() {
+    case "${1:-}" in
+        -h|--help) show_scan_info_usage; exit 0 ;;
+    esac
+    call_api --es command scan-info
+}
+
+cmd_enable() {
+    local state=true
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_enable_usage; exit 0 ;;
+            --on)  state=true; shift ;;
+            --off) state=false; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    call_api --es command enable --ez enabled "$state"
+}
+
+cmd_hotspot() {
+    case "${1:-}" in
+        -h|--help) show_hotspot_usage; exit 0 ;;
+    esac
+    call_api --es command hotspot
+}
+
+cmd_p2p_discover() {
+    local timeout=10000
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_p2p_discover_usage; exit 0 ;;
+            --timeout) timeout="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    call_api --es command p2p-discover --ei timeout "$timeout"
+}
+
+cmd_p2p_connect() {
+    local address=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_p2p_connect_usage; exit 0 ;;
+            --address) address="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Usage: $SCRIPTNAME p2p-connect --address <mac>" >&2; exit 1; }
+    call_api --es command p2p-connect --es address "$address"
+}
+
+cmd_p2p_group() {
+    case "${1:-}" in
+        -h|--help) show_p2p_group_usage; exit 0 ;;
+    esac
+    call_api --es command p2p-group
+}
+
+cmd_aware_attach() {
+    case "${1:-}" in
+        -h|--help) show_aware_attach_usage; exit 0 ;;
+    esac
+    call_api --es command aware-attach
+}
+
+cmd_aware_publish() {
+    local service_name="" service_info=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_aware_publish_usage; exit 0 ;;
+            --service)      service_name="$2"; shift 2 ;;
+            --service-info) service_info="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$service_name" ] && { echo "Usage: $SCRIPTNAME aware-publish --service <name>" >&2; exit 1; }
+    local extras=(--es command aware-publish --es service_name "$service_name")
+    [ -n "$service_info" ] && extras+=(--es service_info "$service_info")
+    call_api "${extras[@]}"
+}
+
+cmd_aware_subscribe() {
+    local service_name=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_aware_subscribe_usage; exit 0 ;;
+            --service) service_name="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$service_name" ] && { echo "Usage: $SCRIPTNAME aware-subscribe --service <name>" >&2; exit 1; }
+    call_api --es command aware-subscribe --es service_name "$service_name"
+}
+
+cmd_rtt_range() {
+    local bssid=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_rtt_range_usage; exit 0 ;;
+            --bssid) bssid="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$bssid" ] && { echo "Usage: $SCRIPTNAME rtt-range --bssid <mac>" >&2; exit 1; }
+    call_api --es command rtt-range --es bssid "$bssid"
+}
+
+cmd_suggest() {
+    local ssid="" password="" security="" hidden=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_suggest_usage; exit 0 ;;
+            --ssid)     ssid="$2"; shift 2 ;;
+            --password) password="$2"; shift 2 ;;
+            --security) security="$2"; shift 2 ;;
+            --hidden)   hidden=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$ssid" ] && { echo "Usage: $SCRIPTNAME suggest --ssid <ssid> [--password <pass>]" >&2; exit 1; }
+    local extras=(--es command suggest --es ssid "$ssid")
+    [ -n "$password" ] && extras+=(--es password "$password")
+    [ -n "$security" ] && extras+=(--es security_type "$security")
+    [ "$hidden" = true ] && extras+=(--ez is_hidden true)
+    call_api "${extras[@]}"
+}
+
+# ─── Main dispatch ────────────────────────────────────────────────────────
+CMD="${1:-}"
+[ -z "$CMD" ] && { show_usage >&2; exit 1; }
+[ "$CMD" = "-h" ] || [ "$CMD" = "--help" ] && show_usage
+shift
+
+case "$CMD" in
+    connection-info)  cmd_connection_info "$@" ;;
+    scan-info)        cmd_scan_info "$@" ;;
+    enable)           cmd_enable "$@" ;;
+    hotspot)          cmd_hotspot "$@" ;;
+    p2p-discover)     cmd_p2p_discover "$@" ;;
+    p2p-connect)      cmd_p2p_connect "$@" ;;
+    p2p-group)        cmd_p2p_group "$@" ;;
+    aware-attach)     cmd_aware_attach "$@" ;;
+    aware-publish)    cmd_aware_publish "$@" ;;
+    aware-subscribe)  cmd_aware_subscribe "$@" ;;
+    rtt-range)        cmd_rtt_range "$@" ;;
+    suggest)          cmd_suggest "$@" ;;
+    -h|--help)        show_usage ;;
+    *)                echo "Unknown command: $CMD" >&2; show_usage >&2; exit 1 ;;
+esac

@@ -1,0 +1,88 @@
+#!/bin/sh
+#
+# NAME
+#     termux-camera-info — Get information about device camera(s)
+#
+# SYNOPSIS
+#     termux-camera-info
+#
+# DESCRIPTION
+#     Enumerate all cameras on the device and query their capabilities.
+#     Returns JSON array of camera objects with properties:
+#     camera ID (0-based index), facing direction (front/back/external),
+#     sensor orientation in degrees, supported resolutions (width x height)
+#     for both photo capture and video recording, focal length range,
+#     auto-focus modes, flash modes, and white balance modes.
+#
+#     Use the camera ID from this output with termux-camera-photo -c
+#     to select a specific camera for photo capture.
+#
+# OPTIONS
+#     -h, --help  Display this help message and exit.
+#
+# EXAMPLES
+#     termux-camera-info
+#
+set -e -u
+
+SCRIPTNAME=termux-camera-info
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Enumerate all cameras on the device and query their detailed capabilities.
+Use the camera ID from this output with termux-camera-photo -c to select
+a specific camera for photo capture. Returns detailed metadata about each
+camera sensor including resolution, focal lengths, and supported modes.
+
+OUTPUT:
+  This command outputs a JSON array to stdout. Each camera object has:
+  id (string) — Camera identifier (use with termux-camera-photo -c <id>)
+  facing (string) — Camera direction: "front" or "back"
+  jpeg_output_sizes (array) — List of {width, height} objects for JPEG capture
+  focal_lengths (array of float) — Available optical focal lengths in mm
+  auto_exposure_modes (array of string) — Supported AE modes:
+    CONTROL_AE_MODE_OFF, CONTROL_AE_MODE_ON, CONTROL_AE_MODE_ON_ALWAYS_FLASH,
+    CONTROL_AE_MODE_ON_AUTO_FLASH, CONTROL_AE_MODE_ON_AUTO_FLASH_REDEYE,
+    CONTROL_AE_MODE_ON_EXTERNAL_FLASH
+  physical_size (object) — Sensor physical dimensions {width, height} in mm
+  capabilities (array of string) — Camera capabilities including:
+    backward_compatible, burst_capture, constrained_high_speed_video,
+    depth_output, logical_multi_camera, manual_post_processing, manual_sensor,
+    monochrome, motion_tracking, raw, yuv_reprocessing, etc.
+
+PERMISSIONS:
+  Android 1+ — android.permission.CAMERA
+  Requires the user to grant "Camera" permission in Android Settings.
+
+OPTIONS:
+  -h, --help    Display this help message and exit.
+
+EXAMPLES:
+  # Show all camera info
+  $SCRIPTNAME
+
+  # List camera IDs and facing direction
+  $SCRIPTNAME | jq '[.[] | {id, facing}]'
+
+  # Get JPEG resolutions for the first camera
+  $SCRIPTNAME | jq '.[0].jpeg_output_sizes'
+
+  # Check if a camera supports raw capture
+  $SCRIPTNAME | jq '.[] | select(.capabilities | index("raw")) | {id}'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api CameraInfo

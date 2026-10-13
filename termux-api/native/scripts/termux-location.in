@@ -1,0 +1,124 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-location — Get device location
+#
+# SYNOPSIS
+#     termux-location [-p provider] [-r request]
+#
+# DESCRIPTION
+#     Get the device's current location using Android's LocationManager API.
+#     Supports three providers:
+#     - gps:      GPS satellite positioning (most accurate, works outdoors,
+#                 requires ACCESS_FINE_LOCATION, drains more battery)
+#     - network:  Network-based positioning (WiFi/cell towers, faster but
+#                 less accurate, requires ACCESS_COARSE_LOCATION)
+#     - passive:  Listen for location updates from other apps without
+#                 requesting location actively (no extra battery drain)
+#
+#     Three request types: once (single fix), last (last known location),
+#     or updates (continuous stream). Output is a JSON object with
+#     latitude, longitude, altitude, bearing, speed, accuracy, provider,
+#     and timestamp. Requires location provider to be enabled on device.
+#     On Android 10+, ACCESS_FINE_LOCATION is required for GPS provider.
+#
+# OPTIONS
+#     -p provider    Location provider: gps|network|passive (default: gps)
+#     -r request     Request type: once|last|updates (default: once)
+#     -h             Show this help
+#
+# EXAMPLES
+#     # Get current location once using GPS
+#     termux-location -p gps -r once
+#
+#     # Get last known location
+#     termux-location -r last
+#
+set -e -u
+
+SCRIPTNAME=termux-location
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [-p provider] [-r request]
+
+Get the device's current location using the specified provider and
+request type. Supports GPS, network, and passive providers for
+single-shot, last-known, or continuous location updates.
+
+OUTPUT:
+  JSON object with location data:
+    latitude     (float)  — Latitude in degrees
+    longitude    (float)  — Longitude in degrees
+    altitude     (double) — Altitude in meters above WGS84 ellipsoid
+    accuracy     (float)  — Estimated accuracy radius in meters
+    bearing      (float)  — Bearing in degrees (if available)
+    speed        (float)  — Speed in m/s (if available)
+    time         (long)   — UTC timestamp in milliseconds since epoch
+    provider     (string) — Provider that generated this fix
+                             (gps, network, passive, fused)
+
+PERMISSIONS:
+  android.permission.ACCESS_FINE_LOCATION (for GPS provider)
+  android.permission.ACCESS_COARSE_LOCATION (for network provider)
+
+OPTIONS:
+  -h              Show this help message.
+  -p <provider>   Location provider. One of: gps (default, most
+                  accurate), network (faster, less accurate), passive
+                  (listen without requesting).
+  -r <request>    Request type. One of: once (default, one fix),
+                  last (last known location, fastest), updates
+                  (continuous stream of location updates).
+
+EXAMPLES:
+  # Get a single GPS fix (may take a few seconds)
+  $SCRIPTNAME
+
+  # Get last known location (instant)
+  $SCRIPTNAME -r last
+
+  # Get continuous network-based updates
+  $SCRIPTNAME -p network -r updates
+
+  # Extract latitude and longitude
+  $SCRIPTNAME | jq '{latitude, longitude}'
+EOF
+    exit 0
+}
+
+validate_provider () {
+    PROVIDER=$1
+    case "$PROVIDER" in
+        gps) ;;
+        network) ;;
+        passive) ;;
+        *) echo "$SCRIPTNAME: Unsupported provider: '$PROVIDER'"; exit 1;;
+    esac
+}
+
+validate_request () {
+    REQUEST=$1
+    case "$REQUEST" in
+        once) ;;
+        last) ;;
+        updates) ;;
+        *) echo "$SCRIPTNAME: Unsupported request: '$REQUEST'"; exit 1;;
+    esac
+}
+
+PARAMS=""
+
+while getopts :hr:p: option
+do
+    case "$option" in
+        h) show_usage;;
+        r) validate_request "$OPTARG"; PARAMS="$PARAMS --es request $OPTARG";;
+        p) validate_provider "$OPTARG"; PARAMS="$PARAMS --es provider $OPTARG";;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api Location $PARAMS

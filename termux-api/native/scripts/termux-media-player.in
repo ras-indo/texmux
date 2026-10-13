@@ -1,0 +1,200 @@
+#!@TERMUX_PREFIX@/bin/bash
+#
+# NAME
+#     termux-media-player — Control media playback
+#
+# SYNOPSIS
+#     termux-media-player <command> [args]
+#
+# DESCRIPTION
+#     Control media playback. Supports play, pause, stop, and info
+#     commands. Can play a specified media file or resume paused
+#     playback. Calls termux-api MediaPlayer.
+#
+# COMMANDS
+#     help             Show this help
+#     info             Display current playback information
+#     play             Resume playback if paused
+#     play <file>      Play specified media file
+#     pause            Pause playback
+#     stop             Stop playback
+#
+# EXAMPLES
+#     # Play a media file
+#     termux-media-player play /path/to/file.mp3
+#
+#     # Pause current playback
+#     termux-media-player pause
+#
+set -e
+
+SCRIPTNAME=termux-media-player
+
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <command> [args]
+
+Control media playback on the device using Android's MediaPlayer API.
+Supports play, pause, stop, and info commands.
+
+OUTPUT:
+  Commands return JSON status via the termux-api MediaPlayer endpoint.
+  The 'info' command returns:
+    file           (string) — Current media file path
+    duration       (int)    — Total duration in milliseconds
+    position       (int)    — Current position in milliseconds
+    state          (string) — "playing", "paused", or "stopped"
+    audioSessionId (int)    — Audio session identifier
+
+COMMANDS:
+  help                 Show this help message.
+  info                 Display current playback info (JSON).
+  play [file]          Play a media file, or resume if paused without
+                       arguments. Only one file at a time.
+  pause                Pause playback at current position.
+  stop                 Stop playback and release resources.
+
+PERMISSIONS:
+  None required (uses MediaPlayer API for local files).
+
+EXAMPLES:
+  # Play a file
+  $SCRIPTNAME play /sdcard/Music/song.mp3
+
+  # Pause and resume
+  $SCRIPTNAME pause
+  $SCRIPTNAME play
+
+  # Check what's playing
+  $SCRIPTNAME info
+
+  # Stop playback
+  $SCRIPTNAME stop
+
+Run '$SCRIPTNAME <command> -h' for command-specific help.
+EOF
+}
+
+show_info_usage() {
+    echo "Usage: $SCRIPTNAME info"
+    echo
+    echo "Display current media playback information."
+    echo
+    echo "Arguments:"
+    echo "  This command takes no arguments."
+    echo
+    echo "Output:"
+    echo "  JSON object with the following fields:"
+    echo "    - file:            Path to the current media file."
+    echo "    - duration:        Total duration of the media."
+    echo "    - position:        Current playback position."
+    echo "    - state:           Playback state (playing/paused/stopped)."
+    echo "    - audioSessionId:  Audio session identifier."
+    echo
+    echo "Notes:"
+    echo "  Returns empty output if nothing is currently playing."
+}
+
+show_play_usage() {
+    echo "Usage: $SCRIPTNAME play [file]"
+    echo
+    echo "Play a media file or resume paused playback."
+    echo
+    echo "Arguments:"
+    echo "  file  Path to the media file to play (optional)."
+    echo "        If omitted, resumes playback from pause."
+    echo
+    echo "Supported formats:"
+    echo "  MP3, WAV, FLAC, OGG, M4A, AAC, WMA, and others"
+    echo "  supported by the Android MediaPlayer framework."
+    echo
+    echo "Behavior:"
+    echo "  Only one file can be played at a time."
+    echo "  Playback continues in the background."
+    echo "  Use pause/stop to control playback."
+    echo
+    echo "Output:"
+    echo "  Returns JSON status via termux-api."
+}
+
+show_pause_usage() {
+    echo "Usage: $SCRIPTNAME pause"
+    echo
+    echo "Pause the currently playing media."
+    echo
+    echo "Arguments:"
+    echo "  This command takes no arguments."
+    echo
+    echo "Behavior:"
+    echo "  Pauses playback at the current position."
+    echo "  Use 'play' without arguments to resume."
+}
+
+show_stop_usage() {
+    echo "Usage: $SCRIPTNAME stop"
+    echo
+    echo "Stop playback and release media resources."
+    echo
+    echo "Arguments:"
+    echo "  This command takes no arguments."
+    echo
+    echo "Behavior:"
+    echo "  Stops playback and releases the media player."
+    echo "  Use 'play <file>' to start a new playback."
+}
+
+main() {
+    @TERMUX_PREFIX@/bin/termux-api MediaPlayer "$@"
+}
+
+CMD="${1:-}"
+[ -z "$CMD" ] && { show_usage; exit 0; }
+[ "$CMD" = "-h" ] || [ "$CMD" = "--help" ] && { show_usage; exit 0; }
+shift
+
+# Handle per-command help
+case "${1:-}" in
+    -h|--help)
+        case "$CMD" in
+            play)  show_play_usage ;;
+            info)  show_info_usage ;;
+            pause) show_pause_usage ;;
+            stop)  show_stop_usage ;;
+            *)     show_usage ;;
+        esac
+        exit 0 ;;
+esac
+
+case "$CMD" in
+    "play" )
+        if [ $# -gt 1 ]; then
+            echo "Error! $SCRIPTNAME can only play one file at a time!" >&2
+            exit 1
+        elif [ $# -gt 0 ]; then
+            if [ ! -f "$1" ]; then
+                echo "Error: '$1' is not a file!" >&2
+                exit 1
+            else
+                main -a play --es file "$(realpath "$1")"
+            fi
+        else
+            main -a resume
+        fi
+        ;;
+    "info" | "pause" | "stop" )
+        if [ $# -gt 0 ]; then
+            echo "Error! '$CMD' takes no arguments!" >&2
+            exit 1
+        else
+            main -a "$CMD"
+        fi
+        ;;
+    "help" )
+        show_usage
+        ;;
+    * )
+        echo "$SCRIPTNAME: Invalid command: '$CMD'" >&2
+        show_usage >&2
+        exit 1
+        ;;
+esac

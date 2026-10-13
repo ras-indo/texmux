@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Normal + Pressed -->
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#334155" />
+        </shape>
+    </item>
+    <!-- Activated + Pressed: cyan left accent + pressed body -->
+    <item android:state_activated="true" android:state_pressed="true">
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="#06B6D4" />
+                </shape>
+            </item>
+            <item android:left="4dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="#334155" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <!-- Activated only: cyan left accent + #1E293B body -->
+    <item android:state_activated="true">
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="#06B6D4" />
+                </shape>
+            </item>
+            <item android:left="4dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="#1E293B" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <!-- Selected (drop target): cyan top bar -->
+    <item android:state_selected="true">
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="#06B6D4" />
+                </shape>
+            </item>
+            <item android:top="4dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="#1E293B" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <!-- Default: transparent -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</selector>

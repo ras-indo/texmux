@@ -1,0 +1,119 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-tts-speak — Speak text with TTS engine
+#
+# SYNOPSIS
+#     termux-tts-speak [-e engine] [-l language] [-n region] [-v variant] [-p pitch] [-r rate] [-s stream] [text]
+#
+# DESCRIPTION
+#     Convert text to speech and play it through the device's audio
+#     output using a system TTS (Text-To-Speech) engine. The text to
+#     speak is provided as command-line arguments or piped via stdin
+#     if no arguments are given.
+#
+#     Multiple TTS engines may be installed (Google TTS, Samsung TTS,
+#     etc.). Use termux-tts-engines to list available engines. Language,
+#     region, and variant options control pronunciation. Pitch (0.5-2.0)
+#     and rate (0.5-2.0) adjust voice characteristics.
+#
+#     The audio stream option (-s) determines which audio channel is
+#     used, affecting volume and routing behavior. Use the
+#     NOTIFICATION stream for alerts or MUSIC for media playback.
+#
+# OPTIONS
+#     -e engine   TTS engine to use (see termux-tts-engines)
+#     -l language Language to speak in
+#     -n region   Region of the language
+#     -v variant  Variant of the language
+#     -p pitch    Pitch (1.0 is normal, lower/higher changes tone)
+#     -r rate     Speech rate (1.0 is normal)
+#     -s stream   Audio stream: ALARM, MUSIC, NOTIFICATION, RING, SYSTEM, VOICE_CALL
+#
+# EXAMPLES
+#     # Speak with default settings
+#     termux-tts-speak "Hello"
+#
+#     # Speak with a specific language and pitch
+#     termux-tts-speak -l id -p 1.5 "Halo dunia"
+#
+set -e -u
+
+SCRIPTNAME=termux-tts-speak
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [-e engine] [-l language] [-n region] [-v variant]
+       [-p pitch] [-r rate] [-s stream] [text-to-speak]
+
+Speak text using the device's text-to-speech (TTS) engine. Text can
+be provided as arguments or piped via stdin. If no argument or stdin
+is given, there is a 3-second input delay for interactive typing.
+
+OUTPUT:
+  JSON object with:
+    utteranceId (string) — Unique identifier for the spoken utterance
+
+PERMISSIONS:
+  None required for TTS output (uses TextToSpeech API).
+
+OPTIONS:
+  -h                Show this help message.
+  -e <engine>       TTS engine to use. See termux-tts-engines for the
+                    list of available engines. Uses system default if
+                    not specified.
+  -l <language>     Language code (e.g., "en", "de", "fr", "id").
+                    May be unsupported by the selected engine.
+  -n <region>       Region/variant (e.g., "US", "GB" for English).
+  -v <variant>      Voice variant.
+  -p <pitch>        Speech pitch. 1.0 is normal. Lower = deeper,
+                    higher = more shrill. Range: ~0.1 to ~2.0.
+  -r <rate>         Speech rate. 1.0 is normal. 0.5 = half speed,
+                    2.0 = double speed.
+  -s <stream>       Audio stream for playback. One of:
+                    ALARM, MUSIC, NOTIFICATION (default),
+                    RING, SYSTEM, VOICE_CALL.
+
+EXAMPLES:
+  # Simple speech
+  $SCRIPTNAME "Hello, world!"
+
+  # Speak in German
+  $SCRIPTNAME -l de "Guten Morgen"
+
+  # Slow speech with high pitch
+  $SCRIPTNAME -r 0.5 -p 1.5 "Welcome to Termux"
+
+  # Speak text from stdin
+  echo "Battery is low" | $SCRIPTNAME
+
+  # Use a specific engine
+  $SCRIPTNAME -e "com.google.android.tts" "Hello from Google TTS"
+EOF
+    exit 0
+}
+
+PARAMS=""
+
+while getopts :he:l:n:v:p:r:s: option
+do
+    case "$option" in
+        h) show_usage;;
+        e) PARAMS="$PARAMS --es engine $OPTARG";;
+        l) PARAMS="$PARAMS --es language $OPTARG";;
+        n) PARAMS="$PARAMS --es region $OPTARG";;
+        v) PARAMS="$PARAMS --es variant $OPTARG";;
+        p) PARAMS="$PARAMS --ef pitch $OPTARG";;
+        r) PARAMS="$PARAMS --ef rate $OPTARG";;
+        s) PARAMS="$PARAMS --es stream $OPTARG";;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+CMD="@TERMUX_PREFIX@/bin/termux-api TextToSpeech $PARAMS"
+if [ $# = 0 ]; then
+    $CMD
+else
+    echo "$@" | $CMD
+fi
+

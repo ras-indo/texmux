@@ -1,0 +1,74 @@
+#!/bin/sh
+#
+# NAME
+#     termux-infrared-frequencies — Query IR transmitter carrier frequencies
+#
+# SYNOPSIS
+#     termux-infrared-frequencies
+#
+# DESCRIPTION
+#     Query the built-in infrared (IR) blaster for its supported carrier
+#     frequencies. Returns a JSON array of integer frequencies in Hertz
+#     that the IR transmitter can generate.
+#
+#     The most common consumer IR carrier frequency is 38000 Hz (38 kHz),
+#     used by most TV, AC, and set-top box remote controls. Other common
+#     frequencies include 36000, 40000, and 56000 Hz.
+#
+#     Use the output of this command together with termux-infrared-transmit
+#     to send IR signals at a supported frequency.
+#
+# OPTIONS
+#     -h, --help  Display this help message and exit.
+#
+# EXAMPLES
+#     termux-infrared-frequencies
+#
+set -e -u
+
+SCRIPTNAME=termux-infrared-frequencies
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Query the device's infrared (IR) blaster for its supported carrier
+frequencies. Use this to determine which frequencies are valid for
+termux-infrared-transmit. Devices without an IR blaster return
+an empty array.
+
+OUTPUT:
+  JSON array of frequency range objects:
+    minFrequency (int) — Minimum supported carrier frequency in Hz
+    maxFrequency (int) — Maximum supported carrier frequency in Hz
+
+PERMISSIONS:
+  android.permission.CONSUMER_IR (Android 19+, API 19)
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # Check available frequencies
+  $SCRIPTNAME
+
+  # Check if device has an IR blaster
+  RESULT=\$($SCRIPTNAME 2>/dev/null)
+  if [ "\$RESULT" = "[]" ]; then
+    echo "No IR blaster found"
+  fi
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+	h) show_usage;;
+	?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api InfraredFrequencies

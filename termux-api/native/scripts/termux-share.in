@@ -1,0 +1,119 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-share — Berbagi file atau teks dengan aplikasi lain
+#
+# SYNOPSIS
+#     termux-share [-a action] [-c content-type] [-d] [-t title] [file]
+#
+# DESCRIPTION
+#     Berbagi file atau teks dengan aplikasi lain melalui sistem share
+#     Android. Jika argumen file diberikan, file tersebut akan dibagikan.
+#     Jika tidak, teks dari stdin akan dibagikan.
+#
+#     Tindakan (-a): view (membuka file dengan viewer default), send
+#     (mengirim file melalui aplikasi messaging/email), edit (membuka
+#     editor). Secara default menggunakan view.
+#
+#     Dengan opsi -d, konten langsung dikirim ke receiver default tanpa
+#     menampilkan chooser. Tipe konten (-c) dapat ditentukan secara
+#     eksplisit atau dibiarkan otomatis ditebak dari ekstensi file.
+#
+# OPTIONS
+#     -a action        Tindakan yang dilakukan pada konten: edit, send, atau view (default: view)
+#     -c content-type  Tipe konten (default: ditebak dari ekstensi file, text/plain untuk stdin)
+#     -d               Berbagi ke receiver default tanpa menampilkan chooser
+#     -t title         Judul untuk konten yang dibagikan (default: nama file)
+#
+# EXAMPLES
+#     # Berbagi file
+#     termux-share -a send -t "Foto" foto.jpg
+#
+#     # Berbagi teks dari stdin
+#     echo "Halo" | termux-share -a send -t "Pesan"
+#
+set -e -u
+
+SCRIPTNAME=termux-share
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [-a action] [-c content-type] [-d] [-t title] [file]
+
+Share a file or text with other apps via Android's share intent system.
+If a file argument is given, that file is shared. If no file is given,
+stdin is read and shared as text.
+
+OUTPUT:
+  No JSON output. Opens the system share chooser (or default receiver).
+  Exit code 0 on success.
+
+PERMISSIONS:
+  None required. Uses ACTION_SEND / ACTION_SEND_MULTIPLE intents.
+  File access requires READ_EXTERNAL_STORAGE if file is outside
+  the app's private directory.
+
+OPTIONS:
+  -h              Show this help message.
+  -a <action>     Action to perform on shared content:
+                  edit — Open in an editor
+                  send — Send via messenger/email (default)
+                  view — Open in a viewer
+  -c <type>       Content-type MIME (default: guessed from extension,
+                  text/plain for stdin).
+  -d              Share directly to the default receiver without
+                  showing the system chooser dialog.
+  -t <title>      Title for the shared content (default: filename).
+
+EXAMPLES:
+  # Share text via stdin
+  echo "Hello from Termux!" | $SCRIPTNAME
+
+  # Share a file
+  $SCRIPTNAME /sdcard/photo.jpg
+
+  # Share with specific title and direct send
+  $SCRIPTNAME -t "My Photo" -d /sdcard/photo.jpg
+
+  # Share text as HTML
+  echo "<h1>Hello</h1>" | $SCRIPTNAME -c "text/html"
+EOF
+    exit 0
+}
+
+validate_share () {
+    SHARETYPE=$1
+    case "$SHARETYPE" in
+        edit) ;;
+        send) ;;
+        view) ;;
+        *) echo "$SCRIPTNAME: Unsupported action: '$SHARETYPE'"; exit 1;;
+    esac
+}
+
+PARAMS=""
+while getopts :ha:c:dt: option
+do
+    case "$option" in
+        h) show_usage;;
+        a) validate_share "$OPTARG"; PARAMS="$PARAMS --es action $OPTARG";;
+        c) PARAMS="$PARAMS --es content-type $OPTARG";;
+        d) PARAMS="$PARAMS --ez default-receiver true";;
+        t) PARAMS="$PARAMS --es title $OPTARG";;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# -gt 1 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+if [ $# != 0 ]; then
+    if [ ! -f "$1" ]; then
+        echo "$1 is not a file"
+        exit 1
+    fi
+
+    # Note that the file path can contain whitespace.
+    @TERMUX_PREFIX@/bin/termux-api Share $PARAMS --es file "$(realpath "$1")"
+else
+    @TERMUX_PREFIX@/bin/termux-api Share $PARAMS
+fi

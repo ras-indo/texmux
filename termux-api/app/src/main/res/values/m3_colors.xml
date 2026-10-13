@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light mode Material 3 colors (fallback when Dynamic Colors unavailable) -->
+    <color name="m3_primary_light">#FF6750A4</color>
+    <color name="m3_on_primary_light">#FFFFFFFF</color>
+    <color name="m3_primary_container_light">#FFF5D0FE</color>
+    <color name="m3_on_primary_container_light">#FF21005E</color>
+    <color name="m3_secondary_light">#FF625B71</color>
+    <color name="m3_on_secondary_light">#FFFFFFFF</color>
+    <color name="m3_secondary_container_light">#FFE8DEF8</color>
+    <color name="m3_on_secondary_container_light">#FF1D192B</color>
+    <color name="m3_tertiary_light">#FF7D5260</color>
+    <color name="m3_on_tertiary_light">#FFFFFFFF</color>
+    <color name="m3_error_light">#FFB3261E</color>
+    <color name="m3_on_error_light">#FFFFFFFF</color>
+    <color name="m3_background_light">#FFFFFBFE</color>
+    <color name="m3_on_background_light">#FF1C1B1F</color>
+    <color name="m3_surface_light">#FFFFFBFE</color>
+    <color name="m3_on_surface_light">#FF1C1B1F</color>
+
+    <!-- Dark mode Material 3 colors -->
+    <color name="m3_primary_dark">#FFD0BCFF</color>
+    <color name="m3_on_primary_dark">#FF381E72</color>
+    <color name="m3_primary_container_dark">#FF4F378B</color>
+    <color name="m3_on_primary_container_dark">#FFF5D0FE</color>
+    <color name="m3_secondary_dark">#FFCCC2DC</color>
+    <color name="m3_on_secondary_dark">#FF332D41</color>
+    <color name="m3_secondary_container_dark">#FF4A4458</color>
+    <color name="m3_on_secondary_container_dark">#FFE8DEF8</color>
+    <color name="m3_tertiary_dark">#FFEFB8C8</color>
+    <color name="m3_on_tertiary_dark">#FF492532</color>
+    <color name="m3_error_dark">#FFF2B8B5</color>
+    <color name="m3_on_error_dark">#FF601410</color>
+    <color name="m3_background_dark">#FF1C1B1F</color>
+    <color name="m3_on_background_dark">#FFE6E1E5</color>
+    <color name="m3_surface_dark">#FF1C1B1F</color>
+    <color name="m3_on_surface_dark">#FFE6E1E5</color>
+</resources>

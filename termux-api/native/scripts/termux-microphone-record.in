@@ -1,0 +1,166 @@
+#!@TERMUX_PREFIX@/bin/bash
+#
+# NAME
+#     termux-microphone-record — Record audio from microphone
+#
+# SYNOPSIS
+#     termux-microphone-record [-d] [-f file] [-l limit] [-e encoder] [-b bitrate] [-r rate] [-c channels] [-i] [-q]
+#
+# DESCRIPTION
+#     Record audio from the device microphone using Android's MediaRecorder API.
+#     Supports multiple audio encoders (AAC, AMR-WB, AMR-NB, Opus) with
+#     configurable bitrate, sampling rate, and channel count.
+#
+#     Output is saved to a file specified with -f. Use -d to start recording
+#     with default settings (AAC, 128kbps, 44100Hz, mono). The -i option
+#     retrieves current recording info (file path, duration, state) as JSON.
+#     Use -q to stop recording gracefully.
+#
+# OPTIONS
+#     -d           Start recording with defaults
+#     -f file      Output file path
+#     -l limit     Recording limit in seconds (0 = unlimited)
+#     -e encoder   Encoder: aac, amr_wb, amr_nb, opus
+#     -b bitrate   Bitrate in kbps
+#     -r rate      Sampling rate in Hz
+#     -c count     Channel count (1, 2, ...)
+#     -i           Get info about current recording
+#     -q           Quit recording
+#
+# EXAMPLES
+#     # Record audio with default settings
+#     termux-microphone-record -d
+#
+#     # Record to a file with specific encoder and bitrate
+#     termux-microphone-record -f /sdcard/audio.aac -e aac -b 128
+#
+#     # Get info about current recording
+#     termux-microphone-record -i
+#
+set -e
+
+SCRIPTNAME=termux-microphone-record
+
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [options]
+
+Record audio from the device microphone using Android's MediaRecorder API.
+
+OPTIONS
+    -d              Start recording with default settings
+    -f <file>       Output file path for recording
+    -l <limit>      Recording time limit in seconds (0 = unlimited)
+    -e <encoder>    Audio encoder: aac, amr_wb, amr_nb, opus (default: aac)
+    -b <bitrate>    Encoding bitrate in kbps (default: 128)
+    -r <rate>       Sampling rate in Hz (default: 44100)
+    -c <count>      Number of audio channels (default: 1)
+    -i              Get info about current recording as JSON
+    -q              Stop the current recording
+    -h              Show this help
+
+OUTPUT
+    When recording (-d, -f): audio file in the chosen encoder format.
+    When querying (-i): JSON object with these fields:
+        filePath     - Path to the current recording file
+        duration     - Recording duration in milliseconds
+        state        - Recording state (RECORDING / STOPPED / ERROR)
+        encoder      - Audio encoder in use
+        bitrate      - Bitrate in bps
+        sampleRate   - Sampling rate in Hz
+        channelCount - Number of channels
+
+PERMISSIONS
+    android.permission.RECORD_AUDIO (Android 6+, API level 23)
+
+EXAMPLES
+    # Start recording with default settings
+    $SCRIPTNAME -d
+
+    # Record AAC audio to a specific file
+    $SCRIPTNAME -f /sdcard/audio.aac -e aac -b 128
+
+    # Record for 60 seconds at 48 kHz stereo
+    $SCRIPTNAME -f /sdcard/recording.aac -l 60 -r 48000 -c 2
+
+    # Get info about the active recording
+    $SCRIPTNAME -i
+
+    # Stop the current recording
+    $SCRIPTNAME -q
+EOF
+}
+
+usage_error () {
+    echo
+    show_usage
+    exit 1
+}
+
+sole() {
+    if [ "$1 $2" != "-$option $OPTARG" ] || [ $# -gt 2 ]; then
+        echo "ERROR: No other options should be specified with -$option!"
+        usage_error
+    fi
+}
+
+add_params() {
+    for i in "$@"; do
+        params[index++]="$i"
+    done
+}
+
+call_api () {
+    @TERMUX_PREFIX@/bin/termux-api MicRecorder "$@"
+}
+
+while getopts h,f:,l:,e:,b:,r:,c:,d,i,q option
+do
+    case "$option" in
+        h) sole "$@"
+           ;;
+        f) record=yes
+           dir="$(dirname "$OPTARG")"
+           file="$(basename "$OPTARG")"
+           dir="$(realpath "$dir")"
+           add_params --es file "$dir/$file"
+           ;;
+        # API takes limit in milliseconds
+        l) record=yes
+           add_params --ei limit $((OPTARG * 1000))
+           ;;
+        d) record=yes
+           ;;
+        e) record=yes
+           add_params --es encoder "$OPTARG"
+           ;;
+        # API takes bitrate in bps
+        b) record=yes
+           add_params --ei bitrate $((OPTARG * 1000))
+           ;;
+        r) record=yes
+           add_params --ei srate $((OPTARG))
+           ;;
+        c) record=yes
+           add_params --ei channels $((OPTARG))
+           ;;
+        i) sole "$@"
+           add_params -a info
+           ;;
+        q) sole "$@"
+           add_params -a quit
+           ;;
+        *) usage_error
+           ;;
+    esac
+done
+
+if [ -v record ]; then
+    add_params -a record
+fi
+
+if [ -v params ]; then
+    call_api "${params[@]}"
+else
+    show_usage
+fi

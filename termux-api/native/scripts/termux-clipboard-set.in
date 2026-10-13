@@ -1,0 +1,88 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-clipboard-set — Set system clipboard text
+#
+# SYNOPSIS
+#     termux-clipboard-set [text]
+#
+# DESCRIPTION
+#     Write text to the system clipboard. The text can be provided as
+#     command-line arguments (all arguments are joined with spaces) or
+#     piped via stdin if no arguments are given. If both are provided,
+#     command-line arguments take precedence over stdin.
+#
+#     The clipboard content becomes available globally to all apps on
+#     the device. Previous clipboard content is overwritten. Read
+#     clipboard content back using termux-clipboard-get.
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # Set clipboard from argument
+#     termux-clipboard-set "Hello, World!"
+#
+#     # Set clipboard from stdin
+#     echo "Hello from stdin" | termux-clipboard-set
+#
+set -e -u
+
+SCRIPTNAME=termux-clipboard-set
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [text]
+
+Write text to the system clipboard. The text can be provided directly as
+command-line arguments (all arguments are joined with spaces), or piped
+via stdin if no arguments are given. If both are provided, command-line
+arguments take precedence over stdin.
+
+The clipboard content becomes available globally to all apps on the device.
+Previous clipboard content is overwritten. Read clipboard content back
+using termux-clipboard-get. No output on success.
+
+OUTPUT:
+  No output on success. The clipboard is set silently via the system
+  ClipboardManager. If reading from stdin, waits for EOF before setting.
+
+PERMISSIONS:
+  Android 1+ — No special permissions required.
+  Android 10+ (API 29) — Background clipboard access restrictions apply;
+  setting clipboard while in the foreground works without restrictions.
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # Set clipboard from command-line argument
+  $SCRIPTNAME "Hello, World!"
+
+  # Set clipboard from stdin (piped)
+  echo "Hello from stdin" | $SCRIPTNAME
+
+  # Set clipboard from a file
+  cat myfile.txt | $SCRIPTNAME
+
+  # Set clipboard with multiple words (joined with spaces)
+  $SCRIPTNAME multi word text
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+	h) show_usage;;
+	?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+CMD="@TERMUX_PREFIX@/bin/termux-api Clipboard -e api_version 2 --ez set true"
+if [ $# = 0 ]; then
+	$CMD
+else
+	echo -n "$@" | $CMD
+fi
+

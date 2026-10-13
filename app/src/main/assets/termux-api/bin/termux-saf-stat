@@ -1,0 +1,80 @@
+#!/bin/sh
+#
+# NAME
+#     termux-saf-stat — Menampilkan informasi file/folder sebagai JSON
+#
+# SYNOPSIS
+#     termux-saf-stat uri
+#
+# DESCRIPTION
+#     Mengembalikan informasi file atau folder sebagai objek JSON melalui SAF (Storage Access Framework, API level 19+).
+#     File atau folder harus berada di direktori yang sudah diizinkan aksesnya oleh pengguna
+#     melalui dialog sistem picker UI.
+#     Output dikembalikan melalui termux-api dengan field: 'name' (nama file/folder), 'uri' (URI),
+#     'type' (tipe MIME), 'length' (ukuran dalam byte untuk file), 'lastModified'
+#     (timestamp modifikasi terakhir dalam epoch millisecond). Folder dikenali dari tipe MIME
+#     'vnd.android.document/directory' dengan length bernilai 0.
+#     Formatnya sama dengan entri dari termux-saf-ls.
+#
+# OPTIONS
+#     Tidak ada opsi.
+#
+# EXAMPLES
+#     # Melihat informasi file
+#     termux-saf-stat content://com.android.externalstorage/doc/home/document.txt
+#
+set -e -u
+
+SCRIPTNAME=termux-saf-stat
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <uri>
+
+Get metadata for a file or folder identified by a SAF URI. The output
+format matches a single entry from termux-saf-ls, making it useful
+for checking the actual name of a newly created file or getting
+detailed info about a specific resource.
+
+OUTPUT:
+  JSON object with:
+    name   (string) — Human-readable name
+    uri    (string) — Document URI
+    type   (string) — MIME type ("vnd.android.document/directory"
+                      for folders)
+    length (int)    — Size in bytes (0 for directories)
+
+PERMISSIONS:
+  No special permissions required (SAF, API 19+).
+
+OPTIONS:
+  -h          Show this help message.
+
+ARGUMENTS:
+  uri         Document URI of the file or directory to inspect.
+
+EXAMPLES:
+  # Stat a file
+  $SCRIPTNAME content://.../document/file.txt
+
+  # Get the actual name after creation (SAF may rename on collision)
+  $SCRIPTNAME "\$NEW_URI" | jq -r '.name'
+
+  # Check if a URI points to a directory
+  $SCRIPTNAME "\$URI" | jq -r '.type'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 1 ]; then echo "$SCRIPTNAME: Invalid argument count"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api SAF --es safmethod statURI --es uri "$1"
+ 

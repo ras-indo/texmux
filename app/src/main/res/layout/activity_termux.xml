@@ -1,0 +1,143 @@
+<com.termux.app.terminal.TermuxActivityRootView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/activity_termux_root_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true">
+
+    <FrameLayout
+        android:id="@+id/right_drawer_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <RelativeLayout
+            android:id="@+id/activity_termux_root_relative_layout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginVertical="0dp"
+            android:orientation="vertical">
+
+            <androidx.drawerlayout.widget.DrawerLayout
+                android:id="@+id/drawer_layout"
+                android:layout_width="match_parent"
+                android:layout_alignParentTop="true"
+                android:layout_above="@+id/terminal_toolbar_view_pager"
+                android:layout_height="match_parent">
+
+                <com.termux.view.TerminalView
+                    android:id="@+id/terminal_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:defaultFocusHighlightEnabled="false"
+                    android:focusableInTouchMode="true"
+                    android:scrollbarThumbVertical="@drawable/terminal_scroll_shape"
+                    android:scrollbars="vertical"
+                    tools:ignore="UnusedAttribute" />
+
+                <LinearLayout
+                    android:id="@+id/left_drawer"
+                    android:layout_width="240dp"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="start"
+                    android:choiceMode="singleChoice"
+                    android:divider="@android:color/transparent"
+                    android:dividerHeight="0dp"
+                    android:descendantFocusability="blocksDescendants"
+                    android:orientation="vertical"
+                    android:background="?attr/termuxActivityDrawerBackground">
+
+                    <RelativeLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="12dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="2dp">
+
+                        <ImageButton
+                            android:id="@+id/settings_button"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:layout_alignParentStart="true"
+                            android:layout_centerVertical="true"
+                            android:src="@drawable/ic_settings"
+                            android:background="@drawable/btn_settings_bg"
+                            android:contentDescription="@string/action_open_settings"
+                            android:tint="#94A3B8"
+                            android:scaleType="centerInside"
+                            android:padding="6dp" />
+
+                        <ImageButton
+                            android:id="@+id/design_button"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:layout_alignParentEnd="true"
+                            android:layout_centerVertical="true"
+                            android:src="@drawable/ic_palette_black_24dp"
+                            android:background="@drawable/btn_settings_bg"
+                            android:contentDescription="@string/action_style_terminal"
+                            android:tint="#94A3B8"
+                            android:scaleType="centerInside"
+                            android:padding="6dp" />
+                    </RelativeLayout>
+
+                    <ListView
+                        android:id="@+id/terminal_sessions_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1"
+                        android:choiceMode="singleChoice"
+                        android:longClickable="true"
+                        android:divider="@android:color/transparent"
+                        android:dividerHeight="0dp"
+                        android:paddingTop="2dp"
+                        android:clipToPadding="false" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingVertical="12dp"
+                        android:paddingHorizontal="12dp"
+                        android:gravity="center">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/new_session_button"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            app:backgroundTint="@null"
+                            android:text="@string/action_new_session"
+                            android:textColor="#94A3B8"
+                            android:textSize="13sp"
+                            android:background="@drawable/btn_new_session"
+                            android:stateListAnimator="@null"
+                            android:elevation="0dp" />
+
+                </LinearLayout>
+            </LinearLayout>
+
+        </androidx.drawerlayout.widget.DrawerLayout>
+
+            <androidx.viewpager.widget.ViewPager
+                android:id="@+id/terminal_toolbar_view_pager"
+                android:visibility="gone"
+                android:layout_width="match_parent"
+                android:layout_height="37.5dp"
+                android:background="@color/black"
+                android:layout_alignParentBottom="true" />
+
+        </RelativeLayout>
+
+    </FrameLayout>
+
+    <View
+        android:id="@+id/activity_termux_bottom_space_view"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@android:color/transparent" />
+
+</com.termux.app.terminal.TermuxActivityRootView>

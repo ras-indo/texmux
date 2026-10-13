@@ -1,0 +1,96 @@
+#!/bin/sh
+#
+# NAME
+#     termux-sms-send — Send SMS messages
+#
+# SYNOPSIS
+#     termux-sms-send -n number[,number2,...] [-s slot] [text]
+#
+# DESCRIPTION
+#     Send an SMS (Short Message Service) message to one or more phone
+#     numbers. Multiple recipients can be specified by separating numbers
+#     with commas in the -n option. The message text is provided as
+#     command-line arguments or piped via stdin if no arguments are given.
+#
+#     On dual-SIM devices, the -s option allows selecting which SIM slot
+#     to send from. If the slot is invalid or the READ_PHONE_STATE
+#     permission is missing, the slot option is silently ignored and the
+#     default SMS app's preferred SIM is used.
+#
+# OPTIONS
+#     -n number(s)  Recipient number(s), separate multiple numbers by commas (required)
+#     -s slot       SIM slot to use
+#
+# EXAMPLES
+#     # Send SMS to a single number
+#     termux-sms-send -n 1234567890 "Hello"
+#
+#     # Send SMS to multiple numbers
+#     termux-sms-send -n 1234567890,0987654321 "Hello all"
+#
+set -e -u
+
+SCRIPTNAME=termux-sms-send
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME -n number[,number2,...] [-s slot] [text]
+
+Send an SMS message to one or more recipients. The message text can be
+provided as command arguments or piped to stdin if no arguments are given.
+
+OUTPUT:
+  JSON object with result fields:
+    success     (boolean) — Whether the SMS was sent successfully
+    error       (string)  — Error description on failure (if available)
+
+PERMISSIONS:
+  android.permission.SEND_SMS (Android 6+, API 23)
+  android.permission.READ_PHONE_STATE (optional, for SIM slot selection)
+
+OPTIONS:
+  -h, --help                      Display this help message.
+  -n <numbers>                    Recipient number(s), comma-separated
+                                  for multiple recipients (required).
+  -s <slot>                       SIM slot to use (0 or 1). Silently
+                                  falls back to default if slot invalid
+                                  or READ_PHONE_STATE missing.
+
+EXAMPLES:
+  # Send a simple message
+  $SCRIPTNAME -n 1234567890 Hello from Termux!
+
+  # Send to multiple recipients
+  $SCRIPTNAME -n "1234567890,9876543210" "Group message"
+
+  # Send message from stdin
+  echo "Alert: Server is down!" | $SCRIPTNAME -n 1234567890
+
+  # Send using second SIM slot
+  $SCRIPTNAME -n 1234567890 -s 1 "Sent from SIM 2"
+EOF
+    exit 0
+}
+
+RECIPIENTS=""
+SLOT=""
+while getopts :hn:s: option
+do
+    case "$option" in
+        h) show_usage;;
+        n) RECIPIENTS="--esa recipients $OPTARG";;
+        s) SLOT="--ei slot $OPTARG ";;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ -z "$RECIPIENTS" ]; then
+    echo "$SCRIPTNAME: no recipient number given"; exit 1;
+fi
+
+CMD="/data/data/com.texmux/files/apps/com.texmux/bin/termux-api SmsSend $RECIPIENTS $SLOT"
+if [ $# = 0 ]; then
+    $CMD
+else
+    echo "$@" | $CMD
+fi

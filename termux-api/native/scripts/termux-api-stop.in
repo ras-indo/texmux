@@ -1,0 +1,64 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-api-stop — Stop the Termux:API socket listener (no-op)
+#
+# SYNOPSIS
+#     termux-api-stop
+#
+# DESCRIPTION
+#     The SocketListener lifecycle is managed entirely by the
+#     Termux:API application.  This script is a no-op kept for
+#     compatibility with scripts that expect an explicit stop
+#     command.
+#
+# OPTIONS
+#     -h, --help  Display this help message and exit.
+#
+# EXAMPLES
+#     termux-api-stop
+#
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Stop the Termux:API socket listener.
+
+NOTE: This is a no-op compatibility script. The SocketListener lifecycle
+is managed entirely by the Termux:API application — it stops automatically
+when the app process is killed. This script is retained solely for backward
+compatibility with scripts and workflows that expect an explicit stop
+command.
+
+HISTORICAL CONTEXT:
+  In earlier versions of Termux:API, a daemon process had to be stopped
+  manually using this script. Modern versions handle lifecycle automatically.
+  Calling this script today succeeds with exit 0 to avoid breaking legacy
+  automation, but performs no action.
+
+OUTPUT:
+  No JSON output. Exits silently with status 0.
+
+PERMISSIONS:
+  None required.
+
+OPTIONS:
+  -h, --help  Display this help message and exit.
+
+EXAMPLES:
+  # Legacy usage (still works, but unnecessary)
+  termux-api-stop
+EOF
+    exit 0
+}
+
+while getopts :h option; do
+    case $option in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;;
+    esac
+done
+shift $((OPTIND-1))
+
+# SocketListener is managed by the app. No-op.
+exit 0

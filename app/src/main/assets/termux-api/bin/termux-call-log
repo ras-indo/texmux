@@ -1,0 +1,111 @@
+#!/bin/bash
+#
+# NAME
+#     termux-call-log — List call log history
+#
+# SYNOPSIS
+#     termux-call-log [-l limit] [-o offset]
+#
+# DESCRIPTION
+#     Retrieve the device call log history. Returns a JSON array of call
+#     log entries, each containing: call ID, phone number, contact name
+#     (if available), call type (incoming/outgoing/missed/voicemail/rejected/blocked),
+#     call duration in seconds, and timestamp of when the call occurred.
+#
+#     Supports pagination via -l (limit) and -o (offset) options. By
+#     default returns the 10 most recent calls. Requires READ_CALL_LOG
+#     permission. Calls are returned in reverse chronological order
+#     (most recent first).
+#
+# OPTIONS
+#     -l <limit>   Limit in call log list (default: 10)
+#     -o <offset>  Offset in call log list (default: 0)
+#     -h, --help   Display this help message
+#
+# EXAMPLES
+#     # Show last 10 calls
+#     termux-call-log
+#
+#     # Show last 20 calls with offset 5
+#     termux-call-log -l 20 -o 5
+#
+set -u
+
+PARAM_LIMIT_DEFAULT=10
+PARAM_LIMIT="$PARAM_LIMIT_DEFAULT"
+
+PARAM_OFFSET_DEFAULT=0
+PARAM_OFFSET="$PARAM_OFFSET_DEFAULT"
+
+PARAMS=""
+
+SCRIPTNAME=termux-call-log
+
+validate_is_postive_number() {
+    if [[ ! "${2:-}" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: The -$1 value '${2:-}' is not a positive number." 1>&2
+        show_usage || return $?
+        exit 1
+    fi
+}
+
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [-l limit] [-o offset]
+
+Retrieve the device call log history in reverse chronological order
+(most recent first). Supports pagination with limit and offset options.
+Results are returned as a JSON array of call log entries.
+
+OUTPUT:
+  This command outputs a JSON array to stdout. Each entry contains:
+  name (string) — Contact name or "UNKNOWN_CALLER" if not available
+  phone_number (string) — Phone number of the caller/callee
+  type (string) — Call type: INCOMING, OUTGOING, MISSED, VOICEMAIL, REJECTED, BLOCKED, UNKNOWN_TYPE
+  date (string) — Timestamp of the call in "yyyy-MM-dd HH:mm:ss" format
+  duration (string) — Call duration as "HH:mm:ss" (hours shown if >0) or "mm:ss"
+  sim_id (string) — SIM card identifier used for the call (may be null)
+
+PERMISSIONS:
+  Android 1+ — android.permission.READ_CALL_LOG
+  Requires the user to grant "Phone" permission in Android Settings.
+
+OPTIONS:
+  -l <limit>   Maximum number of call log entries to return (default: $PARAM_LIMIT_DEFAULT)
+  -o <offset>  Number of entries to skip from the start of results (default: $PARAM_OFFSET_DEFAULT)
+  -h, --help   Display this help message.
+
+EXAMPLES:
+  # Show last 10 calls (default)
+  $SCRIPTNAME
+
+  # Show last 20 calls with offset 5
+  $SCRIPTNAME -l 20 -o 5
+
+  # Get missed calls only
+  $SCRIPTNAME | jq '.[] | select(.type == "MISSED")'
+
+  # Show calls longer than 5 minutes
+  $SCRIPTNAME -l 50 | jq '.[] | select(.duration | length > 5)'
+EOF
+    exit 0
+}
+
+while getopts :hl:o: option
+do
+    case "$option" in
+        h) show_usage; exit 0;;
+        l) PARAM_LIMIT="$OPTARG";;
+        o) PARAM_OFFSET="$OPTARG";;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+validate_is_postive_number l "$PARAM_LIMIT"
+validate_is_postive_number o "$PARAM_OFFSET"
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+PARAMS="$PARAMS --ei offset $PARAM_OFFSET --ei limit $PARAM_LIMIT"
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api CallLog $PARAMS

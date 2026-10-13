@@ -1,0 +1,98 @@
+#!/bin/bash
+#
+# NAME
+#     termux-brightness — Set screen brightness
+#
+# SYNOPSIS
+#     termux-brightness <brightness>
+#
+# DESCRIPTION
+#     Set the device screen brightness level. Accepts a numeric value
+#     between 0 (minimum brightness) and 255 (maximum brightness), or
+#     the special keyword "auto" to enable automatic brightness
+#     adjustment based on ambient light sensor readings.
+#
+#     When set to auto, the system takes over brightness control using
+#     the ambient light sensor. When set to a numeric value, auto-brightness
+#     is disabled and the screen is locked to the specified level.
+#     Returns the new brightness state as JSON via termux-api.
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # Set brightness to 128
+#     termux-brightness 128
+#
+#     # Set automatic brightness
+#     termux-brightness auto
+#
+set -e -u
+
+SCRIPTNAME=termux-brightness
+show_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME {brightness|auto}
+
+Set the device screen brightness level. Provide a numeric value between
+0 (minimum brightness) and 255 (maximum brightness), or the special
+keyword "auto" to enable automatic brightness adjustment using the
+ambient light sensor.
+
+When set to a numeric value, auto-brightness is disabled and the screen
+is locked to the specified level. Values outside 0-255 are clamped.
+When set to "auto", the system takes over brightness control dynamically.
+
+OUTPUT:
+  No JSON output on success. The termux-api service sets the system
+  brightness value via Settings.System. On error, an error message is
+  printed to stderr.
+
+PERMISSIONS:
+  Android 1+ — android.permission.WRITE_SETTINGS
+  Requires the user to grant "Modify system settings" permission in
+  Android Settings > Apps > Termux > Modify system settings.
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+ARGUMENTS:
+  brightness    Integer from 0 to 255 for manual brightness level.
+  auto          Enable automatic brightness via ambient light sensor.
+
+EXAMPLES:
+  # Set brightness to half (128)
+  $SCRIPTNAME 128
+
+  # Set brightness to maximum
+  $SCRIPTNAME 255
+
+  # Enable automatic brightness
+  $SCRIPTNAME auto
+
+  # Dim screen to minimum
+  $SCRIPTNAME 0
+EOF
+    exit 0
+}
+
+if [ $# != 1 ]; then
+    show_usage
+fi
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_usage
+fi
+
+if ! [[ $1 =~ ^([0-9]+)|auto$ ]]; then
+    echo "ERROR: Arg must be a number between 0 - 255 or auto!"
+    show_usage
+fi
+
+if [ "$1" == auto ]; then
+ARGS="--ez auto true"
+else
+ARGS="--ei brightness $1 --ez auto false"
+fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api Brightness $ARGS

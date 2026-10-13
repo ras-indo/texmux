@@ -1,0 +1,73 @@
+#!/bin/sh
+#
+# NAME
+#     termux-saf-dirs — Menampilkan daftar direktori yang dikelola
+#
+# SYNOPSIS
+#     termux-saf-dirs
+#
+# DESCRIPTION
+#     Menampilkan semua direktori yang telah diberikan aksesnya ke Termux:API melalui SAF (Storage Access Framework).
+#     SAF adalah framework Android (API level 19+) yang memungkinkan aplikasi mengakses dokumen
+#     dari berbagai penyedia penyimpanan melalui sistem picker UI.
+#     Daftar ini hanya mencakup direktori yang sudah diizinkan oleh pengguna sebelumnya. Gunakan
+#     termux-saf-managedir untuk memberikan akses ke folder baru melalui dialog sistem.
+#     Output berupa array JSON yang dikembalikan melalui termux-api, dengan format yang sama
+#     seperti termux-saf-ls: setiap entri memiliki kunci 'name' (nama direktori) dan 'uri' (URI).
+#     URI yang dihasilkan dapat digunakan dengan perintah termux-saf-* lainnya.
+#
+# OPTIONS
+#     Tidak ada opsi.
+#
+# EXAMPLES
+#     # Melihat daftar direktori yang dikelola
+#     termux-saf-dirs
+#
+set -e -u
+
+SCRIPTNAME=termux-saf-dirs
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+List all SAF-managed directories that Termux:API has been granted
+access to. This shows the root-level directories you can use with
+the other termux-saf-* commands.
+
+OUTPUT:
+  JSON array of directory objects:
+    name   (string) — Human-readable directory name
+    uri    (string) — Document URI for use with other saf-* commands
+    type   (string) — MIME type (usually
+                      "vnd.android.document/directory" for folders)
+    length (int)    — Size in bytes (0 for directories)
+
+PERMISSIONS:
+  No special permissions required (SAF, API 19+).
+
+OPTIONS:
+  -h          Show this help message.
+
+EXAMPLES:
+  # List all managed directories
+  $SCRIPTNAME
+
+  # Get the URI of the first directory
+  URI=\$(termux-saf-dirs | jq -r '.[0].uri')
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api SAF --es safmethod getManagedDocumentTrees
+ 

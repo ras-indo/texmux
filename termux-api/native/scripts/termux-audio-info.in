@@ -1,0 +1,84 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-audio-info — Get audio capability information
+#
+# SYNOPSIS
+#     termux-audio-info
+#
+# DESCRIPTION
+#     Query the device's audio capabilities and current state. Returns
+#     information about audio output routes (speaker, headphones, Bluetooth),
+#     media volume, ringtone volume, alarm volume, call volume, notification
+#     volume, system volume, and DTMF volume level.
+#
+#     Output format: JSON array of audio stream objects, each containing
+#     stream name, current volume index, maximum volume, and whether the
+#     stream is muted.
+#
+#     Useful for checking audio routing before playing media, determining
+#     if headphones are connected, or verifying volume levels.
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # Show audio capability info
+#     termux-audio-info
+#
+set -e -u
+
+SCRIPTNAME=termux-audio-info
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Query the device's audio capabilities and current audio routing state.
+Useful for checking audio hardware properties, sample rates, buffer sizes,
+Bluetooth A2DP status, and wired headset connection before playing media
+or selecting audio output paths.
+
+OUTPUT:
+  This command outputs a JSON object to stdout with fields:
+  PROPERTY_OUTPUT_SAMPLE_RATE (string) — System-wide native audio sample rate in Hz
+  PROPERTY_OUTPUT_FRAMES_PER_BUFFER (string) — System-wide native audio buffer size in frames
+  AUDIOTRACK_SAMPLE_RATE (int) — Default AudioTrack sample rate in Hz
+  AUDIOTRACK_BUFFER_SIZE_IN_FRAMES (int) — Default AudioTrack buffer size in frames
+  AUDIOTRACK_SAMPLE_RATE_LOW_LATENCY (int) — Low-latency AudioTrack sample rate (present if different from default)
+  AUDIOTRACK_BUFFER_SIZE_IN_FRAMES_LOW_LATENCY (int) — Low-latency AudioTrack buffer size
+  AUDIOTRACK_SAMPLE_RATE_POWER_SAVING (int) — Power-saving AudioTrack sample rate (present if different from default)
+  AUDIOTRACK_BUFFER_SIZE_IN_FRAMES_POWER_SAVING (int) — Power-saving AudioTrack buffer size
+  BLUETOOTH_A2DP_IS_ON (boolean) — Whether Bluetooth A2DP sink is active for music streaming
+  WIREDHEADSET_IS_CONNECTED (boolean) — Whether a wired headset (3.5mm/USB-C) is plugged in
+
+PERMISSIONS:
+  No special permissions required. Uses AudioManager system service.
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # Show full audio capability info
+  $SCRIPTNAME
+
+  # Check if Bluetooth A2DP is active
+  $SCRIPTNAME | jq '.BLUETOOTH_A2DP_IS_ON'
+
+  # Get the low-latency sample rate
+  $SCRIPTNAME | jq '.AUDIOTRACK_SAMPLE_RATE_LOW_LATENCY'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api AudioInfo

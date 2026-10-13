@@ -1,0 +1,88 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-torch — Toggle LED torch on device
+#
+# SYNOPSIS
+#     termux-torch [on | off]
+#
+# DESCRIPTION
+#     Control the device's LED flash/torch (typically the camera flash
+#     LED). Turning the torch on activates the LEDs at full brightness
+#     until explicitly turned off. The torch turns off automatically
+#     when the device goes to sleep or the battery is critically low.
+#
+#     Accepts exactly one argument: "on" to activate or "off" to
+#     deactivate. Returns the result as JSON via termux-api.
+#     Note: The torch cannot be used while the camera is active.
+#
+# OPTIONS
+#     on   turn the torch on
+#     off  turn the torch off
+#
+# EXAMPLES
+#     # Turn on the torch
+#     termux-torch on
+#
+#     # Turn off the torch
+#     termux-torch off
+#
+set -e -u
+
+SCRIPTNAME=termux-torch
+
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [on | off]
+
+Toggle the device's LED flash (torch) on or off using the camera
+flashlight API (CameraManager.setTorchMode).
+
+OUTPUT:
+  No JSON output. The torch LED turns on/off directly.
+  JSON response from API on success.
+
+PERMISSIONS:
+  android.permission.CAMERA (for torch access)
+  No runtime permission needed on most devices for torch-only access.
+
+ARGUMENTS:
+  on    Enable the LED torch.
+  off   Disable the LED torch.
+
+EXAMPLES:
+  # Turn torch on
+  $SCRIPTNAME on
+
+  # Turn torch off
+  $SCRIPTNAME off
+EOF
+    exit 1
+}
+
+if [ "$#" -eq 0 ]; then
+	echo "Illegal param count"
+	show_usage
+fi
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+	show_usage
+fi
+
+if [ "$#" -ne 1 ]; then
+	echo "Illegal param count"
+	show_usage
+fi
+
+PARAMS=""
+
+if [ "$1" = on ]; then
+	PARAMS="--ez enabled true"
+elif [ "$1" = off ]; then
+	PARAMS="--ez enabled false"
+else
+	echo "Illegal parameter: $1"
+	show_usage
+fi
+
+@TERMUX_PREFIX@/bin/termux-api Torch $PARAMS

@@ -1,0 +1,842 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="center"
+    android:layout_marginHorizontal="24dp"
+    android:layout_marginVertical="32dp"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:clipToOutline="true"
+    android:background="@drawable/style_panel_bg">
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/style_scroll_view"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:clipToPadding="false"
+        android:overScrollMode="never">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="12dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="20dp">
+
+            <!-- ═══════════════════════════════════════════ -->
+            <!-- Card: Color Scheme                          -->
+            <!-- ═══════════════════════════════════════════ -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_scheme"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#B33C3C3C"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/style_panel_theme_preset"
+                        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                        android:textStyle="bold"
+                        android:textColor="?android:attr/textColorPrimary" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/color_scheme_group"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="false"
+                        app:chipSpacingHorizontal="8dp"
+                        app:chipSpacingVertical="4dp"
+                        app:chipMinHeight="28dp">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/scheme_dark"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="dark"
+                            android:text="Dark" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/scheme_light"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="light"
+                            android:text="Light" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/scheme_dracula"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="dracula"
+                            android:text="Dracula" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/scheme_nord"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="nord"
+                            android:text="Nord" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/scheme_monokai"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="monokai"
+                            android:text="Monokai" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/scheme_solarized"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="solarized"
+                            android:text="Solarized" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/scheme_tokyo_night"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="tokyo_night"
+                            android:text="Tokyo Night" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/scheme_gruvbox"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="gruvbox"
+                            android:text="Gruvbox" />
+
+                    </com.google.android.material.chip.ChipGroup>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ═══════════════════════════════════════════ -->
+            <!-- Card: Font Settings                        -->
+            <!-- ═══════════════════════════════════════════ -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_font"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#B33C3C3C"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/style_panel_font_family"
+                        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                        android:textStyle="bold"
+                        android:textColor="?android:attr/textColorPrimary" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/font_family_group"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="false"
+                        app:chipSpacingHorizontal="8dp"
+                        app:chipSpacingVertical="4dp"
+                        app:chipMinHeight="28dp">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/font_default"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="default"
+                            android:text="@string/style_panel_font_family_default" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/font_jetbrains_mono"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="JetBrains Mono"
+                            android:text="JetBrains Mono" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/font_fira_code"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="Fira Code"
+                            android:text="Fira Code" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/font_cascadia_code"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="Cascadia Code"
+                            android:text="Cascadia Code" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/font_source_code_pro"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="Source Code Pro"
+                            android:text="Source Code Pro" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/font_custom"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="custom"
+                            app:chipIcon="@android:drawable/ic_menu_upload"
+                            android:text="Upload…" />
+
+                    </com.google.android.material.chip.ChipGroup>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ═══════════════════════════════════════════ -->
+            <!-- Card: Background Opacity                   -->
+            <!-- ═══════════════════════════════════════════ -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_opacity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#B33C3C3C"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/style_panel_background_opacity"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                            android:textStyle="bold"
+                            android:textColor="?android:attr/textColorPrimary" />
+
+                        <TextView
+                            android:id="@+id/background_opacity_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="100%"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:background="#0D000000"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="2dp"
+                            android:textStyle="bold"
+                            android:fontFamily="monospace" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/background_opacity_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="30"
+                        android:valueTo="100"
+                        android:stepSize="5"
+                        android:value="100" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ═══════════════════════════════════════════ -->
+            <!-- Card: UI Theme (Drawer & Toolbar)           -->
+            <!-- ═══════════════════════════════════════════ -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_ui_theme"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#B33C3C3C"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Left Panel Side"
+                        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                        android:textStyle="bold"
+                        android:textColor="?android:attr/textColorPrimary" />
+
+                    <!-- Drawer Background -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="12dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Drawer bg"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textStyle="bold"
+                            android:textColor="?android:attr/textColorPrimary" />
+
+                        <EditText
+                            android:id="@+id/drawer_bg_input"
+                            android:layout_width="90dp"
+                            android:layout_height="32dp"
+                            android:background="#0D000000"
+                            android:gravity="center"
+                            android:hint="Theme"
+                            android:inputType="text"
+                            android:maxLength="7"
+                            android:padding="2dp"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold" />
+
+                        <View
+                            android:id="@+id/drawer_bg_preview"
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="8dp"
+                            android:background="@drawable/color_preview_bg" />
+
+                    </LinearLayout>
+
+                    <!-- Drawer Opacity Slider -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Drawer opacity"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorSecondary" />
+
+                        <TextView
+                            android:id="@+id/drawer_opacity_value"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="100%"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:background="#0D000000"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="2dp"
+                            android:textStyle="bold"
+                            android:fontFamily="monospace" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/drawer_opacity_slider"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:valueFrom="0"
+                        android:valueTo="100"
+                        android:stepSize="5"
+                        android:value="100" />
+
+                    <!-- Session Background -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Session bg"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textStyle="bold"
+                            android:textColor="?android:attr/textColorPrimary" />
+
+                        <EditText
+                            android:id="@+id/session_bg_input"
+                            android:layout_width="90dp"
+                            android:layout_height="32dp"
+                            android:background="#0D000000"
+                            android:gravity="center"
+                            android:hint="Theme"
+                            android:inputType="text"
+                            android:maxLength="7"
+                            android:padding="2dp"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold" />
+
+                        <View
+                            android:id="@+id/session_bg_preview"
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="8dp"
+                            android:background="@drawable/color_preview_bg" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ═══════════════════════════════════════════ -->
+            <!-- Card: Extra Keys                            -->
+            <!-- ═══════════════════════════════════════════ -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_extra_keys"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#B33C3C3C"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Extra Keys"
+                        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                        android:textStyle="bold"
+                        android:textColor="?android:attr/textColorPrimary" />
+
+                    <!-- Toolbar Background -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="12dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Background"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textStyle="bold"
+                            android:textColor="?android:attr/textColorPrimary" />
+
+                        <EditText
+                            android:id="@+id/toolbar_bg_input"
+                            android:layout_width="90dp"
+                            android:layout_height="32dp"
+                            android:background="#0D000000"
+                            android:gravity="center"
+                            android:hint="Theme"
+                            android:inputType="text"
+                            android:maxLength="7"
+                            android:padding="2dp"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold" />
+
+                        <View
+                            android:id="@+id/toolbar_bg_preview"
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="8dp"
+                            android:background="@drawable/color_preview_bg" />
+
+                    </LinearLayout>
+
+
+                    <!-- Extra Keys Button Text -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="6dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Button text"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorSecondary" />
+
+                        <EditText
+                            android:id="@+id/extra_keys_text_input"
+                            android:layout_width="90dp"
+                            android:layout_height="32dp"
+                            android:background="#0D000000"
+                            android:gravity="center"
+                            android:hint="#FFFFFF"
+                            android:inputType="text"
+                            android:maxLength="7"
+                            android:padding="2dp"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold" />
+
+                        <View
+                            android:id="@+id/extra_keys_text_preview"
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="8dp"
+                            android:background="@drawable/color_preview_bg" />
+
+                    </LinearLayout>
+
+                    <!-- Extra Keys Active Background -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="6dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Active bg"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorSecondary" />
+
+                        <EditText
+                            android:id="@+id/extra_keys_active_bg_input"
+                            android:layout_width="90dp"
+                            android:layout_height="32dp"
+                            android:background="#0D000000"
+                            android:gravity="center"
+                            android:hint="#7F7F7F"
+                            android:inputType="text"
+                            android:maxLength="7"
+                            android:padding="2dp"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold" />
+
+                        <View
+                            android:id="@+id/extra_keys_active_bg_preview"
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="8dp"
+                            android:background="@drawable/color_preview_bg" />
+
+                    </LinearLayout>
+
+                    <!-- Extra Keys Active Text -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="6dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Active text"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorSecondary" />
+
+                        <EditText
+                            android:id="@+id/extra_keys_active_text_input"
+                            android:layout_width="90dp"
+                            android:layout_height="32dp"
+                            android:background="#0D000000"
+                            android:gravity="center"
+                            android:hint="#80DEEA"
+                            android:inputType="text"
+                            android:maxLength="7"
+                            android:padding="2dp"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold" />
+
+                        <View
+                            android:id="@+id/extra_keys_active_text_preview"
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="8dp"
+                            android:background="@drawable/color_preview_bg" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ═══════════════════════════════════════════ -->
+            <!-- Card: Cursor Style                          -->
+            <!-- ═══════════════════════════════════════════ -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_cursor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#B33C3C3C"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/style_panel_cursor_style"
+                        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                        android:textStyle="bold"
+                        android:textColor="?android:attr/textColorPrimary" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/cursor_style_group"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        app:singleSelection="true"
+                        app:selectionRequired="false"
+                        app:chipSpacingHorizontal="8dp">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/cursor_block"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="block"
+                            app:chipIcon="@drawable/cursor_preview_block"
+                            android:text="@string/style_panel_cursor_block" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/cursor_underline"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="underline"
+                            app:chipIcon="@drawable/cursor_preview_underline"
+                            android:text="@string/style_panel_cursor_underline" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/cursor_bar"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="bar"
+                            app:chipIcon="@drawable/cursor_preview_bar"
+                            android:text="@string/style_panel_cursor_bar" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/cursor_custom"
+                            style="@style/Widget.MaterialComponents.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:tag="custom"
+                            app:chipIcon="@android:drawable/ic_menu_edit"
+                            android:text="Custom" />
+
+                    </com.google.android.material.chip.ChipGroup>
+
+                    <!-- Cursor Color -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="12dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Color"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textStyle="bold"
+                            android:textColor="?android:attr/textColorPrimary" />
+
+                        <Space
+                            android:layout_width="0dp"
+                            android:layout_height="0dp"
+                            android:layout_weight="1" />
+
+                        <EditText
+                            android:id="@+id/cursor_color_input"
+                            android:layout_width="90dp"
+                            android:layout_height="36dp"
+                            android:background="#0D000000"
+                            android:gravity="center"
+                            android:hint="#FFFFFF"
+                            android:inputType="text"
+                            android:maxLength="7"
+                            android:padding="4dp"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:fontFamily="monospace"
+                            android:textStyle="bold" />
+
+                        <View
+                            android:id="@+id/cursor_color_preview"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:layout_marginStart="8dp"
+                            android:background="@drawable/color_preview_bg" />
+
+                    </LinearLayout>
+
+                    <!-- Custom cursor character input (visible only when Custom chip is selected) -->
+                    <EditText
+                        android:id="@+id/cursor_char_input"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        android:background="#0D000000"
+                        android:gravity="center"
+                        android:hint="Type a character..."
+                        android:inputType="text"
+                        android:maxLength="2"
+                        android:padding="4dp"
+                        android:textAppearance="@style/TextAppearance.AppCompat.Headline"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textAlignment="center"
+                        android:visibility="gone" />
+
+                    <!-- Blink Toggle -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/style_panel_cursor_blink"
+                            android:textAppearance="@style/TextAppearance.AppCompat.Body2"
+                            android:textStyle="bold"
+                            android:textColor="?android:attr/textColorPrimary" />
+
+                        <androidx.appcompat.widget.SwitchCompat
+                            android:id="@+id/cursor_blink_switch"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ═══════════════════════════════════════════ -->
+            <!-- Card: Reset                                 -->
+            <!-- ═══════════════════════════════════════════ -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_reset"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#B33C3C3C"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/reset_style_button"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:text="@string/style_panel_reset"
+                        android:textAppearance="@style/TextAppearance.AppCompat.Button"
+                        android:textColor="?android:attr/textColorTertiary"
+                        app:icon="@drawable/ic_reset"
+                        app:iconTint="?android:attr/textColorTertiary" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+</FrameLayout>

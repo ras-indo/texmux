@@ -1,0 +1,74 @@
+#!/bin/sh
+#
+# NAME
+#     termux-saf-write — Menulis stdin ke file melalui SAF
+#
+# SYNOPSIS
+#     termux-saf-write uri
+#
+# DESCRIPTION
+#     Menulis data dari standard input ke file yang sudah ada yang diidentifikasi oleh URI
+#     melalui SAF (Storage Access Framework, API level 19+). File harus berada di direktori
+#     yang sudah diizinkan aksesnya oleh pengguna melalui dialog sistem picker UI.
+#     Data dibaca dari stdin, dikodekan ke base64, dan dikirim ke termux-api untuk ditulis
+#     ke file tujuan melalui SAF. Isi file sebelumnya akan terhapus seluruhnya (overwrite).
+#     Untuk membuat file baru terlebih dahulu, gunakan termux-saf-create.
+#     Output yang sukses tidak mengembalikan output tambahan, hanya kode keluar 0.
+#
+# OPTIONS
+#     Tidak ada opsi.
+#
+# EXAMPLES
+#     # Menulis teks ke file
+#     echo "Hello" | termux-saf-write content://.../document.txt
+#
+#     # Menyalin file lokal ke SAF
+#     cat local.txt | termux-saf-write content://.../document.txt
+#
+set -e -u
+
+SCRIPTNAME=termux-saf-write
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <uri>
+
+Write data from stdin to an existing SAF-managed file. The file's
+previous contents are overwritten completely. To create a new file
+first, use termux-saf-create.
+
+OUTPUT:
+  No output. The file content is replaced with stdin data.
+  Exit code 0 on success, non-zero on error.
+
+PERMISSIONS:
+  No special permissions required (SAF, API 19+).
+
+OPTIONS:
+  -h          Show this help message.
+
+ARGUMENTS:
+  uri         Document URI of the existing file to write to.
+
+EXAMPLES:
+  # Write text to a file
+  echo "Hello, SAF!" | $SCRIPTNAME content://.../document/file.txt
+
+  # Write binary content
+  cat /sdcard/image.jpg | $SCRIPTNAME "\$URI"
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 1 ]; then echo "$SCRIPTNAME: Invalid argument count"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api SAF --es safmethod writeDocument --es uri "$1"
+ 

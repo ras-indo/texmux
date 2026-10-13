@@ -1,0 +1,66 @@
+#!/bin/sh
+#
+# NAME
+#     termux-sms-inbox — List SMS inbox messages (deprecated)
+#
+# SYNOPSIS
+#     termux-sms-inbox
+#
+# DESCRIPTION
+#     This script has been replaced by termux-sms-list(1).
+#     It is kept as a deprecated stub that prints a warning
+#     and exits with a non-zero status to alert users of the
+#     replacement.
+#
+# OPTIONS
+#     -h, --help  Display this help message and exit.
+#
+# EXAMPLES
+#     termux-sms-inbox
+#
+
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+NOTE: This script is DEPRECATED and has been replaced by termux-sms-list(1).
+
+This stub exists for backward compatibility. It prints a warning
+message and exits with status 1. It is kept solely so that scripts
+using the old name continue to receive a clear error message instead
+of a cryptic "command not found".
+
+REPLACEMENT COMMANDS:
+  termux-sms-list                              — List recent SMS messages
+  termux-sms-list --conversation-list          — List SMS conversations
+  termux-sms-list --message-type=inbox         — Filter by folder
+  termux-sms-list --message-limit=50           — Increase result limit
+  termux-sms-list -f "+1234567890"             — Filter by sender
+
+OUTPUT:
+  Prints a deprecation warning to stderr and exits with status 1.
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # Use the replacement instead:
+  termux-sms-list --message-limit=10
+
+  # List conversations with multiple messages each:
+  termux-sms-list --conversation-list --conversation-return-multiple-messages
+
+  # Get latest inbox message from specific sender:
+  termux-sms-list --message-limit=1 --message-selection="type == 1" -f "+1234567890"
+EOF
+    exit 0
+}
+
+case "$1" in
+    -h|--help)
+        show_usage
+        ;;
+esac
+
+echo "termux-sms-inbox: This script has been replaced by termux-sms-list."
+exit 1

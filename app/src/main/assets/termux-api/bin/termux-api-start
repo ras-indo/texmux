@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# NAME
+#     termux-api-start — Start the Termux:API socket listener
+#
+# SYNOPSIS
+#     termux-api-start
+#
+# DESCRIPTION
+#     The SocketListener starts automatically from
+#     TermuxApplication.onCreate().  No KeepAliveService is
+#     needed.  This script is a no-op kept for compatibility
+#     with existing scripts that call it explicitly.
+#
+# OPTIONS
+#     -h, --help  Display this help message and exit.
+#
+# EXAMPLES
+#     termux-api-start
+#
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Start the Termux:API socket listener.
+
+NOTE: This is a no-op compatibility script. The SocketListener starts
+automatically from TermuxApplication.onCreate(). No KeepAliveService
+or manual start is needed. This script is retained solely for backward
+compatibility with scripts and workflows that call it explicitly.
+
+HISTORICAL CONTEXT:
+  In earlier versions of Termux:API, a daemon process had to be started
+  manually using this script before any API commands would work. Modern
+  versions auto-start the listener when the app process is alive, making
+  this script unnecessary. Calling it today still succeeds with exit 0
+  to avoid breaking legacy automation scripts.
+
+OUTPUT:
+  No JSON output. Exits silently with status 0.
+
+PERMISSIONS:
+  None required.
+
+OPTIONS:
+  -h, --help  Display this help message and exit.
+
+EXAMPLES:
+  # Legacy usage (still works, but unnecessary)
+  termux-api-start
+
+  # Modern equivalent — just run API commands directly
+  termux-battery-status
+EOF
+    exit 0
+}
+
+while getopts :h option; do
+    case $option in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;;
+    esac
+done
+shift $((OPTIND-1))
+
+# SocketListener starts automatically from TermuxApplication.onCreate().
+# No KeepAliveService needed. This script is kept as a no-op for compatibility.
+exit 0

@@ -1,0 +1,91 @@
+#!/bin/sh
+#
+# NAME
+#     termux-telephony-cellinfo — Get observed cell information from all radios
+#
+# SYNOPSIS
+#     termux-telephony-cellinfo
+#
+# DESCRIPTION
+#     Query all cellular radios on the device for observed cell tower
+#     information. Returns a JSON array of cell identities, one per
+#     active radio (typically one for each SIM slot).
+#
+#     Each cell info object contains: radio type (GSM/CDMA/LTE/NR),
+#     cell tower identifiers (MCC, MNC, LAC/TAC, Cell ID), signal
+#     strength (RSSI in dBm, ASU level), and timing advance.
+#     For LTE cells, additional info includes earfcn, bandwidth, and
+#     timing advance. For NR (5G) cells, includes NR-ARFCN and CSI-RSRP.
+#
+#     Includes both the primary serving cell and any neighboring cells
+#     the device can observe.
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # Show observed cell information
+#     termux-telephony-cellinfo
+#
+set -e -u
+
+SCRIPTNAME=termux-telephony-cellinfo
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Get information about all observed cell towers from all radios on the
+device, including primary and neighboring cells. Useful for determining
+network type, signal strength, and cell tower identity.
+
+OUTPUT:
+  JSON array of cell objects with fields:
+    cellIdentity  (object) — Network-dependent cell identifiers
+      .mcc       (int)    — Mobile Country Code
+      .mnc       (int)    — Mobile Network Code
+      .lac       (int)    — Location Area Code (GSM only)
+      .cid       (int)    — Cell ID (GSM/WCDMA/LTE)
+      .tac       (int)    — Tracking Area Code (LTE/NR only)
+      .pci       (int)    — Physical Cell ID (LTE/NR only)
+      .arfcn     (int)    — Absolute RF Channel Number
+    signalStrength        — Network-dependent signal measurements
+      .asuLevel  (int)    — Arbitrary Strength Unit
+      .dbm       (int)    — Signal strength in dBm
+      .level     (int)    — Signal level (0-4)
+    networkType  (string) — "gsm", "cdma", "wcdma", "lte", "nr", or "unknown"
+    isRegistered (boolean)— Whether this is the registered cell
+    timestamp    (long)   — Observation time in nanoseconds
+
+PERMISSIONS:
+  android.permission.ACCESS_FINE_LOCATION (Android 10+, API 29)
+  android.permission.ACCESS_COARSE_LOCATION (older Android)
+  android.permission.READ_PHONE_STATE
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # Show all observed cells
+  $SCRIPTNAME
+
+  # Show registered cell only
+  $SCRIPTNAME | jq '.[] | select(.isRegistered)'
+
+  # Show LTE/NR cells sorted by signal strength
+  $SCRIPTNAME | jq '[.[] | select(.networkType == "lte" or .networkType == "nr")] | sort_by(.signalStrength.dbm) | reverse'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api TelephonyCellInfo

@@ -1,0 +1,289 @@
+plugins {
+    id "com.android.application"
+}
+
+configurations.all {
+    exclude group: "androidx.profileinstaller", module: "profileinstaller"
+}
+
+ext {
+    // Currently supported values are: [ "apt-android-7" "apt-android-5" ]
+    packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7" // Default: "apt-android-7"
+}
+
+android {
+    namespace "com.texmux"
+
+    compileSdkVersion project.properties.compileSdkVersion.toInteger()
+    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
+    def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
+    def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
+    def splitAPKsForDebugBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
+    def splitAPKsForReleaseBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
+
+    dependencies {
+        implementation "androidx.annotation:annotation:1.9.0"
+        implementation "androidx.core:core:1.13.1"
+        implementation "androidx.biometric:biometric:1.2.0-alpha05"
+        implementation "androidx.drawerlayout:drawerlayout:1.2.0"
+        implementation "androidx.dynamicanimation:dynamicanimation:1.0.0"
+        implementation "androidx.media:media:1.7.0"
+        implementation "androidx.preference:preference:1.2.1"
+        implementation "androidx.viewpager:viewpager:1.0.0"
+        implementation "com.google.android.material:material:1.12.0"
+        implementation "com.google.guava:guava:24.1-jre"
+        implementation "io.noties.markwon:core:$markwonVersion"
+        implementation "io.noties.markwon:ext-strikethrough:$markwonVersion"
+        implementation "io.noties.markwon:linkify:$markwonVersion"
+        implementation "io.noties.markwon:recycler:$markwonVersion"
+        implementation 'com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava'
+
+        implementation project(":terminal-view")
+        implementation project(":termux-shared")
+        implementation project(":termux-api")
+    }
+
+    defaultConfig {
+        minSdkVersion project.properties.minSdkVersion.toInteger()
+        targetSdkVersion project.properties.targetSdkVersion.toInteger()
+        versionCode 118
+        versionName "0.118.0"
+
+        if (appVersionName) versionName = appVersionName
+        validateVersionName(versionName)
+
+        buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\""
+
+        manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.texmux"
+        manifestPlaceholders.TERMUX_APP_NAME = "Termux"
+        manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"
+        manifestPlaceholders.TERMUX_BOOT_APP_NAME = "Termux:Boot"
+        manifestPlaceholders.TERMUX_FLOAT_APP_NAME = "Termux:Float"
+        manifestPlaceholders.TERMUX_STYLING_APP_NAME = "Termux:Styling"
+        manifestPlaceholders.TERMUX_TASKER_APP_NAME = "Termux:Tasker"
+        manifestPlaceholders.TERMUX_WIDGET_APP_NAME = "Termux:Widget"
+
+        splits {
+            abi {
+                enable ((gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
+                    (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1"))
+                reset ()
+                include 'x86', 'x86_64', 'armeabi-v7a', 'arm64-v8a'
+                universalApk true
+            }
+        }
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file('testkey_untrusted.jks')
+            keyAlias 'alias'
+            storePassword 'xrj45yWGLbsO7W0v'
+            keyPassword 'xrj45yWGLbsO7W0v'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources false // Reproducible builds
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+
+        debug {
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        // Flag to enable support for the new language APIs
+        coreLibraryDesugaringEnabled true
+
+        // reason: JDK 21 deprecates compiling with source/target 8.
+        // API 21+ supports Java 11 language features (min SDK is 21).
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    lint {
+        disable 'ProtectedPermissions'
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def abi = output.getFilter(com.android.build.OutputFile.ABI)
+            if (variant.buildType.name == "debug") {
+                outputFileName = new File("texmux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-debug") + "_" + (abi ? abi : "universal") + ".apk")
+            } else if (variant.buildType.name == "release") {
+                outputFileName = new File("texmux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-release") + "_" + (abi ? abi : "universal") + ".apk")
+            }
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+dependencies {
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.robolectric:robolectric:4.10"
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
+}
+
+task versionName {
+    doLast {
+        print android.defaultConfig.versionName
+    }
+}
+
+def validateVersionName(String versionName) {
+    // https://semver.org/spec/v2.0.0.html#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+    // ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
+    if (!java.util.regex.Pattern.matches("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?\$", versionName))
+        throw new GradleException("The versionName '"  + versionName + "' is not a valid version as per semantic version '2.0.0' spec in the format 'major.minor.patch(-prerelease)(+buildmetadata)'. https://semver.org/spec/v2.0.0.html.")
+}
+
+// ─── Termux:API Integration Tasks ──────────────────────────────────────────
+
+/** Asset directory for termux-api files (APK + native package). */
+def termuxApiAssetsDir = file("src/main/assets/termux-api")
+
+/**
+ * Build termux-api C binary (termux-api) using Android NDK CMake directly.
+ * Source files are in termux-api/native/. The resulting binary is copied
+ * to assets/termux-api/ so the updated version is bundled in the APK.
+ */
+task buildTermuxApiBinary {
+    group "Termux:API"
+    description "Build termux-api C binary directly via NDK CMake"
+
+    def ndkDir = android.ndkDirectory.absolutePath
+    def sdkDir = android.sdkDirectory.absolutePath
+    def cmakeBin = "${sdkDir}/cmake/3.22.1/bin/cmake"
+    def sourceDir = rootProject.projectDir.path + "/termux-api/native"
+    def binaryBuildDir = "${project.buildDir}/termux-api-binary"
+    def outputDir = termuxApiAssetsDir
+
+    inputs.dir sourceDir
+    outputs.file "${outputDir}/termux-api"
+
+    doLast {
+        outputDir.mkdirs()
+        ant.exec(executable: cmakeBin, dir: sourceDir, failonerror: true) {
+            arg(value: "-S${sourceDir}")
+            arg(value: "-B${binaryBuildDir}")
+            arg(value: "-DCMAKE_SYSTEM_NAME=Android")
+            arg(value: "-DCMAKE_SYSTEM_VERSION=21")
+            arg(value: "-DANDROID_PLATFORM=android-21")
+            arg(value: "-DANDROID_ABI=arm64-v8a")
+            arg(value: "-DCMAKE_ANDROID_ARCH_ABI=arm64-v8a")
+            arg(value: "-DANDROID_NDK=${ndkDir}")
+            arg(value: "-DCMAKE_TOOLCHAIN_FILE=${ndkDir}/build/cmake/android.toolchain.cmake")
+            arg(value: "-DCMAKE_MAKE_PROGRAM=${sdkDir}/cmake/3.22.1/bin/ninja")
+            arg(value: "-DCMAKE_BUILD_TYPE=Release")
+            arg(value: "-GNinja")
+        }
+        ant.exec(executable: cmakeBin, dir: sourceDir, failonerror: true) {
+            arg(value: "--build")
+            arg(value: binaryBuildDir)
+        }
+        copy {
+            from "${binaryBuildDir}/termux-api"
+            into "${outputDir}/bin"
+        }
+        logger.lifecycle("termux-api binary built → ${outputDir}/bin/termux-api")
+    }
+}
+
+/**
+ * Build termux-am-native-package (am-socket C binary + wrapper script) using Android NDK CMake.
+ * Invokes build-termux-am-native-package.sh with the configured NDK directory.
+ * Output replaces the pre-built binary in assets/am-socket/.
+ */
+task buildTermuxAmNative {
+    group "Termux:AM"
+    description "Build termux-am-native-package am-socket + wrapper using NDK CMake"
+
+    def ndkDir = android.ndkDirectory.absolutePath
+    def nativeProjectDir = rootProject.projectDir.path + "/termux-am-native-package"
+    def buildScript = "${nativeProjectDir}/build-termux-am-native-package.sh"
+    def outputDir = file("src/main/assets/am-socket").absolutePath
+    def toolchainFile = "${ndkDir}/build/cmake/android.toolchain.cmake"
+
+    inputs.dir nativeProjectDir
+    outputs.dir outputDir
+
+    onlyIf {
+        if (!file(buildScript).isFile()) {
+            logger.warn("termux-am-native-package: build script not found (${buildScript}), skipping")
+            return false
+        }
+        if (!file(toolchainFile).isFile()) {
+            logger.warn("termux-am-native-package: NDK CMake toolchain not found at ${toolchainFile}, skipping")
+            logger.warn("  Install NDK or run the build script manually:")
+            logger.warn("  ${buildScript} ${ndkDir} ${outputDir}")
+            return false
+        }
+        return true
+    }
+
+    doLast {
+        def proc = [buildScript, ndkDir, outputDir].execute()
+        proc.in.eachLine { line -> logger.info("[termux-am-native-package] ${line}") }
+        proc.err.eachLine { line -> logger.warn("[termux-am-native-package] ${line}") }
+        def exitCode = proc.waitFor()
+        if (exitCode != 0) {
+            throw new GradleException("termux-am-native-package build failed (exit ${exitCode})")
+        }
+        logger.lifecycle("termux-am-native-package: am-socket + wrapper deployed to ${outputDir}")
+    }
+}
+
+/**
+ * Copy the termux-api Android App APK into the main app's assets.
+ * Depends on the termux-api module's assemble task.
+ */
+task copyTermuxApiApk(dependsOn: ':termux-api:assembleDebug') {
+    group "Termux:API"
+    description "Copy termux-api APK into app assets"
+
+    def apkDir = project(":termux-api").buildDir.path + "/outputs/apk/debug"
+    def outputDir = termuxApiAssetsDir
+
+    inputs.dir apkDir
+    outputs.dir outputDir
+
+    doLast {
+        outputDir.mkdirs()
+        fileTree(apkDir).include("termux-api-app_*.apk").each { apk ->
+            copy {
+                from apk
+                into outputDir
+                rename { "termux-api.apk" }
+            }
+            logger.lifecycle("Copied ${apk.name} → ${outputDir}/termux-api.apk")
+        }
+    }
+}
+
+// Wire native package builds into the build pipeline.
+// These must run before assets are merged into the APK.
+tasks.whenTaskAdded { t ->
+    if (t.name.startsWith("merge") && t.name.endsWith("Assets")) {
+        t.dependsOn buildTermuxApiBinary
+        t.dependsOn buildTermuxAmNative
+    }
+}

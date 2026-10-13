@@ -1,0 +1,99 @@
+#!/bin/bash
+#
+# NAME
+#     termux-media-scan — Scan files and add to media content provider
+#
+# SYNOPSIS
+#     termux-media-scan [-v] [-r] file [file...]
+#
+# DESCRIPTION
+#     Scan files or directories and register them with the Android MediaStore
+#     content provider. This makes the files visible to gallery apps, music
+#     players, and other apps that query the media content provider.
+#
+#     Multiple files can be specified as arguments. Directories can be
+#     scanned recursively with -r. The -v flag enables verbose output
+#     showing which files were scanned.
+#
+#     Useful after copying files to the device to ensure they appear in
+#     gallery and media apps without requiring a reboot. The paths are
+#     resolved to absolute paths and joined into a comma-separated list
+#     for the API call.
+#
+# OPTIONS
+#     -r  scan directories recursively
+#     -v  verbose mode
+#
+# EXAMPLES
+#     # Scan a single file
+#     termux-media-scan ~/Download/image.jpg
+#
+#     # Scan a directory recursively with verbose output
+#     termux-media-scan -v -r ~/DCIM/Camera
+#
+set -e -u
+
+SCRIPTNAME=termux-media-scan
+show_usage () {
+	cat <<EOF
+Usage: $SCRIPTNAME [-v] [-r] file [file...]
+
+Scan files or directories and register them with Android's MediaStore
+content provider. This makes files visible to gallery apps, music
+players, and other media apps without requiring a reboot.
+
+OPTIONS
+    -r          Scan directories recursively
+    -v          Enable verbose output (shows each scanned path)
+    -h          Show this help
+
+OUTPUT
+    No output on success (unless -v is used). Errors are reported to
+    stderr. Scanned files become immediately visible to media apps.
+
+PERMISSIONS
+    None required beyond normal file-system access.
+
+EXAMPLES
+    # Scan a single image file
+    $SCRIPTNAME ~/Download/image.jpg
+
+    # Recursively scan a camera directory with verbose output
+    $SCRIPTNAME -v -r ~/DCIM/Camera
+
+    # Scan multiple specific files
+    $SCRIPTNAME ~/music/track1.mp3 ~/music/track2.mp3
+EOF
+	exit 0
+}
+
+get_paths() {
+	for ARG in "$@"; do
+		if [[ -e "$ARG" ]]; then
+			realpath "$ARG"
+		else 
+			if [[ "$ARG" =~ ^/ ]]; then
+				echo "$ARG"
+			else
+				echo "$(pwd)/$ARG"
+			fi
+		fi
+	done
+}
+
+PARAMS="--esa paths"
+while getopts :hrv option
+do
+	case "$option" in
+		h) show_usage;;
+		r) PARAMS="--ez recursive true $PARAMS";;
+		v) PARAMS="--ez verbose true $PARAMS";;
+		?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+	esac
+done
+shift $((OPTIND-1))
+
+if [ $# = 0 ]; then echo "$SCRIPTNAME: missing file argument"; exit 1; fi
+
+PATHS=`get_paths "$@" | sed ':a;N;$!ba;s/,/\\\\,/g;s/\n/,/g'`
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api MediaScanner $PARAMS "$PATHS"

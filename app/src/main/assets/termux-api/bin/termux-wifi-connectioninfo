@@ -1,0 +1,87 @@
+#!/bin/sh
+#
+# NAME
+#     termux-wifi-connectioninfo — Get current Wi-Fi connection information
+#
+# SYNOPSIS
+#     termux-wifi-connectioninfo
+#
+# DESCRIPTION
+#     Get detailed information about the currently active Wi-Fi connection.
+#     Returns a JSON object with: SSID, BSSID (MAC address of access point),
+#     RSSI signal strength in dBm, frequency in MHz, channel number
+#     (derived from frequency), link speed in Mbps, IP address, network
+#     prefix length, gateway, DNS servers, MAC address of the device's
+#     Wi-Fi interface, supplicant state (COMPLETED/SCANNING/AUTHENTICATING/...),
+#     and Wi-Fi generation (802.11b/g/n/ac/ax/be).
+#
+#     If the device is not connected to any Wi-Fi network, returns an
+#     empty object or error. Use termux-wifi-enable to turn Wi-Fi on,
+#     and termux-wifi-scaninfo to scan for available networks.
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # Show current Wi-Fi connection info
+#     termux-wifi-connectioninfo
+#
+set -e -u
+
+SCRIPTNAME=termux-wifi-connectioninfo
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Get detailed information about the currently active Wi-Fi connection.
+Returns a JSON object with network and connection parameters.
+
+OUTPUT
+    JSON object with the following fields:
+        BSSID            - MAC address of the access point
+        SSID             - Network name (may be empty if hidden)
+        RSSI             - Signal strength in dBm (negative value)
+        frequency        - Operating frequency in MHz
+        channel          - Wi-Fi channel number (derived from frequency)
+        linkSpeed        - Current link speed in Mbps
+        IP               - Device IPv4 address on this network
+        gateway          - Default gateway IP address
+        dns1             - Primary DNS server IP address
+        dns2             - Secondary DNS server IP address
+        macAddress       - MAC address of the device Wi-Fi interface
+        prefixLength     - Network prefix length (e.g., 24 for /24)
+        wifiStandard     - Wi-Fi generation (802.11b/g/n/ac/ax/be)
+        supplicantState  - Connection state (COMPLETED / SCANNING /
+                          AUTHENTICATING / ASSOCIATING / DISCONNECTED)
+
+    Returns an empty object if the device is not connected to Wi-Fi.
+
+PERMISSIONS
+    android.permission.ACCESS_FINE_LOCATION (Android 10+, API level 29)
+    android.permission.ACCESS_NETWORK_STATE
+
+EXAMPLES
+    # Show current Wi-Fi connection info
+    $SCRIPTNAME
+
+    # Pretty-print with jq
+    $SCRIPTNAME | jq '.'
+
+    # Extract just the IP address
+    $SCRIPTNAME | jq -r '.IP'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api WifiConnectionInfo

@@ -1,0 +1,88 @@
+#!/bin/sh
+#
+# NAME
+#     termux-speech-to-text — Convert speech to text
+#
+# SYNOPSIS
+#     termux-speech-to-text [-p]
+#
+# DESCRIPTION
+#     Launch the device's speech recognition engine and convert spoken
+#     words to text. Opens a system dialog that listens for speech and
+#     returns the recognized text as JSON via termux-api.
+#
+#     By default, only the final recognized text is printed to stdout
+#     (using tail -1 to filter out intermediate results). With -p flag,
+#     all partial matches are streamed in real time as the user speaks.
+#
+#     The speech recognition language depends on the system's default
+#     input language setting. Requires a working internet connection
+#     for cloud-based speech recognition (most common).
+#
+# OPTIONS
+#     -p  Show progress (partial matches in real time)
+#
+# EXAMPLES
+#     # Convert speech to text, final result only
+#     termux-speech-to-text
+#
+#     # Convert speech to text with real-time progress
+#     termux-speech-to-text -p
+#
+set -e -u
+
+SCRIPTNAME=termux-speech-to-text
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Start speech recognition using the device's built-in speech recognizer.
+Listens through the microphone and streams recognized text to stdout.
+Partial results are sent in real-time as they are recognized, followed
+by the final result. Press Ctrl+C or remain silent to stop.
+
+OUTPUT:
+  Streams recognized text lines to stdout:
+    Partial results appear as they are recognized.
+    Final result is printed as the last line before exit.
+  Exit code 0 on success (speech recognized), non-zero on error
+  (no speech detected, recognizer unavailable, etc.).
+
+PERMISSIONS:
+  android.permission.RECORD_AUDIO (Android 6+, API 23)
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # Speak and capture recognized text
+  $SCRIPTNAME > speech_output.txt
+
+  # Pipe recognized speech to another command
+  $SCRIPTNAME | while read -r line; do echo "Recognized: $line"; done
+
+  # Use with termux-toast for feedback
+  $SCRIPTNAME | termux-toast
+EOF
+    exit 0
+}
+
+show_progress=false
+while getopts :hp option
+do
+    case "$option" in
+        h) show_usage;;
+        p) show_progress=true;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+CMD=/data/data/com.texmux/files/apps/com.texmux/bin/termux-api
+if [ $show_progress = true ]; then
+  $CMD SpeechToText
+else
+  $CMD SpeechToText | tail -1
+fi

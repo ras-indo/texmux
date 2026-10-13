@@ -1,0 +1,79 @@
+#!/bin/sh
+#
+# NAME
+#     termux-notification-list — Show current notifications
+#
+# SYNOPSIS
+#     termux-notification-list
+#
+# DESCRIPTION
+#     List all currently visible notifications from all apps on the
+#     device. Returns a JSON array of notification objects, each
+#     containing: package name (source app), tag, ID, notification key,
+#     title, content text, priority, timestamp, and whether it has
+#     been dismissed.
+#
+#     This shows notifications posted by any app, not just Termux.
+#     Useful for monitoring incoming messages, alarms, or other system
+#     notifications programmatically. The list only includes
+#     notifications that are still visible in the notification shade.
+#
+# OPTIONS
+#     -h, --help  Display this help message and exit.
+#
+# EXAMPLES
+#     termux-notification-list
+#
+set -e -u
+
+SCRIPTNAME=termux-notification-list
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+List all currently active notifications posted by Termux:API or from
+the device's notification listener. Requires notification listener
+access to be granted in system settings.
+
+OUTPUT:
+  JSON array of notification objects:
+    id          (string)  — Notification ID
+    tag         (string)  — Notification tag (may be null)
+    key         (string)  — Notification key
+    packageName (string)  — Package that posted the notification
+    title       (string)  — Notification title
+    text        (string)  — Notification content text
+    isClearable (boolean) — Whether the user can dismiss it
+
+PERMISSIONS:
+  android.permission.BIND_NOTIFICATION_LISTENER_SERVICE
+    Must be enabled in Settings → Apps → Termux:API → Notification Access.
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # List all notifications
+  $SCRIPTNAME
+
+  # Filter by package
+  $SCRIPTNAME | jq '[.[] | select(.packageName == "com.termux")]'
+
+  # Count notifications
+  $SCRIPTNAME | jq 'length'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api NotificationList

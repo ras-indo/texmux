@@ -1,0 +1,930 @@
+#!/bin/bash
+#
+# NAME
+#     termux-bluetooth — BLE (Bluetooth Low Energy) API
+#
+# SYNOPSIS
+#     termux-bluetooth <command> [options] [args]
+#
+# DESCRIPTION
+#     Mengontrol Bluetooth adapter, melakukan BLE scanning, GATT client/server
+#     communication, RFCOMM koneksi, dan menampilkan informasi Bluetooth device.
+#
+#     Semua perintah mengembalikan output dalam format JSON.
+#
+# ADAPTER COMMANDS
+#     Manajemen Bluetooth adapter secara umum.
+#
+#     adapter enable
+#         Mengaktifkan Bluetooth adapter.
+#
+#     adapter disable
+#         Menonaktifkan Bluetooth adapter.
+#
+#     adapter info
+#         Menampilkan informasi adapter: status enabled/disabled, alamat MAC,
+#         nama device, scan mode, state, bonded devices.
+#
+#     adapter bonded
+#         Menampilkan daftar device yang sudah dipairing (bonded).
+#
+#     adapter set-name <name>
+#         Mengganti nama Bluetooth adapter.
+#
+# DISCOVERY COMMANDS
+#     Menemukan device Bluetooth klasik di sekitar.
+#
+#     discovery start
+#         Memulai discovery (classic Bluetooth inquiry).
+#         Device ditemukan akan dikembalikan sebagai JSON array.
+#
+#     discovery cancel
+#         Membatalkan proses discovery yang sedang berjalan.
+#
+# LE SCAN COMMANDS
+#     BLE (Bluetooth Low Energy) scanning.
+#
+#     le-scan status
+#         Menampilkan status LE scan saat ini (running/stopped).
+#
+#     le-scan start [options]
+#         Memulai BLE scan. Opsional:
+#         --duration <ms>       Durasi scan (default: 5000)
+#         --scan-mode <mode>    Mode scan: low-power, balanced, low-latency
+#         --service-uuid <uuid> Filter berdasarkan service UUID
+#         --device-name <name>  Filter berdasarkan device name
+#         --device-address <mac> Filter berdasarkan MAC address
+#         --manufacturer-id <id> Filter berdasarkan manufacturer ID
+#
+#     le-scan stop
+#         Memberhentikan BLE scan.
+#
+# GATT CLIENT COMMANDS
+#     Berkomunikasi dengan BLE GATT server.
+#
+#     gatt-connect --address <mac> [--auto-connect]
+#         Connect ke BLE device via GATT.
+#         --auto-connect    Auto-connect ketika device dalam range (default: false)
+#
+#     gatt-discover --address <mac>
+#         Menemukan services, characteristics, dan descriptors dari device
+#         yang sudah terhubung. Output berisi hierarki UUID lengkap.
+#
+#     gatt-read --address <mac> --service <uuid> --char <uuid>
+#         Membaca value dari suatu GATT characteristic.
+#
+#     gatt-write --address <mac> --service <uuid> --char <uuid> --value <hex>
+#         Menulis value (hex) ke suatu GATT characteristic.
+#         --value <hex>        Data dalam format hexadesimal (contoh: 00FF)
+#         --write-type <type>  Tipe write: default, no-response, signed (optional)
+#
+#     gatt-notify --address <mac> --service <uuid> --char <uuid>
+#         [--enable|--disable]
+#         Mengaktifkan/menonaktifkan notifikasi/indikasi dari suatu
+#         GATT characteristic. Default: --enable.
+#
+# GATT SERVER COMMANDS
+#     Menjadi BLE GATT server.
+#
+#     gatt-server start
+#         Memulai GATT server (membuat device dapat di-scan sebagai BLE peripheral).
+#
+#     gatt-server stop
+#         Memberhentikan GATT server.
+#
+#     gatt-server add-service --service-uuid <uuid> --characteristics <json>
+#         Menambahkan service dengan daftar characteristic dalam format JSON array.
+#         Setiap characteristic memiliki: uuid, value (hex, optional),
+#         dan descriptor (optional).
+#
+# RFCOMM COMMANDS
+#     Koneksi serial Bluetooth klasik (RFCOMM).
+#
+#     rfcomm --address <mac> [--uuid <uuid>] [--name <name>]
+#         Melakukan RFCOMM socket connection ke Bluetooth device.
+#         Setelah terhubung, data dapat dikirim melalui socket.
+#
+# PROFILES COMMANDS
+#     Informasi profil Bluetooth.
+#
+#     profiles --address <mac>
+#         Menampilkan daftar profile UUID yang didukung oleh device
+#         (contoh: A2DP, HFP, HSP, dll).
+#
+# OPTIONS
+#     --address <mac>          Alamat MAC Bluetooth (format: XX:XX:XX:XX:XX:XX)
+#     --service <uuid>         UUID service GATT
+#     --char <uuid>            UUID characteristic GATT
+#     --value <hex>            Data hexadesimal untuk write
+#     --name <text>            Nama device atau service
+#     --uuid <uuid>            UUID untuk RFCOMM atau service
+#     --duration <ms>          Durasi dalam milidetik
+#     --auto-connect           Aktifkan auto-connect pada GATT
+#     --enable / --disable     Aktifkan/nonaktifkan notifikasi
+#     --scan-mode <mode>       Mode scan: low-power, balanced, low-latency
+#     --service-uuid <uuid>    Filter UUID untuk LE scan
+#     --device-name <name>     Filter nama device untuk LE scan
+#     --device-address <mac>   Filter MAC untuk LE scan
+#     --manufacturer-id <id>   Filter manufacturer ID untuk LE scan
+#     --write-type <type>      Tipe write: default, no-response, signed
+#     --service-uuid <uuid>    UUID service untuk GATT server
+#     --characteristics <json> JSON array karakteristik untuk GATT server
+#     -h, --help               Tampilkan panduan ini
+#
+# EXAMPLES
+#     # Melihat status dan informasi Bluetooth adapter
+#     termux-bluetooth adapter info
+#
+#     # Mengaktifkan Bluetooth
+#     termux-bluetooth adapter enable
+#
+#     # Melihat daftar device yang sudah dipairing
+#     termux-bluetooth adapter bonded
+#
+#     # BLE scan selama 10 detik
+#     termux-bluetooth le-scan start --duration 10000
+#
+#     # BLE scan dengan filter service UUID
+#     termux-bluetooth le-scan start --service-uuid 180D
+#
+#     # Connect ke BLE device
+#     termux-bluetooth gatt-connect --address "AA:BB:CC:DD:EE:FF"
+#
+#     # Baca characteristic
+#     termux-bluetooth gatt-read \
+#         --address "AA:BB:CC:DD:EE:FF" \
+#         --service 180D \
+#         --char 2A37
+#
+#     # Tulis data hex ke characteristic
+#     termux-bluetooth gatt-write \
+#         --address "AA:BB:CC:DD:EE:FF" \
+#         --service 180D \
+#         --char 2A37 \
+#         --value 0100
+#
+#     # Aktifkan notifikasi
+#     termux-bluetooth gatt-notify \
+#         --address "AA:BB:CC:DD:EE:FF" \
+#         --service 180D \
+#         --char 2A37 \
+#         --enable
+#
+#     # Menjalankan GATT server
+#     termux-bluetooth gatt-server start
+#
+#     # Koneksi RFCOMM
+#     termux-bluetooth rfcomm --address "AA:BB:CC:DD:EE:FF"
+#
+#     # Lihat profiles
+#     termux-bluetooth profiles --address "AA:BB:CC:DD:EE:FF"
+
+set -e -u
+
+SCRIPTNAME=termux-bluetooth
+
+show_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME <command> [options]
+
+Adapter:
+  $SCRIPTNAME adapter {enable|disable|info|bonded}
+  $SCRIPTNAME adapter set-name <name>
+
+Discovery:
+  $SCRIPTNAME discovery {start|cancel}
+
+LE Scan:
+  $SCRIPTNAME le-scan {status|start|stop} [--duration ms]
+
+GATT Client:
+  $SCRIPTNAME gatt-connect   --address <mac>
+  $SCRIPTNAME gatt-discover  --address <mac>
+  $SCRIPTNAME gatt-read      --address <mac> --service <uuid> --char <uuid>
+  $SCRIPTNAME gatt-write     --address <mac> --service <uuid> --char <uuid> --value <hex>
+  $SCRIPTNAME gatt-notify    --address <mac> --service <uuid> --char <uuid>
+
+GATT Server:
+  $SCRIPTNAME gatt-server {start|stop|add-service}
+
+RFCOMM:
+  $SCRIPTNAME rfcomm --address <mac>
+
+Profiles:
+  $SCRIPTNAME profiles --address <mac>
+EOF
+    exit 0
+}
+
+call_api() {
+    /data/data/com.texmux/files/apps/com.texmux/bin/termux-api Bluetooth "$@"
+}
+
+# ─── Per-command usage functions ───────────────────────────────────────────
+
+show_adapter_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME adapter <sub-command> [args]
+
+Mengelola Bluetooth adapter lokal (on/off, informasi, bonded devices).
+
+Sub-commands:
+  enable              Mengaktifkan Bluetooth adapter
+  disable             Menonaktifkan Bluetooth adapter
+  info                Menampilkan informasi adapter dalam format JSON
+  bonded              Menampilkan daftar device yang sudah dipairing (bonded)
+  set-name <name>     Mengganti nama Bluetooth adapter lokal
+
+Output (info):
+  {
+    "enabled": true|false,
+    "name": "Nama adapter",
+    "mac": "XX:XX:XX:XX:XX:XX",
+    "scanMode": 0|1|2|3,
+    "state": 0|1|2|3,
+    "bondedCount": 5,
+    "bondedDevices": [
+      {"name": "Device1", "address": "AA:BB:CC:DD:EE:FF"}
+    ]
+  }
+
+Permissions:
+  - enable/disable: Membutuhkan BLUETOOTH_CONNECT permission (Android 12+/API 31+)
+  - info/bonded: Membutuhkan BLUETOOTH permission atau BLUETOOTH_CONNECT
+
+Catatan:
+  - Bluetooth harus SUDAH diaktifkan sebelum menggunakan sub-command lain.
+  - bonded hanya menampilkan device yang sudah dipairing, bukan hasil scanning.
+  - set-name mengubah nama adapter lokal, bukan nama remote device.
+EOF
+}
+
+show_discovery_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME discovery {start|cancel}
+
+Menemukan device Bluetooth klasik di sekitar melalui proses inquiry.
+Device ditemukan akan dikembalikan sebagai JSON array via stdout.
+
+Sub-commands:
+  start    Memulai discovery (classic Bluetooth inquiry scan)
+  cancel   Membatalkan proses discovery yang sedang berjalan
+
+Output (start):
+  [
+    {"name": "Nama Device", "address": "AA:BB:CC:DD:EE:FF"},
+    {"name": null, "address": "11:22:33:44:55:66"}
+  ]
+
+Permissions:
+  - Membutuhkan BLUETOOTH_SCAN (Android 12+/API 31+)
+  - Atau BLUETOOTH permission (Android 11-/API 30-)
+  - Juga membutuhkan ACCESS_FINE_LOCATION (Android 9-/API 28-)
+    atau ACCESS_COARSE_LOCATION (Android 10-11/API 29-30)
+
+Catatan:
+  - Discovery berlangsung ~12 detik secara default.
+  - Hanya satu discovery aktif dalam satu waktu.
+  - Discovery SIGNIFIKAN meningkatkan konsumsi baterai.
+  - Segera hentikan discovery setelah menemukan device target.
+  - Discovery hanya untuk Classic Bluetooth, bukan BLE.
+  - Untuk BLE scanning, gunakan perintah le-scan.
+EOF
+}
+
+show_le_scan_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME le-scan {status|start|stop} [options]
+
+Memindai perangkat BLE (Bluetooth Low Energy) di sekitar.
+Hasil scan dikembalikan sebagai JSON array.
+
+Sub-commands:
+  status   Menampilkan status LE scan saat ini (running/stopped)
+  start    Memulai BLE scan dengan opsi filter
+  stop     Memberhentikan BLE scan yang sedang berjalan
+
+Options (for start):
+  --duration <ms>         Durasi scan dalam milidetik (default: 5000)
+  --scan-mode <mode>      Mode scan: low-power=0, balanced=1, low-latency=2
+  --service-uuid <uuid>   Filter berdasarkan service UUID (contoh: 180D)
+  --device-name <name>    Filter berdasarkan nama device
+  --device-address <mac>  Filter berdasarkan MAC address
+  --manufacturer-id <id>  Filter berdasarkan manufacturer ID
+
+Output:
+  [
+    {
+      "address": "AA:BB:CC:DD:EE:FF",
+      "name": "Nama Device",
+      "rssi": -65,
+      "txPower": 0,
+      "advertisingData": { ... }
+    }
+  ]
+
+Permissions:
+  - Membutuhkan BLUETOOTH_SCAN (Android 12+/API 31+)
+  - Membutuhkan ACCESS_FINE_LOCATION (Android 11-/API 30-)
+  - Pada Android 12+: BLUETOOTH_ADVERTISE mungkin diperlukan
+
+Catatan:
+  - BLE scan menguras baterai lebih cepat. Stop scan segera setelah
+    menemukan device yang dicari untuk menghemat daya.
+  - Gunakan --scan-mode low-power untuk scanning hemat baterai,
+    atau low-latency untuk menemukan device dengan cepat.
+  - Filter mempercepat pencarian dan mengurangi jumlah hasil.
+EOF
+}
+
+show_gatt_connect_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME gatt-connect --address <mac> [--auto-connect]
+
+Connect ke BLE device via GATT (Generic Attribute Profile).
+Setelah terhubung, gunakan gatt-discover untuk menemukan services.
+
+Options:
+  --address <mac>   Alamat MAC device tujuan (wajib)
+  --auto-connect    Auto-connect ketika device dalam range (default: false)
+
+Output:
+  {"connected": true, "address": "AA:BB:CC:DD:EE:FF", "mtu": 23}
+
+Permissions:
+  - Membutuhkan BLUETOOTH_CONNECT (Android 12+/API 31+)
+  - Atau BLUETOOTH permission (Android 11-/API 30-)
+
+Catatan:
+  - Hanya satu koneksi GATT aktif per address dalam satu waktu.
+  - Setelah berhasil connect, jalankan gatt-discover untuk
+    mendapatkan services/characteristics yang tersedia.
+  - --auto-connect akan otomatis reconnect ketika device kembali
+    dalam jangkauan (berguna untuk sensor jarak jauh).
+  - Default MTU (Maximum Transmission Unit) adalah 23 bytes.
+  - Jika sudah terkoneksi, panggil ulang akan memperbarui koneksi.
+  - Device harus mendukung BLE (bukan classic Bluetooth).
+EOF
+}
+
+show_gatt_discover_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME gatt-discover --address <mac>
+
+Menemukan semua services, characteristics, dan descriptors dari
+BLE device yang sudah terhubung. Output berupa hierarki JSON
+lengkap dengan UUID, properti, dan hak akses.
+
+Options:
+  --address <mac>  Alamat MAC device tujuan (wajib)
+
+Output:
+  {
+    "services": [
+      {
+        "uuid": "0000180D-0000-1000-8000-00805F9B34FB",
+        "primary": true,
+        "characteristics": [
+          {
+            "uuid": "00002A37-0000-1000-8000-00805F9B34FB",
+            "properties": ["read", "notify"],
+            "permissions": ["read", "write"],
+            "descriptors": [
+              {"uuid": "00002902-0000-1000-8000-00805F9B34FB"}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+
+Prerequisites:
+  - Device harus sudah terhubung melalui gatt-connect.
+  - Device harus sudah selesai service discovery internal.
+
+Catatan:
+  - UUID ditampilkan lengkap 128-bit atau disingkat 16-bit (BLE standard).
+  - Properti characteristic: read, write, notify, indicate, broadcast, dll.
+  - Setelah discover, gunakan UUID service dan characteristic untuk
+    operasi read/write/notify selanjutnya.
+  - Proses discovery bisa memakan beberapa detik tergantung jumlah service.
+  - Untuk BLE device standar, banyak UUID yang terdaftar di
+    Bluetooth SIG (misal: 180D = Heart Rate, 180A = Device Information).
+EOF
+}
+
+show_gatt_read_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME gatt-read --address <mac> --service <uuid> --char <uuid>
+
+Membaca value dari suatu GATT characteristic pada BLE device yang
+sudah terkoneksi. Nilai dikembalikan dalam format hex string via JSON.
+
+Options:
+  --address <mac>  Alamat MAC device tujuan (wajib)
+  --service <uuid> UUID dari GATT service yang berisi characteristic (wajib)
+  --char <uuid>    UUID dari GATT characteristic yang akan dibaca (wajib)
+
+Output:
+  {"address": "AA:BB:CC:DD:EE:FF", "uuid": "00002A37-...",
+   "value": "486561727420526174652042504D3D3732"}
+
+Prerequisites:
+  - Device harus sudah terhubung melalui gatt-connect.
+  - Service dan characteristic harus sudah ditemukan melalui gatt-discover.
+  - Characteristic harus memiliki properti "read".
+
+Permissions:
+  - Membutuhkan BLUETOOTH_CONNECT (Android 12+/API 31+)
+
+Catatan:
+  - Output value adalah hex string (bukan plain text).
+  - Untuk mengonversi hex ke teks: echo "48656C6C6F" | xxd -r -p.
+  - Jika read gagal, pastikan characteristic mendukung operasi read.
+  - Beberapa characteristic mungkin memerlukan enkripsi (pairing dulu).
+  - Contoh UUID terkenal: 2A37 = Heart Rate Measurement, 2A19 = Battery Level.
+
+Contoh:
+  Membaca battery level dari BLE device:
+  termux-bluetooth gatt-read \\
+    --address AA:BB:CC:DD:EE:FF --service 180F --char 2A19
+
+  Membaca heart rate measurement:
+  termux-bluetooth gatt-read \\
+    --address AA:BB:CC:DD:EE:FF --service 180D --char 2A37
+EOF
+}
+
+show_gatt_write_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME gatt-write --address <mac> --service <uuid> --char <uuid> --value <hex>
+
+Menulis data (hex) ke suatu GATT characteristic pada BLE device yang
+sudah terkoneksi. Berguna untuk mengontrol BLE device seperti
+menyalakan LED, mengirim perintah, atau mengatur parameter.
+
+Options:
+  --address <mac>    Alamat MAC device tujuan (wajib)
+  --service <uuid>   UUID dari GATT service yang berisi characteristic (wajib)
+  --char <uuid>      UUID dari GATT characteristic tujuan (wajib)
+  --value <hex>      Data dalam format hexadesimal (wajib, contoh: 00FF0102)
+  --write-type <type> Tipe write (optional):
+                       default     - Write with response (ada konfirmasi)
+                       no-response - Write without response (lebih cepat,
+                                     tanpa konfirmasi)
+                       signed      - Write dengan signed data (memerlukan pairing)
+
+Output:
+  {"written": true, "address": "AA:BB:CC:DD:EE:FF",
+   "uuid": "0000XXXX-...", "writeType": "default"}
+
+Prerequisites:
+  - Device harus sudah terhubung melalui gatt-connect.
+  - Characteristic harus memiliki properti "write" atau "write_no_response".
+
+Permissions:
+  - Membutuhkan BLUETOOTH_CONNECT (Android 12+/API 31+)
+
+Catatan:
+  - --value wajib dalam format hexadesimal, bukan teks langsung.
+  - no-response lebih cepat tapi tidak ada jaminan data sampai.
+  - Untuk mengirim string teks, konversi dulu ke hex:
+    echo -n "hello" | xxd -p
+  - signed write memerlukan pairing dan bonding terlebih dahulu.
+  - Beberapa device hanya menerima write dengan response (default).
+
+Contoh:
+  Menulis perintah ke BLE device:
+  termux-bluetooth gatt-write \\
+    --address AA:BB:CC:DD:EE:FF --service FFFF --char FFF1 \\
+    --value 0100
+
+  Write tanpa response (lebih cepat):
+  termux-bluetooth gatt-write \\
+    --address AA:BB:CC:DD:EE:FF --service FFFF --char FFF2 \\
+    --value 00 --write-type no-response
+EOF
+}
+
+show_gatt_notify_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME gatt-notify --address <mac> --service <uuid> --char <uuid> [--enable|--disable]
+
+Mengaktifkan/menonaktifkan notifikasi atau indikasi dari suatu GATT
+characteristic pada BLE device. Notifikasi sangat berguna untuk
+menerima data real-time dari sensor BLE.
+
+Options:
+  --address <mac>  Alamat MAC device tujuan (wajib)
+  --service <uuid> UUID dari GATT service yang berisi characteristic (wajib)
+  --char <uuid>    UUID dari GATT characteristic yang akan dipantau (wajib)
+  --enable         Aktifkan notifikasi/indikasi (default)
+  --disable        Nonaktifkan notifikasi
+
+Output (--enable):
+  Notifikasi diterima sebagai JSON lines di stdout:
+  {"uuid": "00002A37-...", "value": "4865617274", "type": "notification"}
+  {"uuid": "00002A37-...", "value": "486561727432", "type": "notification"}
+
+Prerequisites:
+  - Device harus sudah terhubung melalui gatt-connect.
+  - Characteristic harus memiliki properti "notify" atau "indicate".
+
+Permissions:
+  - Membutuhkan BLUETOOTH_CONNECT (Android 12+/API 31+)
+
+Catatan:
+  - Notify (tanpa konfirmasi) lebih cepat dari Indicate (ada konfirmasi).
+  - Tidak semua characteristic mendukung notify/indicate.
+  - Cocok untuk sensor: heart rate (2A37), battery level (2A19),
+    temperature, humidity, dan data streaming lainnya.
+  - Notifikasi akan terus diterima sampai di-disable.
+  - Setiap notifikasi adalah satu baris JSON (JSON lines format).
+  - Nilai dikembalikan dalam hex, sama seperti gatt-read.
+
+Contoh:
+  Memantau heart rate:
+  termux-bluetooth gatt-notify \\
+    --address AA:BB:CC:DD:EE:FF --service 180D --char 2A37 --enable
+
+  Menghentikan notifikasi:
+  termux-bluetooth gatt-notify \\
+    --address AA:BB:CC:DD:EE:FF --service 180D --char 2A37 --disable
+EOF
+}
+
+show_gatt_server_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME gatt-server {start|stop|add-service} [options]
+
+Menjadikan device Android sebagai BLE GATT server (peripheral).
+Device lain dapat menemukan dan terkoneksi ke device ini.
+
+Sub-commands:
+  start       Memulai GATT server dan mulai advertising sebagai
+              BLE peripheral (device akan terlihat oleh scanner)
+  stop        Memberhentikan GATT server dan advertising
+  add-service Menambahkan service dengan daftar characteristic
+              (hanya bisa dilakukan setelah start)
+
+Options (for add-service):
+  --service-uuid <uuid>   UUID service yang akan ditambahkan (wajib)
+  --characteristics <json> JSON array dari karakteristik (wajib)
+
+Format JSON untuk --characteristics:
+  [
+    {
+      "uuid": "UUID-CHAR-1",
+      "value": "hex_data_optional",
+      "descriptors": [
+        {"uuid": "UUID-DESC", "value": "hex_desc_value"}
+      ]
+    }
+  ]
+
+Permissions:
+  - Membutuhkan BLUETOOTH_ADVERTISE (Android 12+/API 31+)
+  - Atau BLUETOOTH permission (Android 11-/API 30-)
+
+Catatan:
+  - start harus dijalankan terlebih dahulu sebelum add-service.
+  - Service hanya bisa ditambahkan saat server sedang berjalan.
+  - Setelah add-service, device BLE lain bisa membaca/menulis
+    characteristic yang sudah ditambahkan.
+  - Hentikan server dengan stop setelah selesai.
+  - Server bisa memiliki banyak service sekaligus.
+  - Setiap characteristic bisa memiliki properti read/write/notify
+    yang ditentukan oleh implementasi server Android.
+
+Contoh:
+  termux-bluetooth gatt-server start
+  termux-bluetooth gatt-server add-service \\
+    --service-uuid 1234 --characteristics '\
+    [{"uuid":"5678","value":"","descriptors":[{"uuid":"2902","value":""}]}]'
+  termux-bluetooth gatt-server stop
+EOF
+}
+
+show_rfcomm_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME rfcomm --address <mac> [--uuid <uuid>] [--name <name>]
+
+Membuat koneksi serial virtual (RFCOMM/SPP) ke device Bluetooth
+klasik. Cocok untuk komunikasi data bidirectional dengan device
+yang mendukung Bluetooth Serial Port Profile (SPP).
+
+Options:
+  --address <mac>  Alamat MAC Bluetooth device tujuan (wajib)
+  --uuid <uuid>    UUID RFCOMM service channel (optional)
+  --name <name>    Nama display untuk koneksi (optional)
+
+Output:
+  {"connected": true, "address": "AA:BB:CC:DD:EE:FF",
+   "channel": 1}
+
+Permissions:
+  - Membutuhkan BLUETOOTH_CONNECT (Android 12+/API 31+)
+  - Atau BLUETOOTH permission (Android 11-/API 30-)
+
+Catatan:
+  - RFCOMM adalah Bluetooth Classic, BUKAN BLE.
+  - Menyediakan koneksi serial bidirectional (full-duplex).
+  - Cocok untuk komunikasi dengan microcontroller, Arduino,
+    HC-05/HC-06 module, GPS receiver, dll.
+  - --uuid optional; jika tidak disertakan, sistem akan memilih
+    service channel pertama yang tersedia.
+  - Device harus sudah dipairing (bonded) sebelum RFCOMM connect.
+  - Hanya satu koneksi RFCOMM per address dalam satu waktu.
+  - RFCOMM channel 1 umumnya digunakan untuk SPP.
+
+Contoh:
+  Koneksi RFCOMM ke HC-05 Bluetooth module:
+  termux-bluetooth rfcomm --address 00:11:22:33:44:55
+
+  Koneksi dengan UUID spesifik:
+  termux-bluetooth rfcomm \\
+    --address 00:11:22:33:44:55 --uuid 00001101-0000-1000-8000-00805F9B34FB
+EOF
+}
+
+show_profiles_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME profiles --address <mac>
+
+Menampilkan daftar profile Bluetooth yang didukung oleh device
+yang sudah dipairing (bonded). Output berupa array UUID string
+yang mewakili profile yang terdaftar pada device.
+
+Options:
+  --address <mac>  Alamat MAC Bluetooth device tujuan (wajib)
+
+Output:
+  {
+    "address": "AA:BB:CC:DD:EE:FF",
+    "profiles": [
+      "0000110A-0000-1000-8000-00805F9B34FB",
+      "00001108-0000-1000-8000-00805F9B34FB"
+    ]
+  }
+
+Profile umum yang dikenal:
+  A2DP  (0000110A) - Audio/Video distribution (stereo audio)
+  HFP   (0000111E) - Hands-Free Profile (telepon)
+  HSP   (00001108) - Headset Profile (audio headset)
+  HID   (00001124) - Human Interface Device (keyboard/mouse)
+  PAN   (00001115) - Personal Area Networking (tethering)
+  GATT  (00001801) - Generic Attribute Profile (BLE)
+  SPP   (00001101) - Serial Port Profile (RFCOMM)
+  OPP   (00001105) - Object Push (file transfer)
+  PBAP  (0000112F) - Phone Book Access
+  MAP   (00001132) - Message Access Profile
+
+Permissions:
+  - Membutuhkan BLUETOOTH_CONNECT (Android 12+/API 31+)
+
+Catatan:
+  - Device harus sudah dipairing (bonded) terlebih dahulu.
+  - Profile UUID mengikuti standar Bluetooth SIG 16-bit UUID
+    yang diperluas menjadi 128-bit.
+  - Tidak semua device mengimplementasikan semua profile.
+  - Profile menentukan fitur apa saja yang bisa digunakan
+    dengan device tersebut.
+  - Hasil kosong berarti device tidak memiliki profile terdaftar
+    atau belum dipairing dengan benar.
+EOF
+}
+
+# ─── Global -h check ──────────────────────────────────────────────────────
+
+CMD="${1:-}"
+[ -z "$CMD" ] && { show_usage >&2; exit 1; }
+[ "$CMD" = "-h" ] || [ "$CMD" = "--help" ] && show_usage
+shift
+
+#### adapter
+adapter_cmd() {
+    local sub="${1:-}"
+    [ -z "$sub" ] && sub="info"
+    case "$sub" in
+        -h|--help) show_adapter_usage; exit 0 ;;
+        enable|disable|info|bonded)
+            call_api --es command adapter --es action "$sub"
+            ;;
+        set-name)
+            shift
+            local name="${1:-}"
+            [ -z "$name" ] && { echo "Usage: $SCRIPTNAME adapter set-name <name>" >&2; exit 1; }
+            call_api --es command adapter --es action set-name --es name "$name"
+            ;;
+        *) echo "Unknown adapter sub-command: $sub" >&2; exit 1 ;;
+    esac
+}
+
+#### discovery
+discovery_cmd() {
+    local sub="${1:-}"
+    case "$sub" in
+        -h|--help|"") show_discovery_usage; exit 0 ;;
+        start|cancel) call_api --es command discovery --es action "$sub" ;;
+        *) echo "Unknown discovery sub-command: $sub" >&2; exit 1 ;;
+    esac
+}
+
+#### le-scan
+le_scan_cmd() {
+    local sub="${1:-}"
+    [ -z "$sub" ] && { show_le_scan_usage >&2; exit 1; }
+    case "$sub" in
+        -h|--help) show_le_scan_usage; exit 0 ;;
+    esac
+    shift
+    local extras=(--es command le-scan --es action "$sub")
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --duration)       extras+=(--ei duration "$2"); shift 2 ;;
+            --scan-mode)      extras+=(--es scan_mode "$2"); shift 2 ;;
+            --service-uuid)   extras+=(--es service_uuid "$2"); shift 2 ;;
+            --device-name)    extras+=(--es device_name "$2"); shift 2 ;;
+            --device-address) extras+=(--es device_address "$2"); shift 2 ;;
+            --manufacturer-id) extras+=(--ei manufacturer_id "$2"); shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    call_api "${extras[@]}"
+}
+
+#### gatt-connect
+gatt_connect() {
+    local address="" auto_connect=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_gatt_connect_usage; exit 0 ;;
+            --address)      address="$2"; shift 2 ;;
+            --auto-connect) auto_connect=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Usage: $SCRIPTNAME gatt-connect --address <mac>" >&2; exit 1; }
+    call_api --es command gatt-connect --es address "$address" --ez auto_connect "$auto_connect"
+}
+
+#### gatt-discover
+gatt_discover() {
+    local address=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_gatt_discover_usage; exit 0 ;;
+            --address) address="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Usage: $SCRIPTNAME gatt-discover --address <mac>" >&2; exit 1; }
+    call_api --es command gatt-discover --es address "$address"
+}
+
+#### gatt-read
+gatt_read() {
+    local address="" service="" char=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_gatt_read_usage; exit 0 ;;
+            --address) address="$2"; shift 2 ;;
+            --service) service="$2"; shift 2 ;;
+            --char)    char="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Missing --address" >&2; exit 1; }
+    [ -z "$service" ] && { echo "Missing --service" >&2; exit 1; }
+    [ -z "$char" ] && { echo "Missing --char" >&2; exit 1; }
+    call_api --es command gatt-read \
+        --es address "$address" \
+        --es service_uuid "$service" \
+        --es characteristic_uuid "$char"
+}
+
+#### gatt-write
+gatt_write() {
+    local address="" service="" char="" value="" write_type=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_gatt_write_usage; exit 0 ;;
+            --address)   address="$2"; shift 2 ;;
+            --service)   service="$2"; shift 2 ;;
+            --char)      char="$2"; shift 2 ;;
+            --value)     value="$2"; shift 2 ;;
+            --write-type) write_type="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Missing --address" >&2; exit 1; }
+    [ -z "$service" ] && { echo "Missing --service" >&2; exit 1; }
+    [ -z "$char" ] && { echo "Missing --char" >&2; exit 1; }
+    [ -z "$value" ] && { echo "Missing --value (hex)" >&2; exit 1; }
+    local extras=(--es command gatt-write --es address "$address" \
+        --es service_uuid "$service" --es characteristic_uuid "$char" --es value "$value")
+    [ -n "$write_type" ] && extras+=(--es write_type "$write_type")
+    call_api "${extras[@]}"
+}
+
+#### gatt-notify
+gatt_notify() {
+    local address="" service="" char="" enable=true
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_gatt_notify_usage; exit 0 ;;
+            --address) address="$2"; shift 2 ;;
+            --service) service="$2"; shift 2 ;;
+            --char)    char="$2"; shift 2 ;;
+            --disable) enable=false; shift ;;
+            --enable)  enable=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Missing --address" >&2; exit 1; }
+    [ -z "$service" ] && { echo "Missing --service" >&2; exit 1; }
+    [ -z "$char" ] && { echo "Missing --char" >&2; exit 1; }
+    call_api --es command gatt-notify --es address "$address" \
+        --es service_uuid "$service" --es characteristic_uuid "$char" --ez enable "$enable"
+}
+
+#### gatt-server
+gatt_server_cmd() {
+    local sub="${1:-}"
+    case "$sub" in
+        -h|--help|"") show_gatt_server_usage; exit 0 ;;
+    esac
+    shift
+    case "$sub" in
+        start|stop)
+            call_api --es command gatt-server --es action "$sub"
+            ;;
+        add-service)
+            local service_uuid="" primary=true characteristics=""
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    -h|--help) show_gatt_server_usage; exit 0 ;;
+                    --service-uuid)   service_uuid="$2"; shift 2 ;;
+                    --characteristics) characteristics="$2"; shift 2 ;;
+                    *) echo "Unknown option: $1" >&2; exit 1 ;;
+                esac
+            done
+            [ -z "$service_uuid" ] && { echo "Missing --service-uuid" >&2; exit 1; }
+            [ -z "$characteristics" ] && { echo "Missing --characteristics JSON" >&2; exit 1; }
+            call_api --es command gatt-server --es action add-service \
+                --es service_uuid "$service_uuid" --ez primary "$primary" \
+                --es characteristics "$characteristics"
+            ;;
+        *) echo "Unknown gatt-server sub-command: $sub" >&2; exit 1 ;;
+    esac
+}
+
+#### rfcomm
+rfcomm_cmd() {
+    local address="" uuid="" name=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_rfcomm_usage; exit 0 ;;
+            --address) address="$2"; shift 2 ;;
+            --uuid)    uuid="$2"; shift 2 ;;
+            --name)    name="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Usage: $SCRIPTNAME rfcomm --address <mac>" >&2; exit 1; }
+    local extras=(--es command rfcomm --es address "$address")
+    [ -n "$uuid" ] && extras+=(--es uuid "$uuid")
+    [ -n "$name" ] && extras+=(--es name "$name")
+    call_api "${extras[@]}"
+}
+
+#### profiles
+profiles_cmd() {
+    local address=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_profiles_usage; exit 0 ;;
+            --address) address="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Usage: $SCRIPTNAME profiles --address <mac>" >&2; exit 1; }
+    call_api --es command profiles --es address "$address"
+}
+
+# ─── Main dispatch ────────────────────────────────────────────────────────
+case "$CMD" in
+    adapter)       adapter_cmd "$@" ;;
+    discovery)     discovery_cmd "$@" ;;
+    le-scan)       le_scan_cmd "$@" ;;
+    gatt-connect)  gatt_connect "$@" ;;
+    gatt-discover) gatt_discover "$@" ;;
+    gatt-read)     gatt_read "$@" ;;
+    gatt-write)    gatt_write "$@" ;;
+    gatt-notify)   gatt_notify "$@" ;;
+    gatt-server)   gatt_server_cmd "$@" ;;
+    rfcomm)        rfcomm_cmd "$@" ;;
+    profiles)      profiles_cmd "$@" ;;
+    -h|--help)     show_usage ;;
+    *)             echo "Unknown command: $CMD" >&2; show_usage >&2; exit 1 ;;
+esac

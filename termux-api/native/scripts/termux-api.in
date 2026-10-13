@@ -1,0 +1,9 @@
+#!/system/bin/sh
+#
+# termux-api — (DEPRECATED SHELL WRAPPER)
+#
+# The termux-api binary is now installed directly at PREFIX/bin/termux-api.
+# This script is retained only for manual fallback.
+
+PREFIX="@TERMUX_PREFIX@"
+exec "${PREFIX}/libexec/termux-api-broadcast" "$@"

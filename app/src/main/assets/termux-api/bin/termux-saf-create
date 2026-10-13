@@ -1,0 +1,86 @@
+#!/bin/sh
+#
+# NAME
+#     termux-saf-create — Membuat file di folder yang dikelola oleh SAF
+#
+# SYNOPSIS
+#     termux-saf-create [-t mime-type] folder-uri name
+#
+# DESCRIPTION
+#     Membuat file baru di folder yang dikelola oleh Termux:API melalui SAF (Storage Access Framework).
+#     SAF adalah framework Android (API level 19+) yang memungkinkan aplikasi mengakses dokumen
+#     dari berbagai penyedia penyimpanan melalui sistem picker UI.
+#     Saat pertama kali akses ke direktori diperlukan, pengguna akan diminta memilih folder
+#     melalui dialog sistem. Izin ini bersifat persisten hingga pengguna mencabutnya.
+#     Output dari perintah ini adalah objek JSON yang berisi URI file yang dibuat, dikembalikan
+#     melalui termux-api.
+#     Mengembalikan URI yang dapat digunakan untuk membaca dan menulis file dengan termux-saf-read
+#     dan termux-saf-write.
+#     Tipe MIME dapat ditentukan secara eksplisit atau ditebak berdasarkan ekstensi file.
+#     Android tidak mengizinkan pembuatan file dengan nama yang sama, sehingga nama mungkin diubah
+#     jika sudah ada. Gunakan termux-saf-stat dengan URI yang dikembalikan untuk mendapatkan nama
+#     sebenarnya.
+#
+# OPTIONS
+#     -t mime-type  Tentukan tipe MIME file (default: application/octet-stream)
+#
+# EXAMPLES
+#     # Membuat file teks
+#     termux-saf-create -t text/plain content://com.android.externalstorage/doc/home/ document.txt
+#
+set -e -u
+
+SCRIPTNAME=termux-saf-create
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [-t mime-type] <folder-uri> <name>
+
+Create a new file in a SAF-managed folder. The file is created with
+the given name; if a file with that name already exists, Android
+may append a suffix to avoid collision. Use termux-saf-stat on the
+returned URI to get the actual name.
+
+OUTPUT:
+  The URI of the created file is printed to stdout. Use this URI
+  with termux-saf-read, termux-saf-write, and termux-saf-stat.
+
+PERMISSIONS:
+  No special permissions required (SAF, API 19+).
+
+OPTIONS:
+  -h          Show this help message.
+  -t <mime>   MIME type of the file (e.g., "image/jpeg", "text/plain").
+              If not specified, guessed from file extension. If
+              guessing fails, defaults to "application/octet-stream".
+
+ARGUMENTS:
+  folder-uri  URI of the parent directory (from termux-saf-dirs or
+              termux-saf-ls).
+  name        Name for the new file.
+
+EXAMPLES:
+  # Create a text file
+  $SCRIPTNAME content://com.android.externalstorage/doc/home/ readme.txt
+
+  # Create a JPEG with explicit MIME type
+  $SCRIPTNAME -t image/jpeg "\$(termux-saf-dirs | jq -r '.[0].uri')" photo.jpg
+EOF
+    exit 0
+}
+
+mime=''
+
+while getopts :ht: option
+do
+    case "$option" in
+        h) show_usage;;
+        t) mime="$OPTARG";;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 2 ]; then echo "$SCRIPTNAME: Invalid argument count"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api SAF --es safmethod createDocument --es treeuri "$1" --es filename "$2" --es mimetype "$mime"
+ 

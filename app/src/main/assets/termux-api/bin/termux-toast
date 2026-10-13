@@ -1,0 +1,100 @@
+#!/bin/bash
+#
+# NAME
+#     termux-toast — Show a transient popup message (Toast)
+#
+# SYNOPSIS
+#     termux-toast [-b bgcolor] [-c color] [-g gravity] [-s] [text]
+#
+# DESCRIPTION
+#     Display a temporary popup message (Toast) on the device screen.
+#     The message auto-dismisses after a short duration. Text is provided
+#     as command-line arguments or read from stdin if no arguments are
+#     given. Arguments take precedence over stdin.
+#
+#     The appearance can be customized: background color, text color,
+#     and gravity (top/middle/bottom). Colors can be standard names
+#     (red, green, blue) or hex values (#FF0000 or #FFFF0000 for ARGB).
+#     Invalid colors fall back to defaults. Use -s for a shorter display.
+#
+# OPTIONS
+#     -b bgcolor  Background color (default: gray)
+#     -c color    Text color (default: white)
+#     -g gravity  Position: top, middle, or bottom (default: middle)
+#     -s          Short duration only
+#
+# EXAMPLES
+#     # Show a toast with default settings
+#     termux-toast "Hello World"
+#
+#     # Show a colored toast at the top
+#     termux-toast -b "#FF0000" -c white -g top "Warning"
+#
+set -e -u
+
+SCRIPTNAME=termux-toast
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [-b bgcolor] [-c color] [-g gravity] [-s] [text]
+
+Show a transient popup (Toast) message on the device screen. The text
+can be supplied as arguments, piped via stdin, or entered interactively
+(3-second input delay). Arguments take precedence over stdin.
+
+OUTPUT:
+  No JSON output. The Toast is rendered directly on screen.
+  Exit code 0 on success, non-zero on failure.
+
+OPTIONS:
+  -h          Show this help message.
+  -b <color>  Background color. Named colors (red, blue, gray, etc.) or
+              hex value in 6/8 digit format: RRGGBB or AARRGGBB.
+              Default: gray.
+  -c <color>  Text color. Same format as -b. Default: white.
+  -g <pos>    Toast position: top, middle, or bottom. Default: middle.
+  -s          Short duration toast (LENGTH_SHORT vs LENGTH_LONG).
+
+EXAMPLES:
+  # Simple toast
+  $SCRIPTNAME "Hello, Termux!"
+
+  # Colored toast at top
+  $SCRIPTNAME -b "#FF0000" -c white -g top "Error: Something went wrong"
+
+  # Toast from stdin
+  echo "Task completed" | $SCRIPTNAME -s
+
+  # Short toast at bottom
+  $SCRIPTNAME -s -g bottom "Quick message"
+EOF
+    exit 0
+}
+
+PARAMS=""
+while getopts :hsc:b:g: option
+do
+	case "$option" in
+		h) show_usage;;
+		s) PARAMS+=" --ez short true";;
+		c) PARAMS+=" --es text_color $OPTARG";;
+		b) PARAMS+=" --es background $OPTARG";;
+		g) PARAMS+=" --es gravity $OPTARG";;
+		?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+	esac
+done
+shift $((OPTIND-1))
+
+CMD="/data/data/com.texmux/files/apps/com.texmux/bin/termux-api Toast $PARAMS"
+
+# If toast text was not passed as an argument, then attempt to read from STDIN with a 3s timeout
+# Toast text arguments takes precedence over STDIN
+if [ $# = 0 ]; then
+	set +e; IFS= read -t 3 -r -d '' TOAST_TEXT; set -e;
+else
+	TOAST_TEXT="$*"
+fi
+
+# Trim trailing newlines
+TOAST_TEXT="$(echo "$TOAST_TEXT")"
+
+echo "$TOAST_TEXT" | $CMD

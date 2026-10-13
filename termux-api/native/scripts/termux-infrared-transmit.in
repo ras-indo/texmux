@@ -1,0 +1,85 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-infrared-transmit — Transmit an infrared pattern
+#
+# SYNOPSIS
+#     termux-infrared-transmit -f frequency pattern
+#
+# DESCRIPTION
+#     Transmit an infrared signal using the device's built-in IR blaster.
+#     The signal pattern is specified as comma-separated on/off interval
+#     durations in microseconds (e.g., '20,50,20,30' means: 20µs on,
+#     50µs off, 20µs on, 30µs off). The total pattern duration must
+#     not exceed 2 seconds.
+#
+#     The carrier frequency must be one of the frequencies returned by
+#     termux-infrared-frequencies. The most common frequency for consumer
+#     remote controls is 38000 Hz (38 kHz). Common IR protocols include
+#     NEC, Sony SIRC, Philips RC-5 / RC-6, and Samsung.
+#
+# OPTIONS
+#     -f frequency  IR carrier frequency in Hertz
+#
+# EXAMPLES
+#     # Transmit an IR pattern at 38000 Hz
+#     termux-infrared-transmit -f 38000 20,50,20,30
+#
+set -e -u
+
+SCRIPTNAME=termux-infrared-transmit
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME -f <frequency> <pattern>
+
+Transmit an infrared pattern using the device's IR blaster.
+The pattern is specified as comma-separated on/off intervals in
+microseconds (e.g., "20,50,20,30"). The total pattern duration
+must be less than 2 seconds.
+
+OUTPUT:
+  No JSON output. IR signal is transmitted directly.
+  Exit code 0 on success, non-zero on error.
+
+PERMISSIONS:
+  android.permission.CONSUMER_IR (Android 19+, API 19)
+
+OPTIONS:
+  -h              Show this help message.
+  -f <frequency>  IR carrier frequency in Hertz. Use
+                  termux-infrared-frequencies to check valid
+                  frequencies for this device.
+
+ARGUMENTS:
+  pattern         Comma-separated on/off intervals in microseconds.
+                  Example: "20,50,20,30" means:
+                  20μs on, 50μs off, 20μs on, 30μs off.
+                  Total duration must be < 2 seconds.
+
+EXAMPLES:
+  # Transmit a simple IR pattern
+  $SCRIPTNAME -f 38000 "20,50,20,30"
+
+  # Transmit a longer IR command (e.g., for TV power toggle)
+  $SCRIPTNAME -f 38000 "9000,4500,600,600,600,600,600,600,600,1650"
+EOF
+    exit 0
+}
+
+FREQUENCY=""
+while getopts :hf: option
+do
+    case "$option" in
+	h) show_usage;;
+	f) FREQUENCY="--ei frequency $OPTARG";;
+	?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ -z "$FREQUENCY" ]; then echo "$SCRIPTNAME: No frequency specified"; exit 1; fi
+
+if [ $# -lt 1 ]; then echo "$SCRIPTNAME: too few arguments"; exit 1; fi
+if [ $# -gt 1 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api InfraredTransmit $FREQUENCY --eia pattern $1

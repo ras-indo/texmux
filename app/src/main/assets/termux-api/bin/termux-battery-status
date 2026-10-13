@@ -1,0 +1,94 @@
+#!/bin/sh
+#
+# NAME
+#     termux-battery-status — Get device battery status
+#
+# SYNOPSIS
+#     termux-battery-status
+#
+# DESCRIPTION
+#     Retrieve the current status of the device battery. Returns a JSON
+#     object containing: battery level (percentage 0-100), temperature
+#     (in Celsius), voltage (in millivolts), current (in microamperes,
+#     negative when discharging), charging state (charging/discharging/full/
+#     not_charging), power source (AC/USB/wireless), and health status
+#     (good/overheat/dead/over_voltage/unknown).
+#
+#     Useful for monitoring battery health, checking if the device is
+#     charging, or triggering actions at specific battery levels.
+#     Requires no special permissions on most devices.
+#
+# OPTIONS
+#     -h, --help  Display this help message and exit.
+#
+# EXAMPLES
+#     # Get current battery status
+#     termux-battery-status
+#
+#     # Check if device is charging (parse JSON output)
+#     termux-battery-status | jq '.plugged'
+#
+set -e -u
+
+SCRIPTNAME=termux-battery-status
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Retrieve the current status and health of the device battery. Useful for
+monitoring battery level, checking if the device is charging, detecting
+plugged-in power source type (AC/USB/wireless), and reading battery
+health metrics like temperature, voltage, current, and charge cycles.
+
+OUTPUT:
+  This command outputs a JSON object to stdout with fields:
+  present (boolean) — Whether a battery is present
+  technology (string) — Battery technology type (e.g. "Li-ion", "Li-poly")
+  health (string) — Battery health: GOOD, OVERHEAT, DEAD, OVER_VOLTAGE, COLD, UNKNOWN, UNSPECIFIED_FAILURE
+  plugged (string) — Power source: UNPLUGGED, PLUGGED_AC, PLUGGED_USB, PLUGGED_WIRELESS, PLUGGED_DOCK
+  status (string) — Charge status: CHARGING, DISCHARGING, FULL, NOT_CHARGING, UNKNOWN
+  temperature (number) — Battery temperature in degrees Celsius (one decimal)
+  voltage (int) — Battery voltage in millivolts (mV)
+  current (int) — Instantaneous battery current in microamperes (µA); positive=charging, negative=discharging
+  current_average (int) — Average battery current in µA over a short window
+  percentage (int) — Remaining battery capacity as percentage (0-100)
+  level (int) — Raw battery level from the system
+  scale (int) — Maximum raw battery scale value
+  charge_counter (int) — Battery charge counter in µAh (if supported)
+  energy (long) — Remaining battery energy in nWh (if supported)
+  cycle (int) — Battery charge cycle count (Android 14+, if supported)
+
+PERMISSIONS:
+  No special permissions required. Reads system battery sticky broadcast.
+
+OPTIONS:
+  -h, --help    Display this help message and exit.
+
+EXAMPLES:
+  # Get current battery status
+  $SCRIPTNAME
+
+  # Check if charging (parse JSON output)
+  $SCRIPTNAME | jq '.status'
+
+  # Get battery percentage
+  $SCRIPTNAME | jq '.percentage'
+
+  # Check temperature
+  $SCRIPTNAME | jq '.temperature'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api BatteryStatus

@@ -1,0 +1,84 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-saf-ls — Menampilkan isi direktori SAF
+#
+# SYNOPSIS
+#     termux-saf-ls folder-uri
+#
+# DESCRIPTION
+#     Menampilkan daftar file dan folder dalam direktori yang diidentifikasi oleh URI melalui SAF (Storage Access Framework).
+#     SAF adalah framework Android (API level 19+) yang memungkinkan aplikasi mengakses dokumen
+#     dari berbagai penyedia penyimpanan melalui sistem picker UI.
+#     Direktori harus sudah diizinkan aksesnya oleh pengguna (lihat termux-saf-managedir).
+#     Output berupa array JSON yang dikembalikan melalui termux-api, dengan objek-objek yang
+#     memiliki kunci: 'name' (nama), 'uri' (URI), 'type' (tipe MIME), 'length' (ukuran dalam
+#     byte untuk file). Folder dikenali dari tipe MIME khusus 'vnd.android.document/directory'.
+#
+# OPTIONS
+#     Tidak ada opsi.
+#
+# EXAMPLES
+#     # Melihat isi direktori
+#     termux-saf-ls content://com.android.externalstorage/doc/home/
+#
+set -e -u
+
+SCRIPTNAME=termux-saf-ls
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <folder-uri>
+
+List the contents (files and subdirectories) of a SAF-managed folder.
+
+OUTPUT:
+  JSON array of entries. Each entry is an object with:
+    name   (string) — Human-readable name
+    uri    (string) — Document URI for use with other saf-* commands
+    type   (string) — MIME type. Folders have the special type
+                      "vnd.android.document/directory".
+    length (int)    — File size in bytes (0 for directories)
+
+  Folders can be identified by checking if type equals
+  "vnd.android.document/directory".
+
+PERMISSIONS:
+  No special permissions required (SAF, API 19+).
+
+OPTIONS:
+  -h          Show this help message.
+
+ARGUMENTS:
+  folder-uri  URI of the directory to list. Obtainable from:
+              - termux-saf-dirs (managed directories)
+              - termux-saf-ls (subdirectory listing)
+              - termux-saf-managedir (picker result)
+              - termux-saf-mkdir (created directory)
+
+EXAMPLES:
+  # List a managed directory
+  URI=\$(termux-saf-dirs | jq -r '.[0].uri')
+  $SCRIPTNAME "\$URI"
+
+  # List only files, not subdirectories
+  $SCRIPTNAME "\$URI" | jq '[.[] | select(.type != "vnd.android.document/directory")]'
+
+  # List files sorted by size (largest first)
+  $SCRIPTNAME "\$URI" | jq 'sort_by(.length) | reverse'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 1 ]; then echo "$SCRIPTNAME: Invalid argument count"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api SAF --es safmethod listDirectory --es treeuri "$1"
+ 

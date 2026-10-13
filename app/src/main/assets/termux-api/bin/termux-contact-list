@@ -1,0 +1,84 @@
+#!/bin/sh
+#
+# NAME
+#     termux-contact-list — List all contacts
+#
+# SYNOPSIS
+#     termux-contact-list
+#
+# DESCRIPTION
+#     Read all contacts from the device's address book. Returns a JSON
+#     array of contact objects, each containing: contact ID, display name,
+#     phone numbers (with type: mobile/home/work), email addresses,
+#     photo thumbnail URI (if available), and last updated timestamp.
+#
+#     Requires READ_CONTACTS permission. Returns an empty array if no
+#     contacts are found or if the permission has not been granted.
+#     Use standard shell tools (jq, grep) to filter the JSON output.
+#
+# OPTIONS
+#     -h, --help  Display this help message and exit.
+#
+# EXAMPLES
+#     termux-contact-list
+#
+set -e -u
+
+SCRIPTNAME=termux-contact-list
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Read all contacts from the device's address book and list them as a JSON
+array. Each contact entry includes the display name and phone number.
+Contacts without a phone number are excluded from the output. Returns an
+empty array if no contacts are found or if the READ_CONTACTS permission
+has not been granted.
+
+OUTPUT:
+  This command outputs a JSON array to stdout. Each entry contains:
+  name (string) — Contact's display name as stored in the address book
+  number (string) — Phone number associated with the contact
+
+  Note: Only contacts with at least one phone number are included.
+  Multiple numbers per contact are NOT merged; only the first number
+  found is returned per contact ID.
+
+PERMISSIONS:
+  Android 1+ — android.permission.READ_CONTACTS
+  Requires the user to grant "Contacts" permission in Android Settings.
+
+OPTIONS:
+  -h, --help    Display this help message and exit.
+
+EXAMPLES:
+  # List all contacts
+  $SCRIPTNAME
+
+  # Count contacts
+  $SCRIPTNAME | jq length
+
+  # Find a contact by name
+  $SCRIPTNAME | jq '.[] | select(.name | test("John"; "i"))'
+
+  # Get all phone numbers
+  $SCRIPTNAME | jq '.[].number'
+
+  # Export contacts to CSV
+  $SCRIPTNAME | jq -r '.[] | [.name, .number] | @csv' > contacts.csv
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api ContactList

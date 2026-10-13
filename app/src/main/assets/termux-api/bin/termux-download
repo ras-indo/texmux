@@ -1,0 +1,104 @@
+#!/bin/sh
+#
+# NAME
+#     termux-download — Download a resource using the system download manager
+#
+# SYNOPSIS
+#     termux-download [-d description] [-t title] [-p path] url
+#
+# DESCRIPTION
+#     Download a file from a URL using the Android system download
+#     manager. The download is handled by the system's DownloadManager
+#     service, which manages the network connection, retries on failure,
+#     and shows a progress notification in the status bar.
+#
+#     Optional parameters: -d sets the notification description text,
+#     -t sets the notification title, and -p specifies the full absolute
+#     path where the file should be saved. If -p is not specified, the
+#     system Downloads folder is used. Returns a JSON object with the
+#     download ID that can be used to query download status.
+#
+# OPTIONS
+#     -d description  description for the download request notification
+#     -t title        title for the download request notification
+#     -p path         full path to which the file should be downloaded
+#
+# EXAMPLES
+#     # Download a file with a custom title
+#     termux-download -t "My File" https://example.com/file.zip
+#
+#     # Download to a specific path
+#     termux-download -p /data/data/com.texmux/files/apps/com.texmux/tmp/downloaded/file https://example.com/file.zip
+#
+set -e -u
+
+SCRIPTNAME=termux-download
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [-d description] [-t title] [-p path] <url>
+
+Download a file using the Android DownloadManager. The download runs
+in the background and is managed by the system. Progress is shown
+in the notification bar.
+
+OUTPUT:
+  JSON object with:
+    downloadId (int) — DownloadManager ID for tracking/cancelling
+
+PERMISSIONS:
+  android.permission.INTERNET
+  android.permission.WRITE_EXTERNAL_STORAGE (for -p path on older Android)
+
+OPTIONS:
+  -h                Show this help message.
+  -d <description>  Description text shown in the download notification.
+  -t <title>        Title text shown in the download notification.
+  -p <path>         Full output path for the downloaded file. Without
+                    -p, the file is saved to the system Downloads folder.
+
+EXAMPLES:
+  # Simple download
+  $SCRIPTNAME "https://example.com/file.zip"
+
+  # Download with custom title and description
+  $SCRIPTNAME -t "Important File" -d "Downloading your report" \\
+    "https://example.com/report.pdf"
+
+  # Download to a specific location
+  $SCRIPTNAME -p /sdcard/Download/myfile.txt \\
+    "https://example.com/myfile.txt"
+EOF
+    exit 0
+}
+
+ARG_D=""
+OPT_D=""
+ARG_T=""
+OPT_T=""
+ARG_P=""
+OPT_P=""
+
+while getopts :hd:t:p: option
+do
+    case "$option" in
+	h) show_usage;;
+	d) ARG_D="--es description"; OPT_D="$OPTARG";;
+	t) ARG_T="--es title"; OPT_T="$OPTARG";;
+	p) ARG_P="--es path"; OPT_P="$OPTARG";;
+	?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# -lt 1 ]; then echo "$SCRIPTNAME: no url specified"; exit 1; fi
+if [ $# -gt 1 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+URL_TO_DOWNLOAD="$1"
+
+set --
+if [ -n "$ARG_D" ]; then set -- "$@" $ARG_D "$OPT_D"; fi
+if [ -n "$ARG_T" ]; then set -- "$@" $ARG_T "$OPT_T"; fi
+if [ -n "$ARG_P" ]; then set -- "$@" $ARG_P "$OPT_P"; fi
+set -- "$@" "$URL_TO_DOWNLOAD"
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api Download "$@"

@@ -1,0 +1,78 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-saf-read — Membaca file melalui SAF
+#
+# SYNOPSIS
+#     termux-saf-read uri
+#
+# DESCRIPTION
+#     Membaca file yang diidentifikasi oleh URI melalui SAF (Storage Access Framework, API level 19+)
+#     dan menulis datanya ke stdout. File harus berada di direktori yang sudah diizinkan aksesnya
+#     oleh pengguna melalui dialog sistem picker UI.
+#     Data yang dikembalikan oleh termux-api dalam format base64 akan didekode secara otomatis
+#     dan ditulis sebagai output biner mentah ke stdout.
+#     Output dapat diproses dengan pipe atau diarahkan ke file untuk membuat salinan lokal.
+#     Gunakan termux-saf-ls untuk mendapatkan URI file.
+#
+# OPTIONS
+#     Tidak ada opsi.
+#
+# EXAMPLES
+#     # Membaca file dan menampilkannya
+#     termux-saf-read content://com.android.externalstorage/doc/home/document.txt
+#
+#     # Membaca file dan menyimpannya secara lokal
+#     termux-saf-read content://.../document.txt > local_copy.txt
+#
+set -e -u
+
+SCRIPTNAME=termux-saf-read
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <uri>
+
+Read the contents of a SAF-managed file and write it to stdout.
+The data is written as-is (binary safe). Use shell redirection
+or pipes to save to a local file or process the content.
+
+OUTPUT:
+  The file content is written to stdout. Redirect to a file to
+  make a local copy. Binary content is supported.
+
+PERMISSIONS:
+  No special permissions required (SAF, API 19+).
+
+OPTIONS:
+  -h          Show this help message.
+
+ARGUMENTS:
+  uri         Document URI of the file to read. Obtain URIs from
+              termux-saf-ls or termux-saf-create.
+
+EXAMPLES:
+  # Read a file and save locally
+  $SCRIPTNAME content://.../document/file.txt > /sdcard/local_copy.txt
+
+  # Read and pipe through a command
+  $SCRIPTNAME "\$URI" | head -20
+
+  # Read a file and show its size
+  $SCRIPTNAME "\$URI" | wc -c
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 1 ]; then echo "$SCRIPTNAME: Invalid argument count"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api SAF --es safmethod readDocument --es uri "$1"
+ 

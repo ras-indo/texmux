@@ -1,0 +1,85 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-wifi-enable — Toggle Wi-Fi on/off
+#
+# SYNOPSIS
+#     termux-wifi-enable [true | false]
+#
+# DESCRIPTION
+#     Switch the device's Wi-Fi radio on or off programmatically.
+#     Accepts exactly one argument: "true" to enable Wi-Fi or "false"
+#     to disable it.
+#
+#     When enabling, the device will scan for and connect to known
+#     networks automatically. When disabling, any active Wi-Fi
+#     connection is dropped. The new state is returned via termux-api.
+#     Note: On some Android versions, the system may show a
+#     confirmation dialog when toggling Wi-Fi.
+#
+# OPTIONS
+#     true   enable Wi-Fi
+#     false  disable Wi-Fi
+#
+# EXAMPLES
+#     # Enable Wi-Fi
+#     termux-wifi-enable true
+#
+#     # Disable Wi-Fi
+#     termux-wifi-enable false
+#
+set -e -u
+
+SCRIPTNAME=termux-wifi-enable
+
+show_usage () {
+        cat <<EOF
+Usage: $SCRIPTNAME [true | false]
+
+Switch the device Wi-Fi radio on or off programmatically.
+
+ARGUMENTS
+    true   Enable Wi-Fi
+    false  Disable Wi-Fi
+
+OUTPUT
+    Returns the new Wi-Fi state as a JSON response from the API.
+
+PERMISSIONS
+    android.permission.CHANGE_WIFI_STATE
+    android.permission.ACCESS_WIFI_STATE
+
+    Note: On some Android versions a system confirmation dialog may
+    appear when toggling Wi-Fi.
+
+EXAMPLES
+    # Enable Wi-Fi
+    $SCRIPTNAME true
+
+    # Disable Wi-Fi
+    $SCRIPTNAME false
+
+    # Enable and then check connection
+    $SCRIPTNAME true && sleep 5 && termux-wifi-connectioninfo
+EOF
+        exit 1
+}
+
+if [ "$#" -eq 0 ]; then
+        show_usage
+fi
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+        show_usage
+fi
+
+if [ "$#" -ne 1 ]; then
+        show_usage
+fi
+
+case $1 in
+        true|false);;
+        *) show_usage;;
+esac
+
+@TERMUX_PREFIX@/bin/termux-api WifiEnable --ez enabled "$1"

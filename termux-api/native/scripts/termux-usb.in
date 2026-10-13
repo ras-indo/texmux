@@ -1,0 +1,162 @@
+#!@TERMUX_PREFIX@/bin/bash
+#
+# NAME
+#     termux-usb — List or access USB devices
+#
+# SYNOPSIS
+#     termux-usb [-l] [-i device] [-r] [-E] [-e command] [device | vendorId productId]]
+#
+# DESCRIPTION
+#     List or access USB devices connected to the Android device via
+#     Android's USB Host API (API level 12+). Direct file system access
+#     to USB devices is not allowed on Android — devices must be accessed
+#     through this script, which uses the termux-api Usb service.
+#
+#     The -l flag lists available USB devices with vendor/product info.
+#     The -i flag prints detailed info about a specific device.
+#     The -r flag requests permission from the user via a system dialog.
+#     The -e flag executes a command with the device file descriptor (FD)
+#     passed as an argument. The -E flag exports the FD as the
+#     TERMUX_USB_FD environment variable instead. The FD can be used
+#     for raw I/O via ioctl() and read()/write() system calls.
+#     Returns JSON via termux-api.
+#
+# OPTIONS
+#     -l             List available devices
+#     -i device      Show detailed info about a device
+#     -r             Show permission request dialog if necessary
+#     -e command     Execute command with device FD as argument
+#     -E             Export FD as TERMUX_USB_FD env var instead of CLI arg
+#     -h             Show this help
+#
+# EXAMPLES
+#     # List USB devices
+#     termux-usb -l
+#
+#     # Show device info
+#     termux-usb -i /dev/bus/usb/001/002
+#
+#     # Open a device with permission request
+#     termux-usb -r /dev/bus/usb/001/002
+#
+set -e -u
+
+SCRIPTNAME=termux-usb
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME [-l] [-i device] [-r] [-E] [-e command] [device | vendorId productId]]
+
+List or interact with USB devices connected to the device.
+When -l is given, lists all connected USB devices. When used with
+-e, a file descriptor to the USB device is provided to the command.
+
+OUTPUT:
+  JSON array (when listing with -l) of USB device objects:
+    deviceName   (string) — Human-readable device name
+    vendorId     (int)    — USB vendor ID
+    productId    (int)    — USB product ID
+    manufacturer (string) — Manufacturer name (if available)
+    product      (string) — Product name (if available)
+    serial       (string) — Serial number (if available)
+
+  JSON object (when using -i) with detailed device info.
+
+PERMISSIONS:
+  No special permissions required (uses UsbManager API).
+
+OPTIONS:
+  -h              Show this help message.
+  -l              List all connected USB devices.
+  -i <device>     Show detailed info about a specific device.
+  -r              Show the system permission request dialog if the
+                  app doesn't already have access to the device.
+  -e <command>    Execute the given command, passing a file descriptor
+                  to the USB device as the last argument (or via
+                  TERMUX_USB_FD env var with -E).
+  -E              When used with -e, pass the USB device file
+                  descriptor via the TERMUX_USB_FD environment
+                  variable instead of as a command argument.
+
+ARGUMENTS:
+  device          Device identifier (from -l output).
+  vendorId        USB vendor ID (integer) to identify a device.
+  productId       USB product ID (integer) to identify a device.
+
+EXAMPLES:
+  # List connected USB devices
+  $SCRIPTNAME -l
+
+  # Show device info
+  $SCRIPTNAME -i /dev/bus/usb/001/002
+
+  # Interact with a device (FD passed as last argument)
+  $SCRIPTNAME -e "lsusb -D"
+
+  # Use with environment variable instead
+  $SCRIPTNAME -E -e "python3 /path/to/usb_script.py"
+EOF
+    exit 0
+}
+
+ACTION="permission"
+PARAMS=""
+while getopts :hli:re:E option
+do
+    case "$option" in
+        h) show_usage;;
+        l) ACTION="list";;
+        i) ACTION="info"; PARAMS="$PARAMS --es device $OPTARG";;
+        r) PARAMS="$PARAMS --ez request true";;
+        e) ACTION="open"; export TERMUX_CALLBACK="$OPTARG";;
+        E) export TERMUX_EXPORT_FD=true;;
+        :) echo "$SCRIPTNAME: option -$OPTARG requires an argument"; exit 1;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ "$ACTION" == "list" ] || [ "$ACTION" == "info" ]
+then
+    if [ $# -gt 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+else
+    if [ $# -lt 1 ]; then
+        echo "$SCRIPTNAME: missing -l or device path"
+        exit 1
+    elif [ $# -eq 1 ]; then
+        # The device's usbfs path has been provided
+        PARAMS="$PARAMS --es device $1"
+    elif [ $# -eq 2 ]; then
+        # A vendorId and ProductId of the device has been provided
+        PARAMS="$PARAMS --es vendorId $1"
+        PARAMS="$PARAMS --es productId $2"
+    else
+        echo "$SCRIPTNAME: too many arguments"
+        exit 1
+    fi
+fi
+
+CMD="@TERMUX_PREFIX@/bin/termux-api Usb -a $ACTION $PARAMS"
+
+if [[ "$ACTION" == "list" || "$ACTION" == "info" ]]; then
+    $CMD
+elif [[ "$ACTION" == "permission" ]]; then
+    OUTPUT="$($CMD)"
+    case "$OUTPUT" in
+        "No such device"|"No such device.") echo "No such device."; exit 1;;
+        "yes") echo "Permission granted."; exit 0;;
+        "no"|"Permission denied.") echo "Permission denied."; exit 1;;
+        "Permission request timeout.") echo "Permission request timeout."; exit 1;;
+        *) printf "%s\n" "$OUTPUT"; exit 0;;
+    esac
+elif [[ "$ACTION" == "open" ]]; then
+    OUTPUT="$($CMD)"
+    case "$OUTPUT" in
+        "No such device"|"No such device.") echo "No such device."; exit 1;;
+        "No permission"|"Permission denied.") echo "Permission denied."; exit 1;;
+        "Permission request timeout.") echo "Permission request timeout."; exit 1;;
+        "Failed to open device"|"Open device failed.") echo "Open device failed."; exit 1;;
+        *) printf "%s\n" "$OUTPUT"; exit 0;;
+    esac
+fi
+
+exit 0

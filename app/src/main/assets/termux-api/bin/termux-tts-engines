@@ -1,0 +1,71 @@
+#!/bin/sh
+#
+# NAME
+#     termux-tts-engines — List available text-to-speech engines
+#
+# SYNOPSIS
+#     termux-tts-engines
+#
+# DESCRIPTION
+#     List all installed text-to-speech (TTS) engines on the device.
+#     Returns a JSON array of engine objects, each containing: engine
+#     name (label), package name, and list of supported languages
+#     with country variants and voice names.
+#
+#     The engine name from the output can be passed to termux-tts-speak
+#     via the -e option to select a specific TTS engine. Common engines
+#     include Google Text-to-speech, Samsung TTS, and Pico TTS.
+#     Engines must be installed and enabled in system settings to appear.
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # List available TTS engines
+#     termux-tts-engines
+#
+set -e -u
+
+SCRIPTNAME=termux-tts-engines
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+List all available text-to-speech (TTS) engines installed on the
+device. The engine name from the output can be used with
+termux-tts-speak -e <engine> to select a specific engine.
+
+OUTPUT:
+  JSON array of TTS engine objects:
+    name  (string) — Engine identifier (use with -e in tts-speak)
+    label (string) — Human-readable engine name
+    icon  (int)    — Engine icon resource identifier
+
+PERMISSIONS:
+  None required.
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+EXAMPLES:
+  # List all engines
+  $SCRIPTNAME
+
+  # Use a specific engine with termux-tts-speak
+  termux-tts-speak -e "com.google.android.tts" "Hello world"
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+	h) show_usage;;
+	?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api TextToSpeech --es engine LIST_AVAILABLE

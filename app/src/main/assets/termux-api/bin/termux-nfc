@@ -1,0 +1,113 @@
+#!/bin/bash
+#
+# NAME
+#     termux-nfc — Read/write NDEF tags via NFC
+#
+# SYNOPSIS
+#     termux-nfc [-r [short|full]] [-w] [-t text]
+#
+# DESCRIPTION
+#     Read or write data from/to an NFC NDEF (NFC Data Exchange Format)
+#     tag using the device's NFC adapter. NFC must be enabled on the
+#     device and the tag must be brought near the NFC antenna (typically
+#     the back of the phone).
+#
+#     Use -r short for basic tag info (UID, technology types, NDEF
+#     message count) or -r full for complete details including NDEF
+#     records (TNF, type, ID, payload). Use -w to write text data
+#     to the tag (specified with -t). Overwrites existing NDEF data.
+#     Returns JSON via termux-api.
+#
+# OPTIONS
+#     -r [short|full]  Read tag information (short or full)
+#     -w               Write information to a tag
+#     -t text          Text to write to tag (used with -w)
+#
+# EXAMPLES
+#     # Read short tag info
+#     termux-nfc -r short
+#
+#     # Read full tag info
+#     termux-nfc -r full
+#
+#     # Write text to a tag
+#     termux-nfc -w -t "Hello NFC"
+#
+set -e -u
+
+show_usage() {
+    cat <<EOF
+Usage: $SCRIPTNAME [-r [short|full]] [-w] [-t text]
+
+Read from or write to an NFC NDEF tag. When reading, places the device
+near a tag to read its contents. When writing, prepares the data and
+then prompts to tap a tag to write.
+
+OUTPUT:
+  JSON object with NDEF tag information:
+    id          (string) — Tag ID (hex)
+    techList    (array)  — Available tag technologies
+    ndefMessage (array)  — NDEF records (type, payload, tnf)
+
+PERMISSIONS:
+  android.permission.NFC (Android 10+, API 29)
+  No runtime permission needed on older Android versions.
+  NFC must be enabled in device settings.
+
+OPTIONS:
+  -h              Show this help message.
+  -r [short|full] Read from a tag. "short" (default) reads basic
+                  information; "full" reads all tag contents and
+                  NDEF records.
+  -w              Write mode. Prompts to tap a tag after preparing
+                  data.
+  -t <text>       Text data to write to the tag (used with -w).
+
+EXAMPLES:
+  # Read basic tag information
+  $SCRIPTNAME -r
+
+  # Read full tag contents
+  $SCRIPTNAME -r full
+
+  # Write text to a tag
+  $SCRIPTNAME -w -t "Hello, NFC!"
+
+  # Read tag ID only
+  $SCRIPTNAME -r | jq -r '.id'
+EOF
+    exit 0
+}
+
+ARG_R=""
+OPT_R=""
+ARG_W=""
+OPT_T=""
+ARG_T=""
+
+PARAM=""
+
+if [ $# -eq 0 ];then show_usage;fi
+
+while getopts ":r:t:w" opt
+do
+  case "$opt" in
+      r) ARG_R="--es mode read"; OPT_R="--es param $OPTARG"; ;;
+      w) ARG_W="--es mode write";;
+      t) ARG_T="--es param text --es value"; OPT_T="$OPTARG"; ;;
+      ?) echo "Error: unknown parameters: $opt $OPTARG;";show_usage; ;;
+  esac 
+done
+
+
+shift $((OPTIND-1))
+
+if [ "$#" != 0 ]; then echo "Error: too many parameters!"; show_usage;fi
+if [ -n "$ARG_R" ]; then if [ -n "$ARG_W" ]; then echo "Error: Incompatible parameters! \"-r and \"-n";show_usage;fi;fi
+
+
+
+if [ -n "$ARG_R" ]; then set -- "$@" $ARG_R $OPT_R;fi
+if [ -n "$ARG_W" ]; then set -- "$@" $ARG_W;fi
+if [ -n "$ARG_T" ]; then set -- "$@" $ARG_T "$OPT_T";fi
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api Nfc "$@"

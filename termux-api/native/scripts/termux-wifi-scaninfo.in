@@ -1,0 +1,81 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-wifi-scaninfo — Get last Wi-Fi scan information
+#
+# SYNOPSIS
+#     termux-wifi-scaninfo
+#
+# DESCRIPTION
+#     Retrieve the results of the most recent Wi-Fi network scan.
+#     Returns a JSON array of scan result objects, each containing:
+#     SSID (network name), BSSID (MAC address of access point),
+#     RSSI signal strength in dBm, frequency in MHz, channel number,
+#     capabilities string (WPA/WPA2/WPA3 security info), Wi-Fi standard
+#     (802.11b/g/n/ac/ax), and timestamp of when the scan result
+#     was last seen.
+#
+#     The scan results reflect the most recent scan completed by the
+#     system. On Android 13+, location must be enabled for scan results
+#     to be populated. Active scans may take 3-5 seconds.
+#     Use termux-wifi-connectioninfo to see the currently connected network.
+#
+# OPTIONS
+#     -h, --help  Display this help message
+#
+# EXAMPLES
+#     # Show last Wi-Fi scan info
+#     termux-wifi-scaninfo
+#
+set -e -u
+
+SCRIPTNAME=termux-wifi-scaninfo
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Retrieve the results of the most recent Wi-Fi network scan.
+Returns a JSON array of visible access points. On Android 13+,
+location services must be enabled for scan results to populate.
+
+OUTPUT
+    JSON array of objects, each with the following fields:
+        SSID         - Broadcast network name
+        BSSID        - MAC address of the access point
+        capabilities - Security and protocol capabilities string
+                       (e.g., "[WPA2-EAP-CCMP][WPS]", "[ESS]")
+        frequency    - Operating frequency in MHz
+        channel      - Wi-Fi channel number (derived from frequency)
+        level        - RSSI signal strength in dBm (negative value)
+        timestamp    - Timestamp in microseconds since boot when this
+                       result was last seen
+        wifiStandard - Wi-Fi standard (802.11b/g/n/ac/ax)
+
+PERMISSIONS
+    android.permission.ACCESS_FINE_LOCATION (Android 10+, API level 29)
+
+EXAMPLES
+    # Show all visible Wi-Fi networks
+    $SCRIPTNAME
+
+    # Filter to SSID and signal strength only
+    $SCRIPTNAME | jq '.[] | {SSID, level}'
+
+    # Sort by signal strength (strongest first)
+    $SCRIPTNAME | jq 'sort_by(.level) | reverse'
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api WifiScanInfo

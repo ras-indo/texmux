@@ -1,0 +1,71 @@
+#!@TERMUX_PREFIX@/bin/sh
+#
+# NAME
+#     termux-notification-remove — Remove a previously shown notification
+#
+# SYNOPSIS
+#     termux-notification-remove notification-id
+#
+# DESCRIPTION
+#     Dismiss a notification that was previously posted with
+#     termux-notification --id <id>. The notification ID must match
+#     exactly the ID that was used when creating the notification.
+#
+#     If the notification was created with --ongoing (pinned), it
+#     will be removed from the notification shade. If no notification
+#     with the given ID exists, the command silently succeeds.
+#     Returns the result as JSON via termux-api.
+#
+# OPTIONS
+#     notification-id  the ID of the notification to remove
+#
+# EXAMPLES
+#     # Remove notification with id "my_notif"
+#     termux-notification-remove my_notif
+#
+set -e -u
+
+SCRIPTNAME=termux-notification-remove
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <notification-id>
+
+Remove (dismiss) a notification that was previously posted with
+termux-notification --id <id>. The notification-id must match the
+--id value used when creating the notification.
+
+OUTPUT:
+  No JSON output. The notification is dismissed from the status bar.
+  Exit code 0 on success, non-zero on failure (e.g., notification
+  not found).
+
+OPTIONS:
+  -h, --help    Display this help message.
+
+ARGUMENTS:
+  notification-id  The ID of the notification to remove (same --id
+                   value used when creating it).
+
+EXAMPLES:
+  # Create and later remove a notification
+  termux-notification -i my_notif -t "Hello" -c "World"
+  termux-notification-remove my_notif
+
+  # Remove notification created with --id "download_progress"
+  termux-notification-remove download_progress
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 1 ]; then echo "$SCRIPTNAME: no notification id specified"; exit 1; fi
+
+@TERMUX_PREFIX@/bin/termux-api NotificationRemove --es id "$1"

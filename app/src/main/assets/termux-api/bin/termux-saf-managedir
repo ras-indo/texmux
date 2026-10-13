@@ -1,0 +1,75 @@
+#!/bin/sh
+#
+# NAME
+#     termux-saf-managedir — Membuka pemilih folder sistem
+#
+# SYNOPSIS
+#     termux-saf-managedir
+#
+# DESCRIPTION
+#     Membuka sistem picker UI Android (Storage Access Framework, API level 19+) untuk memilih
+#     folder yang akan diakses oleh Termux:API. Pengguna akan melihat dialog native sistem
+#     untuk menavigasi dan memilih direktori dari berbagai penyedia penyimpanan
+#     (penyimpanan internal, SD card eksternal, cloud storage, dll.).
+#     Izin akses yang diberikan bersifat persisten hingga pengguna mencabutnya melalui
+#     pengaturan sistem (Settings > Apps > Termux > Permissions > Storage).
+#     Mengembalikan URI direktori yang dikembalikan melalui termux-api dan dapat digunakan
+#     dengan perintah termux-saf-* lainnya.
+#     Jika dialog ditutup tanpa memilih folder, string kosong akan dikembalikan.
+#     Gunakan termux-saf-dirs untuk melihat daftar direktori yang telah diberikan akses.
+#
+# OPTIONS
+#     Tidak ada opsi.
+#
+# EXAMPLES
+#     # Memilih folder untuk dikelola
+#     termux-saf-managedir
+#
+set -e -u
+
+SCRIPTNAME=termux-saf-managedir
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME
+
+Open the system SAF directory picker to grant Termux:API access to a
+folder. Once granted, the folder appears in termux-saf-dirs and can
+be used with all other termux-saf-* commands.
+
+OUTPUT:
+  The URI of the selected directory is printed to stdout.
+  If the picker is closed without selecting a folder, an empty
+  string is returned and exit code is non-zero.
+
+PERMISSIONS:
+  No special permissions required (SAF intent, API 19+).
+
+OPTIONS:
+  -h          Show this help message.
+
+EXAMPLES:
+  # Open the directory picker and store the URI
+  URI=\$($SCRIPTNAME)
+
+  # Use the URI to create a file
+  [ -n "\$URI" ] && termux-saf-create "\$URI" myfile.txt
+
+  # List managed directories after granting access
+  termux-saf-dirs
+EOF
+    exit 0
+}
+
+while getopts :h option
+do
+    case "$option" in
+        h) show_usage;;
+        ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
+    esac
+done
+shift $((OPTIND-1))
+
+if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
+
+/data/data/com.texmux/files/apps/com.texmux/bin/termux-api SAF --es safmethod manageDocumentTree
+ 
