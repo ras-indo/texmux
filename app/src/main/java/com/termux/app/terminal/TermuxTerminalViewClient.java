@@ -196,15 +196,12 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
     @Override
     public float onScale(float scale) {
-        // Called once at gesture end with the cumulative zoom factor from TerminalView
-        int currentSize = mActivity.getPreferences().getFontSize();
-        int newSize = Math.round(currentSize * scale);
-        newSize = Math.max(4, Math.min(72, newSize));
-        if (newSize != currentSize) {
-            mActivity.getPreferences().setFontSize(newSize);
-            mActivity.getTerminalView().setTextSize(newSize);
+        if (scale < 0.9f || scale > 1.1f) {
+            boolean increase = scale > 1.f;
+            changeFontSize(increase);
+            return 1.0f;
         }
-        return 1.0f;
+        return scale;
     }
 
 

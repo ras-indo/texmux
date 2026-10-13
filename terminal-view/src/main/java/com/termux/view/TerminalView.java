@@ -73,10 +73,7 @@ public final class TerminalView extends View {
     int mTopRow;
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
-    /** Continuously updated zoom scale during pinch gesture. Reset to 1.0 after commit. */
-    float mZoomScale = 1.0f;
-    /** Screen-space focus point where the current zoom gesture is anchored. */
-    float mZoomFocusX, mZoomFocusY;
+    float mScaleFactor = 1.f;
     final GestureAndScaleRecognizer mGestureRecognizer;
 
     /** Keep track of where mouse touch event started which we report as mouse scroll. */
@@ -164,20 +161,6 @@ public final class TerminalView extends View {
                     return true;
                 }
                 scrolledWithFinger = false;
-                // Commit zoom if a pinch gesture just completed
-                if (mZoomScale != 1.0f) {
-                    float finalScale = mZoomScale;
-                    mZoomScale = 1.0f;
-                    mZoomFocusX = 0f;
-                    mZoomFocusY = 0f;
-                    if (Math.abs(finalScale - 1.0f) > 0.08f)
-                        mClient.onScale(finalScale);
-                }
-                // Refresh focus after gesture (pinch zoom, scroll) to ensure
-                // IME InputConnection stays valid. Without this, virtual keyboard
-                // may show but typed characters won't reach the terminal.
-                requestFocus();
-                invalidate();
                 return false;
             }
 
@@ -217,18 +200,8 @@ public final class TerminalView extends View {
             @Override
             public boolean onScale(float focusX, float focusY, float scale) {
                 if (mEmulator == null || isSelectingText()) return true;
-                // Anchor the zoom at the point where the pinch started so the content under
-                // the fingers stays under the fingers instead of zooming into the top-left
-                // corner. Focus is captured once per gesture and kept fixed — touch
-                // coordinate mapping in getColumnAndRow()/getCursorX()/getPointX() uses the
-                // same anchor so taps land on the right cell while zoomed.
-                if (mZoomScale == 1.0f) {
-                    mZoomFocusX = focusX;
-                    mZoomFocusY = focusY;
-                }
-                mZoomScale *= scale;
-                mZoomScale = Math.max(0.25f, Math.min(4.0f, mZoomScale));
-                invalidate();
+                mScaleFactor *= scale;
+                mScaleFactor = mClient.onScale(mScaleFactor);
                 return true;
             }
 
@@ -381,70 +354,6 @@ public final class TerminalView extends View {
 
         return new BaseInputConnection(this, true) {
 
-            // ─── Type history ring buffer for IME context ────────────────────
-            private static final int IC_TYPE_HISTORY_SIZE = 256;
-            private final char[] mIcTypeHistory = new char[IC_TYPE_HISTORY_SIZE];
-            private int mIcTypeHistoryPos = 0;
-            private int mIcTypeHistoryCount = 0;
-
-            private void icAppendTypeHistory(String text) {
-                for (int i = 0; i < text.length(); i++) {
-                    mIcTypeHistory[mIcTypeHistoryPos] = text.charAt(i);
-                    mIcTypeHistoryPos = (mIcTypeHistoryPos + 1) % IC_TYPE_HISTORY_SIZE;
-                    if (mIcTypeHistoryCount < IC_TYPE_HISTORY_SIZE) mIcTypeHistoryCount++;
-                }
-            }
-
-            private String icGetTypeHistory(int maxChars) {
-                if (mIcTypeHistoryCount == 0) return "";
-                int charsToGet = Math.min(maxChars, mIcTypeHistoryCount);
-                char[] result = new char[charsToGet];
-                int start = (mIcTypeHistoryPos - charsToGet + IC_TYPE_HISTORY_SIZE) % IC_TYPE_HISTORY_SIZE;
-                for (int i = 0; i < charsToGet; i++) {
-                    result[i] = mIcTypeHistory[(start + i) % IC_TYPE_HISTORY_SIZE];
-                }
-                return new String(result);
-            }
-
-            @Override
-            public CharSequence getTextBeforeCursor(int length, int flags) {
-                if (length <= 0) return "";
-                // Try Editable first — during active composition the IME
-                // needs to see its own composing spans in the result.
-                CharSequence t = super.getTextBeforeCursor(length, flags);
-                if (t != null && t.length() > 0) return t;
-                // Fall back to type history so IMEs have actual terminal
-                // context for suggestions instead of an empty Editable.
-                String history = icGetTypeHistory(length);
-                if (history.length() > 0) return history;
-                return " ";
-            }
-
-            @Override
-            public CharSequence getTextAfterCursor(int length, int flags) {
-                if (length <= 0) return "";
-                // Return a space rather than empty — some IMEs (Gboard)
-                // suppress the suggestion strip when there's no "after" text.
-                return " ";
-            }
-
-            @Override
-            public CharSequence getSelectedText(int flags) {
-                return "";
-            }
-
-            @Override
-            public int getCursorCapsMode(int reqModes) {
-                return 0;
-            }
-
-            @Override
-            public boolean setComposingText(CharSequence text, int newCursorPosition) {
-                if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
-                    mClient.logInfo(LOG_TAG, "IME: setComposingText(\"" + text + "\", " + newCursorPosition + ")");
-                return super.setComposingText(text, newCursorPosition);
-            }
-
             @Override
             public boolean finishComposingText() {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
@@ -458,7 +367,6 @@ public final class TerminalView extends View {
                 Editable content = getEditable();
                 if (content != null && content.length() > 0) {
                     sendTextToTerminal(content.toString());
-                    icAppendTypeHistory(content.toString());
                     content.clear();
                 }
                 return true;
@@ -483,7 +391,6 @@ public final class TerminalView extends View {
                 if (content != null) {
                     if (content.length() > 0) {
                         sendTextToTerminal(content.toString());
-                        icAppendTypeHistory(content.toString());
                     }
                     content.clear();
                 }
@@ -680,13 +587,6 @@ public final class TerminalView extends View {
     public int[] getColumnAndRow(MotionEvent event, boolean relativeToScroll) {
         float x = event.getX();
         float y = event.getY();
-        if (mZoomScale != 1.0f) {
-            // Inverse of the anchored zoom transform applied in onDraw():
-            // screen = focus + (logical - focus) * scale
-            // => logical = focus + (screen - focus) / scale
-            x = mZoomFocusX + (x - mZoomFocusX) / mZoomScale;
-            y = mZoomFocusY + (y - mZoomFocusY) / mZoomScale;
-        }
         int column = (int) (x / mRenderer.mFontWidth);
         int row = (int) ((y - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
         if (relativeToScroll) {
@@ -1160,14 +1060,6 @@ public final class TerminalView extends View {
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
-            boolean zooming = (mZoomScale != 1.0f);
-            if (zooming) {
-                canvas.save();
-                // Scale around the pinch focus point so content under the fingers stays
-                // under the fingers (canvas.scale(sx, sy, px, py) keeps px,py fixed).
-                canvas.scale(mZoomScale, mZoomScale, mZoomFocusX, mZoomFocusY);
-            }
-
             // render the terminal view and highlight any selected text
             int[] sel = mDefaultSelectors;
             if (mTextSelectionCursorController != null) {
@@ -1178,10 +1070,6 @@ public final class TerminalView extends View {
 
             // render the text selection handles
             renderTextSelection();
-
-            if (zooming) {
-                canvas.restore();
-            }
         }
     }
 
@@ -1194,12 +1082,10 @@ public final class TerminalView extends View {
     }
 
     public int getCursorX(float x) {
-        if (mZoomScale != 1.0f) x = mZoomFocusX + (x - mZoomFocusX) / mZoomScale;
         return (int) (x / mRenderer.mFontWidth);
     }
 
     public int getCursorY(float y) {
-        if (mZoomScale != 1.0f) y = mZoomFocusY + (y - mZoomFocusY) / mZoomScale;
         return (int) (((y - 40) / mRenderer.mFontLineSpacing) + mTopRow);
     }
 
@@ -1208,13 +1094,11 @@ public final class TerminalView extends View {
             cx = mEmulator.mColumns;
         }
         float px = cx * mRenderer.mFontWidth;
-        if (mZoomScale != 1.0f) px = mZoomFocusX + (px - mZoomFocusX) * mZoomScale;
         return Math.round(px);
     }
 
     public int getPointY(int cy) {
         float py = (cy - mTopRow) * mRenderer.mFontLineSpacing;
-        if (mZoomScale != 1.0f) py = mZoomFocusY + (py - mZoomFocusY) * mZoomScale;
         return Math.round(py);
     }
 
