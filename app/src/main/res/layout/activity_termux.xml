@@ -65,7 +65,7 @@
                             android:src="@drawable/ic_settings"
                             android:background="@drawable/btn_settings_bg"
                             android:contentDescription="@string/action_open_settings"
-                            android:tint="#94A3B8"
+                            android:tint="#67E8F9"
                             android:scaleType="centerInside"
                             android:padding="6dp" />
 
@@ -78,7 +78,7 @@
                             android:src="@drawable/ic_palette_black_24dp"
                             android:background="@drawable/btn_settings_bg"
                             android:contentDescription="@string/action_style_terminal"
-                            android:tint="#94A3B8"
+                            android:tint="#67E8F9"
                             android:scaleType="centerInside"
                             android:padding="6dp" />
                     </RelativeLayout>

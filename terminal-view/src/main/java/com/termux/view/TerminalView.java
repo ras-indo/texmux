@@ -354,6 +354,25 @@ public final class TerminalView extends View {
 
         return new BaseInputConnection(this, true) {
 
+            /**
+             * The exact text last forwarded by {@link #finishComposingText()}. The keyboard
+             * commits a suggestion by calling finishComposingText() (which flushes the composing
+             * text to the terminal) followed immediately by commitText(). Because the Editable
+             * was cleared and the composing region is gone, commitText's super call inserts the
+             * text again instead of replacing it — duplicating input (e.g. "-" picked from the
+             * suggestion strip became "--"). When commitText echoes back exactly what
+             * finishComposingText just sent, we skip re-sending it. Reset on any fresh
+             * composition so a genuinely new word is never swallowed.
+             */
+            private String mRecentlyFinishedText = null;
+
+            @Override
+            public boolean setComposingText(CharSequence text, int newCursorPosition) {
+                // A fresh composition ends any pending finish->commit echo window.
+                mRecentlyFinishedText = null;
+                return super.setComposingText(text, newCursorPosition);
+            }
+
             @Override
             public CharSequence getTextBeforeCursor(int length, int flags) {
                 // Give the IME the real current terminal line (up to the cursor) as its
@@ -392,6 +411,7 @@ public final class TerminalView extends View {
                 Editable content = getEditable();
                 if (content != null && content.length() > 0) {
                     sendTextToTerminal(content.toString());
+                    mRecentlyFinishedText = content.toString();
                     content.clear();
                 }
                 return true;
@@ -402,8 +422,22 @@ public final class TerminalView extends View {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) {
                     mClient.logInfo(LOG_TAG, "IME: commitText(\"" + text + "\", " + newCursorPosition + ")");
                 }
+                // Skip the finish->commit echo: if this is exactly what finishComposingText()
+                // just flushed to the terminal (the keyboard committing a suggestion), do not
+                // send it again. We still run super.commitText() so the Editable/IMM cursor
+                // state stays consistent, then clear the editable and the guard.
+                boolean isEcho = mRecentlyFinishedText != null && text != null
+                    && text.toString().equals(mRecentlyFinishedText);
                 super.commitText(text, newCursorPosition);
+                mRecentlyFinishedText = null;
                 if (mEmulator == null) return true;
+                Editable content = getEditable();
+                if (isEcho) {
+                    // Text already reached the terminal in finishComposingText() — just clear
+                    // the buffer so it is not forwarded a second time (which produced "-").
+                    if (content != null) content.clear();
+                    return true;
+                }
                 // Upstream pattern: super.commitText() inserted the text into the
                 // Editable (replacing any composing region). Forward the WHOLE Editable
                 // — not just `text` — then clear it. Forwarding the editable is correct
@@ -412,7 +446,6 @@ public final class TerminalView extends View {
                 // the editable is the single source of truth, so picking a suggestion
                 // naturally replaces the composing text here instead of sending stray
                 // backspaces that deleted the wrong characters.
-                Editable content = getEditable();
                 if (content != null) {
                     if (content.length() > 0) {
                         sendTextToTerminal(content.toString());
