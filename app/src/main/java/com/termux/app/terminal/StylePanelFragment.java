@@ -71,8 +71,9 @@ public class StylePanelFragment extends Fragment {
     public static final boolean DEFAULT_CURSOR_BLINK = true;
     private static final int DEFAULT_DRAWER_BG = 0;
     private static final int DEFAULT_DRAWER_OPACITY = 100;
-    // Toolbar (extra keys bar) background: slate-900 to match the dark theme.
-    private static final int DEFAULT_TOOLBAR_BG = 0xFF0F172A;
+    // Toolbar (extra keys bar) background: matches the drawer/terminal (#121212) so all
+    // three surfaces read as one continuous panel.
+    private static final int DEFAULT_TOOLBAR_BG = 0xFF121212;
     private static final int DEFAULT_SESSION_BG = 0;
     // Extra keys default colors: slate-50 text, slate-700 active background,
     // cyan-500 active text — matching the app's dark slate + cyan theme.
@@ -601,7 +602,7 @@ public class StylePanelFragment extends Fragment {
             if (toolbarBg != 0)
                 toolbar.setBackgroundColor(toolbarBg);
             else
-                toolbar.setBackgroundColor(0xFF000000);
+                toolbar.setBackgroundColor(0xFF121212);
         }
 
         // Extra keys buttons stay transparent — they inherit the panel background.
