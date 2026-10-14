@@ -63,11 +63,11 @@
                             android:layout_alignParentStart="true"
                             android:layout_centerVertical="true"
                             android:src="@drawable/ic_settings"
-                            android:background="@android:color/transparent"
+                            android:background="@drawable/btn_settings_glow"
                             android:contentDescription="@string/action_open_settings"
                             android:tint="#67E8F9"
                             android:scaleType="centerInside"
-                            android:padding="6dp" />
+                            android:padding="7dp" />
 
                         <ImageButton
                             android:id="@+id/design_button"
@@ -76,11 +76,11 @@
                             android:layout_alignParentEnd="true"
                             android:layout_centerVertical="true"
                             android:src="@drawable/ic_palette_black_24dp"
-                            android:background="@android:color/transparent"
+                            android:background="@drawable/btn_settings_glow"
                             android:contentDescription="@string/action_style_terminal"
                             android:tint="#67E8F9"
                             android:scaleType="centerInside"
-                            android:padding="6dp" />
+                            android:padding="7dp" />
                     </RelativeLayout>
 
                     <ListView

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Glowing cyan square edge for the header settings/design icon buttons.
+     Layered rounded rects with decreasing alpha fake a soft outer glow, so the edge
+     reads as "bercahaya" instead of a flat hard box. Radii are kept low (10/9/8dp) so
+     it stays a square-ish "kotak", matching the original border shape. The innermost
+     layer is transparent with only a bright stroke — the icon floats inside this
+     glowing edge with clearance so it never touches the border. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Outermost soft halo -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#0A06B6D4" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    <!-- Mid halo -->
+    <item
+        android:top="1dp"
+        android:bottom="1dp"
+        android:left="1dp"
+        android:right="1dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1406B6D4" />
+            <corners android:radius="9dp" />
+        </shape>
+    </item>
+    <!-- Bright inner stroke (the visible glowing edge line) -->
+    <item
+        android:top="2dp"
+        android:bottom="2dp"
+        android:left="2dp"
+        android:right="2dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <stroke
+                android:width="1.5dp"
+                android:color="#B306B6D4" />
+            <corners android:radius="8dp" />
+        </shape>
+    </item>
+</layer-list>
