@@ -1,30 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Thin glowing cyan square edge for the header settings/design icon buttons.
-     Pure STROKE rings only (no filled layers) so it reads as a thin bright line with a
-     soft glow, not a thick band. Two concentric rounded-rect strokes: a faint wide outer
-     glow ring, and a crisp thin inner edge. Low radii keep it square-ish ("kotak"). -->
+
+     IMPORTANT: strokes are INSET by at least half their width. Android draws a shape
+     stroke centered on the rect path, so a stroke at the drawable's outer edge gets half
+     its width clipped by the view bounds — that clipped top edge is exactly what made the
+     border look "cut off" at the top before. Each layer here is inset so its stroke sits
+     fully inside the button and renders whole.
+
+     Kept deliberately thin: a faint 2dp outer glow plus a crisp 1dp inner line. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Soft outer glow ring (faint, wide) -->
-    <item>
+    <!-- Faint outer glow ring: 2dp stroke inset 1dp so it is fully inside the view -->
+    <item
+        android:top="1dp"
+        android:bottom="1dp"
+        android:left="1dp"
+        android:right="1dp">
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
             <stroke
-                android:width="3dp"
-                android:color="#1F06B6D4" />
+                android:width="2dp"
+                android:color="#1A06B6D4" />
             <corners android:radius="8dp" />
         </shape>
     </item>
-    <!-- Crisp thin inner edge (the bright visible line) -->
+    <!-- Crisp thin inner line: 1dp stroke inset 3dp, fully inside the view -->
     <item
-        android:top="2dp"
-        android:bottom="2dp"
-        android:left="2dp"
-        android:right="2dp">
+        android:top="3dp"
+        android:bottom="3dp"
+        android:left="3dp"
+        android:right="3dp">
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
             <stroke
                 android:width="1dp"
-                android:color="#A606B6D4" />
+                android:color="#B306B6D4" />
             <corners android:radius="6dp" />
         </shape>
     </item>
