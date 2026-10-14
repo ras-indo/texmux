@@ -1,3 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Dark slate + cyan theme palette (matches the left drawer / session list). -->
+    <color name="theme_slate_50">#F8FAFC</color>
+    <color name="theme_slate_300">#CBD5E1</color>
+    <color name="theme_slate_700">#334155</color>
+    <color name="theme_slate_800">#1E293B</color>
+    <color name="theme_slate_900">#0F172A</color>
+    <color name="theme_cyan_500">#06B6D4</color>
 </resources>

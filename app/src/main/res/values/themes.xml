@@ -42,12 +42,12 @@
         <!-- Extra keys colors: slate-50 text, cyan-500 active text, slate-700 active
              background — matching the app's dark slate + cyan theme. These are the
              theme-level fallbacks; runtime saved values override them. -->
-        <item name="extraKeysButtonTextColor">#F8FAFC</item>
-        <item name="extraKeysButtonActiveTextColor">#06B6D4</item>
+        <item name="extraKeysButtonTextColor">@color/theme_slate_50</item>
+        <item name="extraKeysButtonActiveTextColor">@color/theme_cyan_500</item>
         <!-- Buttons stay transparent so they inherit the panel/toolbar background.
              Only active/pressed background color is set separately. -->
         <item name="extraKeysButtonBackgroundColor">@android:color/transparent</item>
-        <item name="extraKeysButtonActiveBackgroundColor">#334155</item>
+        <item name="extraKeysButtonActiveBackgroundColor">@color/theme_slate_700</item>
     </style>
 
 </resources>
