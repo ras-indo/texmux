@@ -1,30 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Glowing cyan square edge for the header settings/design icon buttons.
-     Layered rounded rects with decreasing alpha fake a soft outer glow, so the edge
-     reads as "bercahaya" instead of a flat hard box. Radii are kept low (10/9/8dp) so
-     it stays a square-ish "kotak", matching the original border shape. The innermost
-     layer is transparent with only a bright stroke — the icon floats inside this
-     glowing edge with clearance so it never touches the border. -->
+<!-- Thin glowing cyan square edge for the header settings/design icon buttons.
+     Pure STROKE rings only (no filled layers) so it reads as a thin bright line with a
+     soft glow, not a thick band. Two concentric rounded-rect strokes: a faint wide outer
+     glow ring, and a crisp thin inner edge. Low radii keep it square-ish ("kotak"). -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Outermost soft halo -->
+    <!-- Soft outer glow ring (faint, wide) -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#0A06B6D4" />
-            <corners android:radius="10dp" />
+            <solid android:color="@android:color/transparent" />
+            <stroke
+                android:width="3dp"
+                android:color="#1F06B6D4" />
+            <corners android:radius="8dp" />
         </shape>
     </item>
-    <!-- Mid halo -->
-    <item
-        android:top="1dp"
-        android:bottom="1dp"
-        android:left="1dp"
-        android:right="1dp">
-        <shape android:shape="rectangle">
-            <solid android:color="#1406B6D4" />
-            <corners android:radius="9dp" />
-        </shape>
-    </item>
-    <!-- Bright inner stroke (the visible glowing edge line) -->
+    <!-- Crisp thin inner edge (the bright visible line) -->
     <item
         android:top="2dp"
         android:bottom="2dp"
@@ -33,9 +23,9 @@
         <shape android:shape="rectangle">
             <solid android:color="@android:color/transparent" />
             <stroke
-                android:width="1.5dp"
-                android:color="#B306B6D4" />
-            <corners android:radius="8dp" />
+                android:width="1dp"
+                android:color="#A606B6D4" />
+            <corners android:radius="6dp" />
         </shape>
     </item>
 </layer-list>

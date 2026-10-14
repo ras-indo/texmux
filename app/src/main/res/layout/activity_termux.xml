@@ -53,8 +53,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:paddingHorizontal="12dp"
-                        android:paddingTop="10dp"
-                        android:paddingBottom="2dp">
+                        android:paddingTop="14dp"
+                        android:paddingBottom="4dp">
 
                         <ImageButton
                             android:id="@+id/settings_button"
