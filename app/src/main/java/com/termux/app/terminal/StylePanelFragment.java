@@ -630,20 +630,11 @@ public class StylePanelFragment extends Fragment {
         }
 
         ImageButton settingsBtn = activity.findViewById(R.id.settings_button);
-        if (settingsBtn != null) {
-            int bg = drawerBg != 0 ? drawerBg : 0xFF000000;
-            int brightness = (int) (0.299 * Color.red(bg) + 0.587 * Color.green(bg) + 0.114 * Color.blue(bg));
-            int tint = brightness > 128 ? 0xFF000000 : 0xFFFFFFFF;
-            settingsBtn.setColorFilter(tint, PorterDuff.Mode.SRC_IN);
-        }
+        // Header settings/design buttons keep their fixed cyan icon + glowing border from the
+        // layout; do NOT apply a runtime color filter, since SRC_IN on the whole ImageButton
+        // would recolor the border glow too and fight the layout styling.
 
         ImageButton designBtn = activity.findViewById(R.id.design_button);
-        if (designBtn != null) {
-            int bg = drawerBg != 0 ? drawerBg : 0xFF000000;
-            int brightness = (int) (0.299 * Color.red(bg) + 0.587 * Color.green(bg) + 0.114 * Color.blue(bg));
-            int tint = brightness > 128 ? 0xFF000000 : 0xFFFFFFFF;
-            designBtn.setColorFilter(tint, PorterDuff.Mode.SRC_IN);
-        }
     }
 
     public static void applySavedSessionBackground(@NonNull TermuxActivity activity) {
