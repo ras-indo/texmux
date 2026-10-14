@@ -23,7 +23,7 @@
         android:src="@drawable/ic_more_vert_black_24dp"
         android:contentDescription="Session options"
         android:scaleType="centerInside"
-        android:background="@drawable/edit_button_bg"
+        android:background="@android:color/transparent"
         android:focusable="false"
         android:clickable="true"
         android:tint="#94A3B8"

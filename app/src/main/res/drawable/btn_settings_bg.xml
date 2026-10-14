@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Settings/design icon buttons: subtle cyan-tinted fill + cyan border to match the
-     app's dark slate + cyan theme instead of a flat faint-gray outline. -->
+     app's dark slate + cyan theme. An 8dp radius keeps it a clean rounded square on the
+     32dp button without the corners looking clipped. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <solid android:color="#1406B6D4" />
     <stroke android:width="1dp" android:color="#3306B6D4" />
-    <corners android:radius="12dp" />
+    <corners android:radius="8dp" />
 </shape>
