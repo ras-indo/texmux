@@ -57,9 +57,9 @@ public final class TerminalColorScheme {
         0xff808080, 0xff8a8a8a, 0xff949494, 0xff9e9e9e, 0xffa8a8a8, 0xffb2b2b2, 0xffbcbcbc, 0xffc6c6c6, 0xffd0d0d0, 0xffdadada, 0xffe4e4e4, 0xffeeeeee,
 
         // COLOR_INDEX_DEFAULT_FOREGROUND, COLOR_INDEX_DEFAULT_BACKGROUND and COLOR_INDEX_DEFAULT_CURSOR:
-        // Themed to match the dark slate + cyan UI: slate-50 text, slate-800 background,
-        // cyan-500 cursor.
-        0xfff8fafc, 0xff1e293b, 0xff06b6d4};
+        // Classic black terminal background with a light foreground. Only the cursor uses
+        // the cyan-500 accent to match the app's dark slate + cyan UI theme.
+        0xfff8fafc, 0xff000000, 0xff06b6d4};
 
     public final int[] mDefaultColors = new int[TextStyle.NUM_INDEXED_COLORS];
 
