@@ -70,6 +70,14 @@ public final class TerminalSession extends TerminalOutput {
      * so that an Enter press can be distinguished as a user request to close the session. */
     public boolean mFinishedCallbackPosted = false;
 
+    /**
+     * Set true when the user explicitly closes/removes this session (e.g. via the session
+     * drawer's trash button). When set, the "[Process completed ... - press Enter]" exit
+     * banner is not written to the terminal and the session is removed immediately on exit
+     * instead of waiting for an Enter press.
+     */
+    public volatile boolean mCloseRequested = false;
+
 
     /** Set by the application for user identification of session, not by terminal. */
     public String mSessionName;
@@ -436,19 +444,24 @@ public final class TerminalSession extends TerminalOutput {
                 int exitCode = (Integer) msg.obj;
                 cleanupResources(exitCode);
 
-                String exitDescription = "\r\n[Process completed";
-                if (exitCode > 0) {
-                    // Non-zero process exit.
-                    exitDescription += " (code " + exitCode + ")";
-                } else if (exitCode < 0) {
-                    // Negated signal.
-                    exitDescription += " (signal " + (-exitCode) + ")";
-                }
-                exitDescription += " - press Enter]";
+                // When the user explicitly closed this session, skip the
+                // "[Process completed ... - press Enter]" banner — the session is being
+                // removed right away, so there is nothing for the user to read or confirm.
+                if (!mCloseRequested) {
+                    String exitDescription = "\r\n[Process completed";
+                    if (exitCode > 0) {
+                        // Non-zero process exit.
+                        exitDescription += " (code " + exitCode + ")";
+                    } else if (exitCode < 0) {
+                        // Negated signal.
+                        exitDescription += " (signal " + (-exitCode) + ")";
+                    }
+                    exitDescription += " - press Enter]";
 
-                byte[] bytesToWrite = exitDescription.getBytes(StandardCharsets.UTF_8);
-                mEmulator.append(bytesToWrite, bytesToWrite.length);
-                notifyScreenUpdate();
+                    byte[] bytesToWrite = exitDescription.getBytes(StandardCharsets.UTF_8);
+                    mEmulator.append(bytesToWrite, bytesToWrite.length);
+                    notifyScreenUpdate();
+                }
 
                 mClient.onSessionFinished(TerminalSession.this);
                 mFinishedCallbackPosted = true;

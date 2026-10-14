@@ -438,8 +438,16 @@ public final class TerminalView extends View {
                     // that terminals interpret as delete-previous-char. Using sendKeyEvent() with
                     // KEYCODE_DEL was unreliable because it only sends ACTION_DOWN, not ACTION_UP.
                     for (int i = 0; i < leftLength; i++) {
-                        if (mTermSession != null) mTermSession.write("\u007f");
+                        if (mTermSession != null) mTermSession.write("");
                     }
+                    // Return true (success) rather than super's result. The Editable is
+                    // empty here (it is cleared after every commit), so
+                    // super.deleteSurroundingText() finds nothing to delete and reports
+                    // failure. Propagating that false tells the IME the delete failed,
+                    // which desyncs its internal state and makes it stop producing
+                    // suggestions after a backspace. We already deleted from the terminal
+                    // for real, so report success.
+                    return true;
                 }
                 return super.deleteSurroundingText(leftLength, rightLength);
             }

@@ -153,6 +153,13 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
         int index = service.getIndexOfSession(finishedSession);
 
+        // If the user explicitly closed this session (trash button), remove it
+        // immediately regardless of exit code — no banner, no waiting for Enter.
+        if (finishedSession.mCloseRequested) {
+            if (index >= 0) removeFinishedSession(finishedSession);
+            return;
+        }
+
         // If Enter was pressed on an already-finished session, remove it regardless of exit code.
         if (finishedSession.mFinishedCallbackPosted) {
             if (index >= 0) removeFinishedSession(finishedSession);
@@ -486,6 +493,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (sessionToRemove == null) return;
 
         if (sessionToRemove.isRunning()) {
+            // Mark as user-closed so the "[Process completed ... press Enter]" banner is
+            // skipped and onSessionFinished() removes it immediately instead of waiting
+            // for an Enter press (killed sessions exit with a signal, not 0/130, so the
+            // normal auto-close path would not trigger).
+            sessionToRemove.mCloseRequested = true;
             // Kill the still-running process; the exit callback finishes the removal.
             sessionToRemove.finishIfRunning();
         } else {
