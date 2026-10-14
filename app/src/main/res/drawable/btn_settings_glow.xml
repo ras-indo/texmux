@@ -1,40 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Thin glowing cyan square edge for the header settings/design icon buttons.
 
-     IMPORTANT: strokes are INSET by at least half their width. Android draws a shape
-     stroke centered on the rect path, so a stroke at the drawable's outer edge gets half
-     its width clipped by the view bounds — that clipped top edge is exactly what made the
-     border look "cut off" at the top before. Each layer here is inset so its stroke sits
-     fully inside the button and renders whole.
-
-     Kept deliberately thin: a faint 2dp outer glow plus a crisp 1dp inner line. -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Faint outer glow ring: 2dp stroke inset 1dp so it is fully inside the view -->
-    <item
-        android:top="1dp"
-        android:bottom="1dp"
-        android:left="1dp"
-        android:right="1dp">
-        <shape android:shape="rectangle">
-            <solid android:color="@android:color/transparent" />
-            <stroke
-                android:width="2dp"
-                android:color="#1A06B6D4" />
-            <corners android:radius="8dp" />
-        </shape>
-    </item>
-    <!-- Crisp thin inner line: 1dp stroke inset 3dp, fully inside the view -->
-    <item
-        android:top="3dp"
-        android:bottom="3dp"
-        android:left="3dp"
-        android:right="3dp">
-        <shape android:shape="rectangle">
-            <solid android:color="@android:color/transparent" />
-            <stroke
-                android:width="1dp"
-                android:color="#B306B6D4" />
-            <corners android:radius="6dp" />
-        </shape>
-    </item>
-</layer-list>
+     A SINGLE shape with one stroke (no layer-list). The earlier layer-list versions
+     rendered as two open vertical brackets with the top and bottom edges missing; a single
+     stroke on one well-defined rounded rect is structurally guaranteed to close on all four
+     sides. 1.5dp stroke + 6dp radius keeps it a thin, square-ish glowing line. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+    <stroke
+        android:width="1.5dp"
+        android:color="#B306B6D4" />
+    <corners android:radius="6dp" />
+</shape>
