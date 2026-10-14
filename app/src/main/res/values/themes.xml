@@ -39,13 +39,15 @@
         <item name="termuxActivityDrawerBackground">@color/white</item>
         <item name="termuxActivityDrawerImageTint">@color/black</item>
 
-        <!-- Extra keys colors. -->
-        <item name="extraKeysButtonTextColor">@color/white</item>
-        <item name="extraKeysButtonActiveTextColor">@color/red_400</item>
+        <!-- Extra keys colors: slate-50 text, cyan-500 active text, slate-700 active
+             background — matching the app's dark slate + cyan theme. These are the
+             theme-level fallbacks; runtime saved values override them. -->
+        <item name="extraKeysButtonTextColor">#F8FAFC</item>
+        <item name="extraKeysButtonActiveTextColor">#06B6D4</item>
         <!-- Buttons stay transparent so they inherit the panel/toolbar background.
              Only active/pressed background color is set separately. -->
         <item name="extraKeysButtonBackgroundColor">@android:color/transparent</item>
-        <item name="extraKeysButtonActiveBackgroundColor">@color/grey_500</item>
+        <item name="extraKeysButtonActiveBackgroundColor">#334155</item>
     </style>
 
 </resources>

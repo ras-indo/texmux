@@ -13,13 +13,13 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/proot_setup_body"
-        android:textColor="#EAF0FF"
+        android:textColor="#F8FAFC"
         android:textSize="20sp"
         android:textStyle="bold"
         android:letterSpacing="-0.02"
         android:layout_marginBottom="18dp" />
 
-    <!-- Progress bar with glass track -->
+    <!-- Progress bar with slate track -->
     <ProgressBar
         android:id="@+id/setup_progress_bar"
         style="?android:attr/progressBarStyleHorizontal"
@@ -27,8 +27,8 @@
         android:layout_height="10dp"
         android:indeterminate="true"
         android:progressDrawable="@drawable/progress_bar_setup_track"
-        android:progressTint="#7C9CFF"
-        android:progressBackgroundTint="#1AFFFFFF"
+        android:progressTint="#06B6D4"
+        android:progressBackgroundTint="#334155"
         android:layout_marginBottom="18dp" />
 
     <!-- Log panel inside a rounded sub-container -->
@@ -36,7 +36,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#0DFFFFFF"
+        android:background="#1A0F172A"
         android:padding="16dp">
 
         <ScrollView
@@ -50,7 +50,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textSize="14sp"
-                android:textColor="#D6DEF0"
+                android:textColor="#CBD5E1"
                 android:lineSpacingExtra="4dp"
                 android:fontFamily="sans-serif"
                 android:textIsSelectable="false" />

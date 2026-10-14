@@ -71,11 +71,14 @@ public class StylePanelFragment extends Fragment {
     public static final boolean DEFAULT_CURSOR_BLINK = true;
     private static final int DEFAULT_DRAWER_BG = 0;
     private static final int DEFAULT_DRAWER_OPACITY = 100;
-    private static final int DEFAULT_TOOLBAR_BG = 0;
+    // Toolbar (extra keys bar) background: slate-900 to match the dark theme.
+    private static final int DEFAULT_TOOLBAR_BG = 0xFF0F172A;
     private static final int DEFAULT_SESSION_BG = 0;
-    private static final int DEFAULT_EXTRA_KEYS_TEXT = 0xFFFFFFFF;
-    private static final int DEFAULT_EXTRA_KEYS_ACTIVE_BG = 0xFF7F7F7F;
-    private static final int DEFAULT_EXTRA_KEYS_ACTIVE_TEXT = 0xFF80DEEA;
+    // Extra keys default colors: slate-50 text, slate-700 active background,
+    // cyan-500 active text — matching the app's dark slate + cyan theme.
+    private static final int DEFAULT_EXTRA_KEYS_TEXT = 0xFFF8FAFC;
+    private static final int DEFAULT_EXTRA_KEYS_ACTIVE_BG = 0xFF334155;
+    private static final int DEFAULT_EXTRA_KEYS_ACTIVE_TEXT = 0xFF06B6D4;
 
     private static final int CARD_COLOR_LIGHT = 0xFFFFFFFF;
     private static final int CARD_COLOR_DARK  = 0xFF262626;
