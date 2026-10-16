@@ -244,6 +244,12 @@ $(BUILD_DIR)/talloc-arm64/.configured: download-talloc
 		./configure $(TALLOC_CFGFLAGS) >$(BUILD_DIR)/talloc-configure.log 2>&1 \
 		|| { echo "!! talloc configure failed; log tail:"; tail -40 $(BUILD_DIR)/talloc-configure.log; exit 1; }
 	@test -f $(TALLOC_SRC_DIR)/bin/default/config.h
+	@echo "==> Sanitizing host config.h for Bionic/NDK target"
+	@sed -i \
+		-e '/^#define uint_t /d' \
+		-e '/^#define offset_t /d' \
+		-e '/^#[[:space:]]*define[[:space:]]*HAVE_[A-Z_]*CRYPT/d' \
+		$(TALLOC_SRC_DIR)/bin/default/config.h
 	@mkdir -p $(dir $@) && touch $@
 
 # Compile talloc.c for the TARGET using the host-generated config.h + the exact
