@@ -60,8 +60,8 @@
 
                         <ImageButton
                             android:id="@+id/settings_button"
-                            android:layout_width="36dp"
-                            android:layout_height="36dp"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
                             android:layout_alignParentStart="true"
                             android:layout_centerVertical="true"
                             android:src="@drawable/ic_settings"
@@ -69,12 +69,12 @@
                             android:contentDescription="@string/action_open_settings"
                             android:tint="#67E8F9"
                             android:scaleType="centerInside"
-                            android:padding="10dp" />
+                            android:padding="6dp" />
 
                         <ImageButton
                             android:id="@+id/design_button"
-                            android:layout_width="36dp"
-                            android:layout_height="36dp"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
                             android:layout_alignParentEnd="true"
                             android:layout_centerVertical="true"
                             android:src="@drawable/ic_palette_black_24dp"
@@ -82,7 +82,7 @@
                             android:contentDescription="@string/action_style_terminal"
                             android:tint="#67E8F9"
                             android:scaleType="centerInside"
-                            android:padding="10dp" />
+                            android:padding="6dp" />
                     </RelativeLayout>
 
                     <ListView
