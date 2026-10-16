@@ -56,11 +56,11 @@ TALLOC_SRC_DIR := $(BUILD_DIR)/talloc-src
 define arm64_toolchain
   TOOLCHAIN_arm64 := $(BUILD_DIR)/toolchain-arm64
   TOOLCHAIN_TARGET_arm64 := aarch64-linux-android
-  TOOLCHAIN_CC_arm64 := $(TOOLCHAIN_arm64)/bin/$(TOOLCHAIN_TARGET_arm64)$(API_LEVEL)-clang
-  TOOLCHAIN_AR_arm64 := $(TOOLCHAIN_arm64)/bin/$(TOOLCHAIN_TARGET_arm64)-llvm-ar
-  TOOLCHAIN_STRIP_arm64 := $(TOOLCHAIN_arm64)/bin/$(TOOLCHAIN_TARGET_arm64)-strip
-  TOOLCHAIN_OBJCOPY_arm64 := $(TOOLCHAIN_arm64)/bin/$(TOOLCHAIN_TARGET_arm64)-objcopy
-  TOOLCHAIN_OBJDUMP_arm64 := $(TOOLCHAIN_arm64)/bin/$(TOOLCHAIN_TARGET_arm64)-objdump
+  TOOLCHAIN_CC_arm64 := $$(TOOLCHAIN_arm64)/bin/$$(TOOLCHAIN_TARGET_arm64)$(API_LEVEL)-clang
+  TOOLCHAIN_AR_arm64 := $$(TOOLCHAIN_arm64)/bin/$$(TOOLCHAIN_TARGET_arm64)-llvm-ar
+  TOOLCHAIN_STRIP_arm64 := $$(TOOLCHAIN_arm64)/bin/$$(TOOLCHAIN_TARGET_arm64)-strip
+  TOOLCHAIN_OBJCOPY_arm64 := $$(TOOLCHAIN_arm64)/bin/$$(TOOLCHAIN_TARGET_arm64)-objcopy
+  TOOLCHAIN_OBJDUMP_arm64 := $$(TOOLCHAIN_arm64)/bin/$$(TOOLCHAIN_TARGET_arm64)-objdump
   LOADER_ADDRESS_arm64 := 0x2000000000
   LOADER_ARCH_arm64 := ARCH_ARM64
   LINKER_arm64 := /system/bin/linker64
@@ -70,11 +70,11 @@ endef
 define arm_toolchain
   TOOLCHAIN_arm := $(BUILD_DIR)/toolchain-arm
   TOOLCHAIN_TARGET_arm := armv7a-linux-androideabi
-  TOOLCHAIN_CC_arm := $(TOOLCHAIN_arm)/bin/$(TOOLCHAIN_TARGET_arm)$(API_LEVEL)-clang
-  TOOLCHAIN_AR_arm := $(TOOLCHAIN_arm)/bin/$(TOOLCHAIN_TARGET_arm)-llvm-ar
-  TOOLCHAIN_STRIP_arm := $(TOOLCHAIN_arm)/bin/$(TOOLCHAIN_TARGET_arm)-strip
-  TOOLCHAIN_OBJCOPY_arm := $(TOOLCHAIN_arm)/bin/$(TOOLCHAIN_TARGET_arm)-objcopy
-  TOOLCHAIN_OBJDUMP_arm := $(TOOLCHAIN_arm)/bin/$(TOOLCHAIN_TARGET_arm)-objdump
+  TOOLCHAIN_CC_arm := $$(TOOLCHAIN_arm)/bin/$$(TOOLCHAIN_TARGET_arm)$(API_LEVEL)-clang
+  TOOLCHAIN_AR_arm := $$(TOOLCHAIN_arm)/bin/$$(TOOLCHAIN_TARGET_arm)-llvm-ar
+  TOOLCHAIN_STRIP_arm := $$(TOOLCHAIN_arm)/bin/$$(TOOLCHAIN_TARGET_arm)-strip
+  TOOLCHAIN_OBJCOPY_arm := $$(TOOLCHAIN_arm)/bin/$$(TOOLCHAIN_TARGET_arm)-objcopy
+  TOOLCHAIN_OBJDUMP_arm := $$(TOOLCHAIN_arm)/bin/$$(TOOLCHAIN_TARGET_arm)-objdump
   LOADER_ADDRESS_arm := 0x10000000
   LOADER_ARCH_arm := ARCH_ARM_EABI
   LINKER_arm := /system/bin/linker
