@@ -382,11 +382,11 @@ $$(BUILD_DIR)/loader-$1/loader.elf: $$(BUILD_DIR)/loader-$1/loader.stripped
 # objcopy to wrap loader as a .o file for linking
 $$(BUILD_DIR)/proot-$1/loader-wrapped.o: $$(BUILD_DIR)/loader-$1/loader.elf
 	@mkdir -p $$(dir $$@)
-	$$(TOOLCHAIN_OBJCOPY_$1) \
+	cd $$(BUILD_DIR)/loader-$1 && $$(TOOLCHAIN_OBJCOPY_$1) \
 		--input-target binary \
 		--output-target $$(shell $$(TOOLCHAIN_OBJDUMP_$1) -f $$(BUILD_DIR)/proot-$1/cli/cli.o | grep 'file format' | awk '{print $$$$4}') \
 		--binary-architecture $$(shell $$(TOOLCHAIN_OBJDUMP_$1) -f $$(BUILD_DIR)/proot-$1/cli/cli.o | grep architecture | cut -f 1 -d , | awk '{print $$$$2}') \
-		$$< $$@
+		loader.elf $$(abspath $$@)
 
 endef
 
