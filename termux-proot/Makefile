@@ -359,22 +359,22 @@ PROOT_SRC_$1 := $(PROOT_SRC_DIR)/src
 
 $$(BUILD_DIR)/loader-$1/loader.o: $$(PROOT_SRC_$1)/loader/loader.c | download-proot
 	@mkdir -p $$(dir $$@)
-	$$($4) $$(LOADER_CFLAGS) -D$3 -DLOADER_ADDRESS=$2 \
+	$$(TOOLCHAIN_CC_$1) $$(LOADER_CFLAGS) -D$3 -DLOADER_ADDRESS=$2 \
 		-c $$< -o $$@
 
 $$(BUILD_DIR)/loader-$1/assembly.o: $$(PROOT_SRC_$1)/loader/assembly.S | download-proot
 	@mkdir -p $$(dir $$@)
-	$$($4) $$(LOADER_CFLAGS) -D$3 -DLOADER_ADDRESS=$2 \
+	$$(TOOLCHAIN_CC_$1) $$(LOADER_CFLAGS) -D$3 -DLOADER_ADDRESS=$2 \
 		-c $$< -o $$@
 
 # Link loader as freestanding ELF
 $$(BUILD_DIR)/loader-$1/loader: $$(BUILD_DIR)/loader-$1/loader.o $$(BUILD_DIR)/loader-$1/assembly.o
 	@mkdir -p $$(dir $$@)
-	$$($4) -o $$@ $$^ $$(LOADER_LDFLAGS) -Wl,-Ttext=$2
+	$$(TOOLCHAIN_CC_$1) -o $$@ $$^ $$(LOADER_LDFLAGS) -Wl,-Ttext=$2
 
 # Strip and prepare for embedding
 $$(BUILD_DIR)/loader-$1/loader.stripped: $$(BUILD_DIR)/loader-$1/loader
-	$$($7) -o $$@ $$<
+	$$(TOOLCHAIN_STRIP_$1) -o $$@ $$<
 
 $$(BUILD_DIR)/loader-$1/loader.elf: $$(BUILD_DIR)/loader-$1/loader.stripped
 	cp $$< $$@
@@ -382,10 +382,10 @@ $$(BUILD_DIR)/loader-$1/loader.elf: $$(BUILD_DIR)/loader-$1/loader.stripped
 # objcopy to wrap loader as a .o file for linking
 $$(BUILD_DIR)/proot-$1/loader-wrapped.o: $$(BUILD_DIR)/loader-$1/loader.elf
 	@mkdir -p $$(dir $$@)
-	$$($5) \
+	$$(TOOLCHAIN_OBJCOPY_$1) \
 		--input-target binary \
-		--output-target $$(shell $$($6) -f $$(BUILD_DIR)/proot-$1/cli/cli.o | grep 'file format' | awk '{print $$$$4}') \
-		--binary-architecture $$(shell $$($6) -f $$(BUILD_DIR)/proot-$1/cli/cli.o | grep architecture | cut -f 1 -d , | awk '{print $$$$2}') \
+		--output-target $$(shell $$(TOOLCHAIN_OBJDUMP_$1) -f $$(BUILD_DIR)/proot-$1/cli/cli.o | grep 'file format' | awk '{print $$$$4}') \
+		--binary-architecture $$(shell $$(TOOLCHAIN_OBJDUMP_$1) -f $$(BUILD_DIR)/proot-$1/cli/cli.o | grep architecture | cut -f 1 -d , | awk '{print $$$$2}') \
 		$$< $$@
 
 endef
@@ -412,12 +412,12 @@ define compile_proot_template
 
 $$(BUILD_DIR)/proot-$1/%.o: $$(PROOT_SRC_DIR)/src/%.c | download-proot
 	@mkdir -p $$(dir $$@)
-	$$($2) $$($3) $$($5) -MD -c $$< -o $$@
+	$$(TOOLCHAIN_CC_$1) $$(PROOT_CFLAGS_$1) $$(PROOT_CPPFLAGS) -MD -c $$< -o $$@
 
 endef
 
-$(eval $(call compile_proot_template,arm64,$(TOOLCHAIN_CC_arm64),$(PROOT_CFLAGS_arm64),$(PROOT_SRC_DIR),$(PROOT_CPPFLAGS)))
-$(eval $(call compile_proot_template,arm,$(TOOLCHAIN_CC_arm),$(PROOT_CFLAGS_arm),$(PROOT_SRC_DIR),$(PROOT_CPPFLAGS)))
+$(eval $(call compile_proot_template,arm64))
+$(eval $(call compile_proot_template,arm))
 
 # Generate build.h for version info
 define generate_build_h_template
@@ -444,13 +444,13 @@ $(eval $(call generate_build_h_template,arm64))
 $(eval $(call generate_build_h_template,arm))
 
 # Talloc include forwarding (so #include <talloc.h> works with our static build)
-$(BUILD_DIR)/talloc-arm64/include/talloc.h: $(TALLOC_SRC_DIR)/talloc.h
+$(BUILD_DIR)/talloc-arm64/include/talloc.h: $(BUILD_DIR)/talloc-arm64/.configured
 	@mkdir -p $(dir $@)
-	cp $< $@
+	cp $(TALLOC_SRC_DIR)/talloc.h $@
 
-$(BUILD_DIR)/talloc-arm/include/talloc.h: $(TALLOC_SRC_DIR)/talloc.h
+$(BUILD_DIR)/talloc-arm/include/talloc.h: $(BUILD_DIR)/talloc-arm64/.configured
 	@mkdir -p $(dir $@)
-	cp $< $@
+	cp $(TALLOC_SRC_DIR)/talloc.h $@
 
 # Build the final proot binary
 proot-arm64: \
