@@ -88,7 +88,7 @@ if [ -z "$RECIPIENTS" ]; then
     echo "$SCRIPTNAME: no recipient number given"; exit 1;
 fi
 
-CMD="/data/data/com.texmux/files/apps/com.texmux/bin/termux-api SmsSend $RECIPIENTS $SLOT"
+CMD="/data/data/com.termux/files/apps/com.termux/bin/termux-api SmsSend $RECIPIENTS $SLOT"
 if [ $# = 0 ]; then
     $CMD
 else

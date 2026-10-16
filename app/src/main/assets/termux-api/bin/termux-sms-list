@@ -95,7 +95,7 @@ unset TERMUX_API__API_ARGS; declare -a TERMUX_API__API_ARGS=()
 #TERMUX__PREFIX="${!TERMUX__PREFIX___N:-}"
 #[[ ! "$TERMUX__PREFIX" =~ ^(/[^/]+)+$ ]] && \
 #TERMUX__PREFIX=""
-TERMUX__PREFIX="/data/data/com.texmux/files/apps/com.texmux"
+TERMUX__PREFIX="/data/data/com.termux/files/apps/com.termux"
 
 
 # FIXME:
@@ -230,7 +230,7 @@ termux_api__sms_list__main() {
 
 
     return_value=0
-    "/data/data/com.texmux/files/apps/com.texmux/bin/termux-api" "$TERMUX_API__API_CONTROLLER" "${TERMUX_API__API_ARGS[@]}" || return_value=$?
+    "/data/data/com.termux/files/apps/com.termux/bin/termux-api" "$TERMUX_API__API_CONTROLLER" "${TERMUX_API__API_ARGS[@]}" || return_value=$?
     if [ $return_value -ne 0 ]; then
         termux_api__log_error "Command failed with exit code $return_value"
     else

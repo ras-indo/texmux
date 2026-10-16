@@ -67,49 +67,49 @@ git commit -m "fix: guard goAsync() with isOrderedBroadcast() check for direct d
 Create a new class that hosts the static dispatch logic. This class has no Android framework dependencies — it's just a switch statement with method calls.
 
 ```java
-package com.texmux.api;
+package com.termux.api;
 
 import android.content.Context;
 import android.content.Intent;
 
-import com.texmux.api.apis.AudioAPI;
-import com.texmux.api.apis.BatteryStatusAPI;
-import com.texmux.api.apis.BrightnessAPI;
-import com.texmux.api.apis.CallLogAPI;
-import com.texmux.api.apis.CameraInfoAPI;
-import com.texmux.api.apis.CameraPhotoAPI;
-import com.texmux.api.apis.ClipboardAPI;
-import com.texmux.api.apis.ContactListAPI;
-import com.texmux.api.apis.DialogAPI;
-import com.texmux.api.apis.DownloadAPI;
-import com.texmux.api.apis.FingerprintAPI;
-import com.texmux.api.apis.InfraredAPI;
-import com.texmux.api.apis.JobSchedulerAPI;
-import com.texmux.api.apis.KeystoreAPI;
-import com.texmux.api.apis.LocationAPI;
-import com.texmux.api.apis.MediaPlayerAPI;
-import com.texmux.api.apis.MediaScannerAPI;
-import com.texmux.api.apis.MicRecorderAPI;
-import com.texmux.api.apis.NfcAPI;
-import com.texmux.api.apis.NotificationAPI;
-import com.texmux.api.apis.NotificationListAPI;
-import com.texmux.api.apis.SAFAPI;
-import com.texmux.api.apis.SensorAPI;
-import com.texmux.api.apis.ShareAPI;
-import com.texmux.api.apis.SmsInboxAPI;
-import com.texmux.api.apis.SmsSendAPI;
-import com.texmux.api.apis.SpeechToTextAPI;
-import com.texmux.api.apis.StorageGetAPI;
-import com.texmux.api.apis.TelephonyAPI;
-import com.texmux.api.apis.TextToSpeechAPI;
-import com.texmux.api.apis.ToastAPI;
-import com.texmux.api.apis.TorchAPI;
-import com.texmux.api.apis.UsbAPI;
-import com.texmux.api.apis.VibrateAPI;
-import com.texmux.api.apis.VolumeAPI;
-import com.texmux.api.apis.WallpaperAPI;
-import com.texmux.api.apis.WifiAPI;
-import com.texmux.api.activities.TermuxApiPermissionActivity;
+import com.termux.api.apis.AudioAPI;
+import com.termux.api.apis.BatteryStatusAPI;
+import com.termux.api.apis.BrightnessAPI;
+import com.termux.api.apis.CallLogAPI;
+import com.termux.api.apis.CameraInfoAPI;
+import com.termux.api.apis.CameraPhotoAPI;
+import com.termux.api.apis.ClipboardAPI;
+import com.termux.api.apis.ContactListAPI;
+import com.termux.api.apis.DialogAPI;
+import com.termux.api.apis.DownloadAPI;
+import com.termux.api.apis.FingerprintAPI;
+import com.termux.api.apis.InfraredAPI;
+import com.termux.api.apis.JobSchedulerAPI;
+import com.termux.api.apis.KeystoreAPI;
+import com.termux.api.apis.LocationAPI;
+import com.termux.api.apis.MediaPlayerAPI;
+import com.termux.api.apis.MediaScannerAPI;
+import com.termux.api.apis.MicRecorderAPI;
+import com.termux.api.apis.NfcAPI;
+import com.termux.api.apis.NotificationAPI;
+import com.termux.api.apis.NotificationListAPI;
+import com.termux.api.apis.SAFAPI;
+import com.termux.api.apis.SensorAPI;
+import com.termux.api.apis.ShareAPI;
+import com.termux.api.apis.SmsInboxAPI;
+import com.termux.api.apis.SmsSendAPI;
+import com.termux.api.apis.SpeechToTextAPI;
+import com.termux.api.apis.StorageGetAPI;
+import com.termux.api.apis.TelephonyAPI;
+import com.termux.api.apis.TextToSpeechAPI;
+import com.termux.api.apis.ToastAPI;
+import com.termux.api.apis.TorchAPI;
+import com.termux.api.apis.UsbAPI;
+import com.termux.api.apis.VibrateAPI;
+import com.termux.api.apis.VolumeAPI;
+import com.termux.api.apis.WallpaperAPI;
+import com.termux.api.apis.WifiAPI;
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import android.Manifest;
 import android.content.ComponentName;
 import android.provider.Settings;
@@ -448,8 +448,8 @@ Intent intent = new Intent();
 
 The final SocketListener.java should have:
 - No `import android.content.Intent` removed (still needed for Intent)
-- `import com.texmux.api.TermuxApiReceiver` added (for the directReceiver field type)
-- `import com.texmux.api.DirectDispatcher` added
+- `import com.termux.api.TermuxApiReceiver` added (for the directReceiver field type)
+- `import com.termux.api.DirectDispatcher` added
 - Line 238 changed from `sendOrderedBroadcast` to `DirectDispatcher.dispatch()`
 - `directReceiver` static field added
 
@@ -778,13 +778,13 @@ Since `exported="false"` and no intent filters, the receiver has zero overhead w
 - Utility files under `/root/termux/termux-app/termux-api/app/src/main/java/com/termux/api/util/*.java`
 - Main API files (`SocketListener.java`, `TermuxApiReceiver.java`, `DirectDispatcher.java`, etc.)
 
-**Goal:** Fix the systematic package name typo `com.texmux.api` → `com.termux.api` across all Java source files in the termux-api module.
+**Goal:** Fix the systematic package name typo `com.termux.api` → `com.termux.api` across all Java source files in the termux-api module.
 
 **Note:** This is a cosmetic/bugfix task that doesn't affect functionality (the PACKAGE_NAME constant in TermuxConstants is what matters for runtime lookups). Can be done as a batch find-and-replace.
 
 - [ ] **Step 1: Batch replace package declarations**
 
-Replace `package com.texmux.api` with `package com.termux.api` in all `.java` files:
+Replace `package com.termux.api` with `package com.termux.api` in all `.java` files:
 
 ```bash
 find termux-api/app/src/main/java -name "*.java" -exec sed -i 's/package com\.texmux\.api/package com.termux.api/g' {} +
@@ -792,7 +792,7 @@ find termux-api/app/src/main/java -name "*.java" -exec sed -i 's/package com\.te
 
 - [ ] **Step 2: Batch replace imports**
 
-Replace `import com.texmux.api` with `import com.termux.api` in all `.java` files:
+Replace `import com.termux.api` with `import com.termux.api` in all `.java` files:
 
 ```bash
 find termux-api/app/src/main/java -name "*.java" -exec sed -i 's/import com\.texmux\.api/import com.termux.api/g' {} +
@@ -802,7 +802,7 @@ find termux-api/app/src/main/java -name "*.java" -exec sed -i 's/import com\.tex
 
 ```bash
 git add termux-api/app/src/main/java
-git commit -m "fix: correct package name typo com.texmux.api → com.termux.api"
+git commit -m "fix: correct package name typo com.termux.api → com.termux.api"
 ```
 
 ---

@@ -111,7 +111,7 @@ add_params() {
 }
 
 call_api () {
-    /data/data/com.texmux/files/apps/com.texmux/bin/termux-api MicRecorder "$@"
+    /data/data/com.termux/files/apps/com.termux/bin/termux-api MicRecorder "$@"
 }
 
 while getopts h,f:,l:,e:,b:,r:,c:,d,i,q option

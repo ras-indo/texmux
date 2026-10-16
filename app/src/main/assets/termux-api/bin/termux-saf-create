@@ -82,5 +82,5 @@ shift $((OPTIND-1))
 
 if [ $# != 2 ]; then echo "$SCRIPTNAME: Invalid argument count"; exit 1; fi
 
-/data/data/com.texmux/files/apps/com.texmux/bin/termux-api SAF --es safmethod createDocument --es treeuri "$1" --es filename "$2" --es mimetype "$mime"
+/data/data/com.termux/files/apps/com.termux/bin/termux-api SAF --es safmethod createDocument --es treeuri "$1" --es filename "$2" --es mimetype "$mime"
  

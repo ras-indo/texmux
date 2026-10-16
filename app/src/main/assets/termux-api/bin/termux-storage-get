@@ -69,4 +69,4 @@ shift $((OPTIND-1))
 if [ $# -gt 1 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 if [ $# -lt 1 ]; then echo "$SCRIPTNAME: no output file specified"; exit 1; fi
 
-/data/data/com.texmux/files/apps/com.texmux/bin/termux-api StorageGet --es file "$(realpath "$1")"
+/data/data/com.termux/files/apps/com.termux/bin/termux-api StorageGet --es file "$(realpath "$1")"

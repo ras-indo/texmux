@@ -1,6 +1,6 @@
 #!/bin/sh
 
-TERMUX_API_PREFIX="/data/data/com.texmux/files/apps/com.texmux"
+TERMUX_API_PREFIX="/data/data/com.termux/files/apps/com.termux"
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${TERMUX_API_PREFIX}/bin
 export HOME=/root
 export USER=root
@@ -37,12 +37,12 @@ if [ $# -gt 0 ]; then
 fi
 
 # ── termux.properties — check dulu sebelum deploy ──────────────────
-TERMUX_DOTDIR="/data/data/com.texmux/files/.termux"
+TERMUX_DOTDIR="/data/data/com.termux/files/.termux"
 mkdir -p "$TERMUX_DOTDIR"
 
 # Only write termux.properties if neither target nor source asset exists
 if [ ! -f "$TERMUX_DOTDIR/termux.properties" ]; then
-    TERMUX_PROPS_ASSET="/data/data/com.texmux/files/apps/bin/termux.properties"
+    TERMUX_PROPS_ASSET="/data/data/com.termux/files/apps/bin/termux.properties"
     if [ -f "$TERMUX_PROPS_ASSET" ]; then
         cp "$TERMUX_PROPS_ASSET" "$TERMUX_DOTDIR/termux.properties"
     else
@@ -70,16 +70,16 @@ fi
 # jalan kalo /system bind-mounted. Kalo gagal (crash/segfault), otomatis
 # fallback ke termux-am-socket (AF_UNIX ke AmSocketServer di app process).
 _AM_SCRIPT="/usr/local/bin/am"
-_AM_APK_PATH="/data/data/com.texmux/files/apps/com.texmux/libexec/am.apk"
-_AM_SOCKET_BIN="/data/data/com.texmux/files/apps/com.texmux/bin/termux-am-socket"
+_AM_APK_PATH="/data/data/com.termux/files/apps/com.termux/libexec/am.apk"
+_AM_SOCKET_BIN="/data/data/com.termux/files/apps/com.termux/bin/termux-am-socket"
 if [ ! -f "$_AM_SCRIPT" ] || ! grep -qs "app_process\|termux-am-socket" "$_AM_SCRIPT" 2>/dev/null; then
     cat > "$_AM_SCRIPT" << 'AM_SCRIPT'
 #!/system/bin/sh
 # am — kaya termux original + fallback socket untuk proot.
 # Priority: app_process > socket (termux-am-socket).
 TERMUX_AM_VERSION=0.8.0
-AM_APK_PATH="/data/data/com.texmux/files/apps/com.texmux/libexec/am.apk"
-AM_SOCKET_BIN="/data/data/com.texmux/files/apps/com.texmux/bin/termux-am-socket"
+AM_APK_PATH="/data/data/com.termux/files/apps/com.termux/libexec/am.apk"
+AM_SOCKET_BIN="/data/data/com.termux/files/apps/com.termux/bin/termux-am-socket"
 
 if [ "$1" = "--version" ]; then
     echo "$TERMUX_AM_VERSION"
@@ -138,7 +138,7 @@ if [ "$#" != "0" ]; then
         exit
 fi
 
-am broadcast --user 0 -a "com.texmux.app.reload_style" "com.texmux" > /dev/null
+am broadcast --user 0 -a "com.termux.app.reload_style" "com.termux" > /dev/null
 RELOAD_SCRIPT
     chmod +x "$_AM_RELOAD"
 fi
@@ -160,7 +160,7 @@ fi
 # ---- 'android' command — cek dulu baru tulis ──────────────────────
 _ANDROID_BIN="/usr/local/bin/android"
 if [ ! -f "$_ANDROID_BIN" ]; then
-    ANDROID_ASSET="/data/data/com.texmux/files/apps/bin/android"
+    ANDROID_ASSET="/data/data/com.termux/files/apps/bin/android"
     if [ -f "$ANDROID_ASSET" ]; then
         cp "$ANDROID_ASSET" "$_ANDROID_BIN"
         chmod +x "$_ANDROID_BIN"
@@ -168,9 +168,9 @@ if [ ! -f "$_ANDROID_BIN" ]; then
         cat > "$_ANDROID_BIN" << 'ANDROID_SCRIPT'
 #!/bin/sh
 export PATH=/system/bin:/system/xbin
-export HOME=/data/data/com.texmux
+export HOME=/data/data/com.termux
 echo "Android host shell (Ctrl+D to return to container)"
-printf '%s\n' 'PS1="$ "' 'cd /data/data/com.texmux' > /tmp/.androidrc
+printf '%s\n' 'PS1="$ "' 'cd /data/data/com.termux' > /tmp/.androidrc
 ENV=/tmp/.androidrc exec /system/bin/sh -i
 ANDROID_SCRIPT
         chmod +x "$_ANDROID_BIN"

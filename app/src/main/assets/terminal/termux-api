@@ -12,7 +12,7 @@
 #   termux-api Clipboard --es get text
 #   termux-api Toast --es text "Hello World" --ez short false
 
-PACKAGE_NAME="com.texmux"
+PACKAGE_NAME="com.termux"
 DAEMON_SOCKET="/data/data/${PACKAGE_NAME}/api-daemon.sock"
 C_CLIENT="/data/data/${PACKAGE_NAME}/files/usr/bin/termux-api-daemon-client"
 

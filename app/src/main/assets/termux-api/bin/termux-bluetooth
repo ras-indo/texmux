@@ -217,7 +217,7 @@ EOF
 }
 
 call_api() {
-    /data/data/com.texmux/files/apps/com.texmux/bin/termux-api Bluetooth "$@"
+    /data/data/com.termux/files/apps/com.termux/bin/termux-api Bluetooth "$@"
 }
 
 # ─── Per-command usage functions ───────────────────────────────────────────

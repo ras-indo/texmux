@@ -26,7 +26,7 @@ target_include_directories(termux-api PRIVATE
 
 target_compile_definitions(termux-api PRIVATE
     # Termux prefix on-device — used by build_json_command() for script paths
-    PREFIX="/data/data/com.texmux/files/apps/com.texmux"
+    PREFIX="/data/data/com.termux/files/apps/com.termux"
 )
 
 target_link_libraries(termux-api PRIVATE

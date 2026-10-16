@@ -85,4 +85,4 @@ else
 	show_usage
 fi
 
-/data/data/com.texmux/files/apps/com.texmux/bin/termux-api Torch $PARAMS
+/data/data/com.termux/files/apps/com.termux/bin/termux-api Torch $PARAMS

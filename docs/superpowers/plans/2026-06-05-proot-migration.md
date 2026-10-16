@@ -171,7 +171,7 @@ Write `app/src/main/assets/terminal/ROOTFS.sh`:
 # shellcheck disable=SC2034
 force_color_prompt=yes
 
-# PREFIX is set by termux environment to /data/data/com.texmux/files/usr
+# PREFIX is set by termux environment to /data/data/com.termux/files/usr
 # Inside proot, -r $PREFIX means / = PREFIX
 # So /bin/bash = PREFIX/bin/bash from the rootfs
 
@@ -200,7 +200,7 @@ ARGS="$ARGS -b /proc"
 ARGS="$ARGS -b /sys"
 
 # Termux private data
-ARGS="$ARGS -b /data/data/com.texmux/files"
+ARGS="$ARGS -b /data/data/com.termux/files"
 
 if [ -e "/proc/self/fd" ]; then
   ARGS="$ARGS -b /proc/self/fd:/dev/fd"
@@ -438,7 +438,7 @@ public static final String TERMUX_TERMINAL_SCRIPTS_DIR = TERMUX_BIN_PREFIX_DIR_P
 
 - [ ] **Step 2: Update TERMUX_PREFIX_DIR** if needed
 
-Current: `TERMUX_PREFIX_DIR_PATH = TERMUX_FILES_DIR_PATH + "/usr"` (= `/data/data/com.texmux/files/usr`)
+Current: `TERMUX_PREFIX_DIR_PATH = TERMUX_FILES_DIR_PATH + "/usr"` (= `/data/data/com.termux/files/usr`)
 Keep this as-is — the rootfs will be extracted here.
 
 ---
@@ -674,7 +674,7 @@ In `TermuxService.java`, find where terminal sessions are created (look for `Ter
 TerminalSession session = new TerminalSession(
     shellPath,          // "/system/bin/sh"
     workingDir,         // TERMUX_HOME_DIR_PATH
-    shellArgs,          // ["-c", "/data/data/com.texmux/files/usr/bin/ROOTFS"]
+    shellArgs,          // ["-c", "/data/data/com.termux/files/usr/bin/ROOTFS"]
     environment,        // env array with PROOT_LOADER, PROOT_TMP_DIR, etc.
     terminalBufferSize,
     sessionClient

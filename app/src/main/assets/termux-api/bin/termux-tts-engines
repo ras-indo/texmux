@@ -68,4 +68,4 @@ shift $((OPTIND-1))
 
 if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 
-/data/data/com.texmux/files/apps/com.texmux/bin/termux-api TextToSpeech --es engine LIST_AVAILABLE
+/data/data/com.termux/files/apps/com.termux/bin/termux-api TextToSpeech --es engine LIST_AVAILABLE

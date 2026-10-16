@@ -84,4 +84,4 @@ if [ $# != 1 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 touch "$1"
 PARAMS="$PARAMS --es file `realpath $1`"
 
-/data/data/com.texmux/files/apps/com.texmux/bin/termux-api CameraPhoto $PARAMS
+/data/data/com.termux/files/apps/com.termux/bin/termux-api CameraPhoto $PARAMS

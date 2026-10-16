@@ -92,10 +92,10 @@ Also add the Bluetooth service entry in the `<application>` section after the Us
 
 - [ ] **Step 1.2: Add BluetoothAPI import and dispatch case to DirectDispatcher.java**
 
-Add the import after line 11 (`import com.texmux.api.apis.AudioAPI;`): the list is alphabetical, so insert between `AudioAPI` and `BatteryStatusAPI`:
+Add the import after line 11 (`import com.termux.api.apis.AudioAPI;`): the list is alphabetical, so insert between `AudioAPI` and `BatteryStatusAPI`:
 
 ```java
-import com.texmux.api.apis.BluetoothAPI;
+import com.termux.api.apis.BluetoothAPI;
 ```
 
 Add the dispatch case in the switch block after the `"AudioInfo"` case (after line 91, before `case "BatteryStatus"`):
@@ -113,7 +113,7 @@ Add the dispatch case in the switch block after the `"AudioInfo"` case (after li
 Create the file at `termux-api/app/src/main/java/com/texmux/api/apis/BluetoothAPI.java` with package declaration, imports, top-level class, and shared utility methods:
 
 ```java
-package com.texmux.api.apis;
+package com.termux.api.apis;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
@@ -148,8 +148,8 @@ import android.os.IBinder;
 import android.os.ParcelUuid;
 import android.util.JsonWriter;
 
-import com.texmux.api.TermuxApiReceiver;
-import com.texmux.api.util.ResultReturner;
+import com.termux.api.TermuxApiReceiver;
+import com.termux.api.util.ResultReturner;
 import com.termux.shared.android.PermissionUtils;
 import com.termux.shared.logger.Logger;
 

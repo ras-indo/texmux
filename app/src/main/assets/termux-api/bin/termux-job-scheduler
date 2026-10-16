@@ -175,4 +175,4 @@ if [ -n "$OPT_PERSISTED" ]; then set -- "$@" --ez persisted "$OPT_PERSISTED"; fi
 if [ -n "$OPT_TRIGGER_CONTENT_URI" ]; then set -- "$@" --es trigger_content_uri "$OPT_TRIGGER_CONTENT_URI"; fi
 if [ -n "$OPT_TRIGGER_CONTENT_FLAG" ]; then set -- "$@" --ez trigger_content_flag "$OPT_TRIGGER_CONTENT_FLAG"; fi
 
-/data/data/com.texmux/files/apps/com.texmux/bin/termux-api JobScheduler "$@"
+/data/data/com.termux/files/apps/com.termux/bin/termux-api JobScheduler "$@"

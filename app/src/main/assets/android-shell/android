@@ -1,8 +1,8 @@
 #!/bin/sh
 # android — Enter host Android shell from within proot container
 export PATH=/system/bin:/system/xbin
-export HOME=/data/data/com.texmux
+export HOME=/data/data/com.termux
 echo "Android host shell (Ctrl+D to return to container)"
 # mksh ignores PS1 from env for root; force it via ENV rc file
-printf '%s\n' 'PS1="$ "' 'cd /data/data/com.texmux' > /tmp/.androidrc
+printf '%s\n' 'PS1="$ "' 'cd /data/data/com.termux' > /tmp/.androidrc
 ENV=/tmp/.androidrc exec /system/bin/sh -i

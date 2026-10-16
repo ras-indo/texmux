@@ -10,7 +10,7 @@
  *   server sends:  exit_code\0stdout\0stderr\0
  *
  * Usage: am-socket <command_string>
- *   e.g. am-socket "broadcast --user 0 -a com.texmux.app.reload_style ..."
+ *   e.g. am-socket "broadcast --user 0 -a com.termux.app.reload_style ..."
  *
  * Build:
  *   aarch64-linux-gnu-gcc -static -Os -s -o am-socket am-socket.c
@@ -24,7 +24,7 @@
 #include <sys/un.h>
 
 /* Termux AM socket path (@TERMUX_APPS_DIR@/@TERMUX_PACKAGE@/termux-am/am.sock) */
-#define SOCKET_PATH "/data/data/com.texmux/files/apps/com.texmux/termux-am/am.sock"
+#define SOCKET_PATH "/data/data/com.termux/files/apps/com.termux/termux-am/am.sock"
 
 static void
 send_all(int fd, const char *data, int len)
@@ -66,8 +66,8 @@ main(int argc, char *argv[])
 		cmd = argv[1];
 	} else {
 		/* Default: reload Termux settings */
-		cmd = "broadcast --user 0 -a com.texmux.app.reload_style "
-		      "--ez recreate_activity false com.texmux";
+		cmd = "broadcast --user 0 -a com.termux.app.reload_style "
+		      "--ez recreate_activity false com.termux";
 	}
 
 	struct sockaddr_un addr;

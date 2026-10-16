@@ -91,4 +91,4 @@ if [ $# -gt 0 ]; then
     ARGS="-a set-volume --es stream $1 --ei volume $2"
 fi
 
-/data/data/com.texmux/files/apps/com.texmux/bin/termux-api Volume $ARGS
+/data/data/com.termux/files/apps/com.termux/bin/termux-api Volume $ARGS

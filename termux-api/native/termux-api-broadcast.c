@@ -1,7 +1,7 @@
 /* termux-api.c - helper binary for calling termux api classes
  * Usage: termux-api ${API_METHOD} ${ADDITIONAL_FLAGS}
  * This executes
- *   am broadcast com.texmux.api/.TermuxApiReceiver \
+ *   am broadcast com.termux.api/.TermuxApiReceiver \
  *   --es socket_input ${INPUT_SOCKET} \
  *   --es socket_output ${OUTPUT_SOCKET} \
  *   --es api_method ${API_METHOD} \

@@ -110,7 +110,7 @@ do
 done
 shift $((OPTIND-1))
 
-CMD="/data/data/com.texmux/files/apps/com.texmux/bin/termux-api TextToSpeech $PARAMS"
+CMD="/data/data/com.termux/files/apps/com.termux/bin/termux-api TextToSpeech $PARAMS"
 if [ $# = 0 ]; then
     $CMD
 else
