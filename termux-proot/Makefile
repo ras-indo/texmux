@@ -237,7 +237,8 @@ TALLOC_COMPILE_DEFS := -D_GNU_SOURCE=1 -D_XOPEN_SOURCE_EXTENDED=1 -fPIC \
 $(BUILD_DIR)/talloc-arm64/.configured: download-talloc setup-toolchain-arm64
 	@echo "==> Configuring talloc (arm64) via waf"
 	@cd $(TALLOC_SRC_DIR) && CC=$(TOOLCHAIN_CC_arm64) CFLAGS="-fPIC -O2" \
-		./configure $(TALLOC_CFGFLAGS) >/dev/null 2>&1
+		./configure $(TALLOC_CFGFLAGS) >$(BUILD_DIR)/talloc-arm64-configure.log 2>&1 \
+		|| { echo "!! talloc configure failed; log tail:"; tail -40 $(BUILD_DIR)/talloc-arm64-configure.log; exit 1; }
 	@mkdir -p $(dir $@) && touch $@
 
 # Compile using the exact waf recipe, run from bin/default so the relative
