@@ -412,7 +412,7 @@ define compile_proot_template
 
 $$(BUILD_DIR)/proot-$1/%.o: $$(PROOT_SRC_DIR)/src/%.c | download-proot
 	@mkdir -p $$(dir $$@)
-	$$(TOOLCHAIN_CC_$1) $$(PROOT_CFLAGS_$1) $$(PROOT_CPPFLAGS) -MD -c $$< -o $$@
+	$$(TOOLCHAIN_CC_$1) $$(PROOT_CFLAGS_$1) $$(PROOT_CPPFLAGS) -I$$(BUILD_DIR)/proot-$1 -MD -c $$< -o $$@
 
 endef
 
