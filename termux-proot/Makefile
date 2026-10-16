@@ -232,19 +232,25 @@ TALLOC_COMPILE_DEFS := -D_GNU_SOURCE=1 -D_XOPEN_SOURCE_EXTENDED=1 -fPIC \
 	-DSTATIC_talloc_MODULES=NULL \
 	'-DSTATIC_talloc_MODULES_PROTO=extern void __talloc_dummy_module_proto(void)'
 
-# Configure talloc (waf) -> generates bin/default/config.h with target-correct
-# SIZEOF_*/HAVE_* (CHECK_SIZEOF is compile-only, safe to cross-compile).
-$(BUILD_DIR)/talloc-arm64/.configured: download-talloc setup-toolchain-arm64
-	@echo "==> Configuring talloc (arm64) via waf"
-	@cd $(TALLOC_SRC_DIR) && CC=$(TOOLCHAIN_CC_arm64) CFLAGS="-fPIC -O2" \
-		./configure $(TALLOC_CFGFLAGS) >$(BUILD_DIR)/talloc-arm64-configure.log 2>&1 \
-		|| { echo "!! talloc configure failed; log tail:"; tail -40 $(BUILD_DIR)/talloc-arm64-configure.log; exit 1; }
+# Generate config.h via NATIVE (host) waf configure. waf's runtime checks
+# (uname, simple C program, lib/replace execute=True probes) can't run arm64
+# binaries on the x86_64 CI host, and cross-answers would be fragile. talloc's
+# config.h is LP64-arch-agnostic (SIZEOF_LONG/VOID_P/SIZE_T=8 identical for
+# x86_64 and arm64) and its dangerous-guard headers (bsd/string, setproctitle,
+# unix.h, sys/atomic) are absent, so a host config.h is Bionic-safe for arm64.
+$(BUILD_DIR)/talloc-arm64/.configured: download-talloc
+	@echo "==> Configuring talloc (host-native) via waf to generate config.h"
+	@cd $(TALLOC_SRC_DIR) && CC=gcc CFLAGS="-fPIC -O2" \
+		./configure $(TALLOC_CFGFLAGS) >$(BUILD_DIR)/talloc-configure.log 2>&1 \
+		|| { echo "!! talloc configure failed; log tail:"; tail -40 $(BUILD_DIR)/talloc-configure.log; exit 1; }
+	@test -f $(TALLOC_SRC_DIR)/bin/default/config.h
 	@mkdir -p $(dir $@) && touch $@
 
-# Compile using the exact waf recipe, run from bin/default so the relative
-# -I paths (config.h, lib/replace) resolve. Verified on host.
-$(BUILD_DIR)/talloc-arm64/talloc.o: $(BUILD_DIR)/talloc-arm64/.configured
-	@echo "==> Compiling talloc.c (arm64)"
+# Compile talloc.c for the TARGET using the host-generated config.h + the exact
+# waf recipe (from compile_commands.json). Run from bin/default so the relative
+# -I paths (config.h, lib/replace) resolve.
+$(BUILD_DIR)/talloc-arm64/talloc.o: $(BUILD_DIR)/talloc-arm64/.configured setup-toolchain-arm64
+	@echo "==> Compiling talloc.c (arm64, NDK clang)"
 	@mkdir -p $(dir $@)
 	@cd $(TALLOC_SRC_DIR)/bin/default && \
 		$(TOOLCHAIN_CC_arm64) $(TALLOC_COMPILE_DEFS) \
@@ -257,14 +263,12 @@ $(BUILD_DIR)/talloc-arm64/libtalloc.a: $(BUILD_DIR)/talloc-arm64/talloc.o
 
 talloc-arm64: $(BUILD_DIR)/talloc-arm64/libtalloc.a
 
-$(BUILD_DIR)/talloc-arm/.configured: download-talloc setup-toolchain-arm
-	@echo "==> Configuring talloc (arm) via waf"
-	@cd $(TALLOC_SRC_DIR) && CC=$(TOOLCHAIN_CC_arm) CFLAGS="-fPIC -O2" \
-		./configure $(TALLOC_CFGFLAGS) >/dev/null 2>&1
-	@mkdir -p $(dir $@) && touch $@
-
-$(BUILD_DIR)/talloc-arm/talloc.o: $(BUILD_DIR)/talloc-arm/.configured
-	@echo "==> Compiling talloc.c (arm)"
+# arm (32-bit): LP32, so host LP64 config.h SIZEOF values would be wrong. The CI
+# only builds arm64 (install -> proot-arm64); keep arm target compiling via its
+# own native configure is not possible (host is LP64). Leave arm wired to the
+# same config.h but note it is not CI-covered.
+$(BUILD_DIR)/talloc-arm/talloc.o: $(BUILD_DIR)/talloc-arm64/.configured setup-toolchain-arm
+	@echo "==> Compiling talloc.c (arm, NDK clang; shares host config.h)"
 	@mkdir -p $(dir $@)
 	@cd $(TALLOC_SRC_DIR)/bin/default && \
 		$(TOOLCHAIN_CC_arm) $(TALLOC_COMPILE_DEFS) \
