@@ -51,12 +51,11 @@ jobs:
           echo "=== APK files ==="
           find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
 
-      - name: Collect only the APKs needed (arm64-v8a + universal)
+      - name: Collect only the APK needed (arm64-v8a)
         run: |
           mkdir -p upload_apk
           cp app/build/outputs/apk/debug/*_arm64-v8a.apk upload_apk/
-          cp app/build/outputs/apk/debug/*_universal.apk upload_apk/
-          echo "=== Collected for upload (~83MB, not the full 5-ABI 191MB bundle) ==="
+          echo "=== Collected for upload (~41MB, arm64-v8a only) ==="
           ls -lh upload_apk/
 
       - name: Upload APK
