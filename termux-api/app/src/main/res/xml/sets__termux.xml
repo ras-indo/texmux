@@ -5,7 +5,7 @@
         app:title="@string/sets__termux_api_app___val__title"
         app:summary="@string/sets__termux_api_app___val__summary"
         app:isPreferenceVisible="false"
-        app:fragment="com.texmux.api.settings.fragments.termux_api_app.TermuxAPIPreferencesFragment"/>
+        app:fragment="com.termux.api.settings.fragments.termux_api_app.TermuxAPIPreferencesFragment"/>
 
     <Preference
         app:key="link__termux_about"

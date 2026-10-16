@@ -28,7 +28,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
-import com.texmux.R;
+import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.terminal.TerminalSession;

@@ -26,7 +26,7 @@ import androidx.appcompat.widget.Toolbar;
 
 import com.termux.shared.interact.ShareUtils;
 import com.termux.shared.logger.Logger;
-import com.texmux.shared.R;
+import com.termux.shared.R;
 import com.termux.shared.models.TextIOInfo;
 import com.termux.shared.view.KeyboardUtils;
 

@@ -8,7 +8,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 
-import com.texmux.shared.R;
+import com.termux.shared.R;
 import com.termux.shared.data.DataUtils;
 
 import java.io.IOException;

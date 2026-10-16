@@ -12,7 +12,7 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import com.termux.shared.android.PendingIntentUtils;
 
-import com.texmux.shared.R;
+import com.termux.shared.R;
 import com.termux.shared.activities.ReportActivity;
 import com.termux.shared.file.FileUtils;
 import com.termux.shared.termux.file.TermuxFileUtils;

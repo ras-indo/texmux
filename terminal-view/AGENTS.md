@@ -1,6 +1,6 @@
 # TERMINAL-VIEW
 
-**Modul**: Android library (`com.texmux.view`). Custom View untuk rendering output terminal dan interaksi teks. Dependensi: `:terminal-emulator` dan AndroidX Annotation.
+**Modul**: Android library (`com.termux.view`). Custom View untuk rendering output terminal dan interaksi teks. Dependensi: `:terminal-emulator` dan AndroidX Annotation.
 
 ## STRUKTUR
 
@@ -40,7 +40,7 @@ Total: 8 file Java, tanpa sub-subpackage.
 
 ## KONVENSI
 
-- Package namespace: `com.texmux.view` (texmux, bukan termux). Cocok dengan namespace build.gradle.
+- Package namespace: `com.termux.view` (texmux, bukan termux). Cocok dengan namespace build.gradle.
 - Seleksi teks ikut pola `ActionMode` Android (API 11+). Interface `CursorController` abstraksi operasi handle kursor untuk PopupWindow kustom, bukan handle bawaan `TextView`.
 - Rendering font pakai `android.text.TextPaint` dengan iterasi `char[]` manual, bukan `Spannable`/`StaticLayout`. Setiap karakter dipetakan ke sel di grid.
 - Tidak ada XML layout di modul ini. Resource (`res/`) minimal (drawable untuk selection handles saja).

@@ -5,7 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 
 /**
- * BroadcastReceiver for {@code com.texmux.RUN_COMMAND} intent action.
+ * BroadcastReceiver for {@code com.termux.RUN_COMMAND} intent action.
  *
  * Termux supports both {@code am broadcast} and {@code am startservice} for sending
  * RUN_COMMAND intents. This receiver handles the broadcast path and forwards to
@@ -13,12 +13,12 @@ import android.content.Intent;
  *
  * Usage (via termux-am-socket / am-socket inside proot container):
  * <pre>
- * am broadcast -a com.texmux.RUN_COMMAND \
- *   --es com.texmux.RUN_COMMAND_PATH "ls" \
- *   --esa com.texmux.RUN_COMMAND_ARGUMENTS "-la" \
- *   --es com.texmux.RUN_COMMAND_WORKDIR "/sdcard" \
- *   --es com.texmux.RUN_COMMAND_SESSION_ACTION "0" \
- *   com.texmux
+ * am broadcast -a com.termux.RUN_COMMAND \
+ *   --es com.termux.RUN_COMMAND_PATH "ls" \
+ *   --esa com.termux.RUN_COMMAND_ARGUMENTS "-la" \
+ *   --es com.termux.RUN_COMMAND_WORKDIR "/sdcard" \
+ *   --es com.termux.RUN_COMMAND_SESSION_ACTION "0" \
+ *   com.termux
  * </pre>
  *
  * @see RunCommandService

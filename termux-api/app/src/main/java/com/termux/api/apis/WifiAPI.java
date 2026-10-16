@@ -1,0 +1,1146 @@
+package com.termux.api.apis;
+
+import android.Manifest;
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.content.Intent;
+import android.location.LocationManager;
+import android.net.wifi.ScanResult;
+import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.net.wifi.WifiManager.LocalOnlyHotspotReservation;
+import android.net.wifi.WifiNetworkSuggestion;
+import android.net.wifi.aware.AttachCallback;
+import android.net.wifi.aware.DiscoverySessionCallback;
+import android.net.wifi.aware.PublishConfig;
+import android.net.wifi.aware.PublishDiscoverySession;
+import android.net.wifi.aware.SubscribeConfig;
+import android.net.wifi.aware.SubscribeDiscoverySession;
+import android.net.wifi.aware.WifiAwareManager;
+import android.net.wifi.aware.WifiAwareSession;
+import android.net.wifi.p2p.WifiP2pConfig;
+import android.net.wifi.p2p.WifiP2pDevice;
+import android.net.wifi.p2p.WifiP2pDeviceList;
+import android.net.wifi.p2p.WifiP2pGroup;
+import android.net.wifi.p2p.WifiP2pManager;
+import android.net.wifi.rtt.RangingRequest;
+import android.net.wifi.rtt.RangingResult;
+import android.net.wifi.rtt.RangingResultCallback;
+import android.net.wifi.rtt.WifiRttManager;
+import android.net.wifi.WpsInfo;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.TextUtils;
+import android.text.format.Formatter;
+import android.util.JsonWriter;
+
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
+import androidx.appcompat.app.AppCompatActivity;
+
+import com.termux.api.TermuxApiReceiver;
+import com.termux.api.activities.TermuxApiPermissionActivity;
+import com.termux.api.util.ResultReturner;
+import com.termux.api.util.ResultReturner.ResultJsonWriter;
+import com.termux.shared.logger.Logger;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.Executors;
+
+public class WifiAPI {
+
+    private static final String LOG_TAG = "WifiAPI";
+
+    // ─── WiFi Direct (P2P) state ──────────────────────────────────────
+    private static WifiP2pManager p2pManager;
+    private static WifiP2pManager.Channel p2pChannel;
+
+    // ─── WiFi Aware state ─────────────────────────────────────────────
+    private static WifiAwareManager awareManager;
+    private static WifiAwareSession awareSession;
+
+    // ─── Hotspot state ────────────────────────────────────────────────
+    // Tracks whether a LocalOnlyHotspot request is active; prevents
+    // duplicate requests (system allows only one per UID).
+    private static boolean hotspotRequestActive = false;
+
+    /**
+     * Unified entry point for all wifi commands.
+     * Called from DirectDispatcher with "api_method" = "Wifi".
+     * The specific sub-command is read from intent.getStringExtra("command").
+     */
+    public static void onReceive(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceive");
+
+        String command = intent.getStringExtra("command");
+        if (command == null) {
+            Logger.logError(LOG_TAG, "Missing 'command' extra");
+            return;
+        }
+
+        try {
+            switch (command) {
+                case "connection-info":
+                    onReceiveWifiConnectionInfo(apiReceiver, context, intent);
+                    break;
+                case "scan-info":
+                    onReceiveWifiScanInfo(apiReceiver, context, intent);
+                    break;
+                case "enable":
+                    onReceiveWifiEnable(apiReceiver, context, intent);
+                    break;
+                case "hotspot":
+                    onReceiveWifiHotspot(apiReceiver, context, intent);
+                    break;
+                case "p2p-discover":
+                    onReceiveP2pDiscover(apiReceiver, context, intent);
+                    break;
+                case "p2p-connect":
+                    onReceiveP2pConnect(apiReceiver, context, intent);
+                    break;
+                case "p2p-group":
+                    onReceiveP2pGroupInfo(apiReceiver, context, intent);
+                    break;
+                case "aware-attach":
+                    onReceiveAwareAttach(apiReceiver, context, intent);
+                    break;
+                case "aware-publish":
+                    onReceiveAwarePublish(apiReceiver, context, intent);
+                    break;
+                case "aware-subscribe":
+                    onReceiveAwareSubscribe(apiReceiver, context, intent);
+                    break;
+                case "rtt-range":
+                    onReceiveRttRange(apiReceiver, context, intent);
+                    break;
+                case "suggest":
+                    onReceiveNetworkSuggestion(apiReceiver, context, intent);
+                    break;
+                default:
+                    Logger.logError(LOG_TAG, "Unrecognized wifi command: '" + command + "'");
+            }
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Error in wifi command: " + command, e);
+        }
+    }
+
+    // ─── Helper methods for WiFi standards, channels, security ────────
+
+    /**
+     * Convert frequency in MHz to channel number.
+     * Reference: IEEE 802.11 channel plan.
+     */
+    private static int frequencyToChannel(int freqMhz) {
+        if (freqMhz >= 2412 && freqMhz <= 2484) {
+            return (freqMhz - 2412) / 5 + 1;
+        } else if (freqMhz >= 5170 && freqMhz <= 5250) {
+            return (freqMhz - 5170) / 5 + 34;
+        } else if (freqMhz >= 5250 && freqMhz <= 5330) {
+            return (freqMhz - 5250) / 5 + 52;
+        } else if (freqMhz >= 5490 && freqMhz <= 5730) {
+            return (freqMhz - 5490) / 5 + 100;
+        } else if (freqMhz >= 5745 && freqMhz <= 5825) {
+            return (freqMhz - 5745) / 5 + 149;
+        } else if (freqMhz >= 5955 && freqMhz <= 7115) {
+            // WiFi 6E 6 GHz band
+            return (freqMhz - 5955) / 5 + 1;
+        }
+        return 0;
+    }
+
+    /**
+     * Determine WiFi standard from frequency and capabilities.
+     * Returns 802.11a/b/g/n/ac/ax/be or "unknown".
+     */
+    private static String getWifiStandard(WifiInfo info) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            int standard = info.getWifiStandard();
+            switch (standard) {
+                case 0: return "802.11";   // WIFI_STANDARD_LEGACY
+                case 1: return "802.11a";   // WIFI_STANDARD_80211A
+                case 2: return "802.11b";   // WIFI_STANDARD_80211B
+                case 3: return "802.11g";   // WIFI_STANDARD_80211G
+                case 4: return "802.11n";   // WIFI_STANDARD_80211N
+                case 5: return "802.11ac";  // WIFI_STANDARD_80211AC
+                case 6: return "802.11ax";  // WIFI_STANDARD_80211AX
+                case 7: return "802.11be";  // WIFI_STANDARD_80211BE
+                default: return "unknown";
+            }
+        }
+        // Fallback: infer from frequency band
+        int freq = info.getFrequency();
+        if (freq >= 2412 && freq <= 2484) {
+            // 2.4 GHz — could be 802.11b/g/n
+            return info.getLinkSpeed() > 100 ? "802.11n" : "802.11g";
+        } else if (freq >= 5170 && freq <= 5825) {
+            // 5 GHz — likely 802.11a/n/ac
+            return info.getLinkSpeed() > 300 ? "802.11ac" : "802.11a";
+        } else if (freq >= 5955 && freq <= 7115) {
+            return "802.11ax";
+        }
+        return "unknown";
+    }
+
+    /**
+     * Return human-readable WiFi generation: "WiFi 4", "WiFi 5", "WiFi 6", "WiFi 6E", "WiFi 7", or null.
+     */
+    private static String getWifiGeneration(int frequencyMhz, String standard) {
+        if (standard == null) return null;
+        switch (standard) {
+            case "802.11n": return "WiFi 4";
+            case "802.11ac": return "WiFi 5";
+            case "802.11ax":
+                if (frequencyMhz >= 5955 && frequencyMhz <= 7115) {
+                    return "WiFi 6E";
+                }
+                return "WiFi 6";
+            case "802.11be": return "WiFi 7";
+            default: return null;
+        }
+    }
+
+    /**
+     * Infer security type from scan result capabilities string.
+     * Returns e.g. "WPA2-PSK", "WPA3-SAE", "WPA2-Enterprise", "Open", "WEP", etc.
+     */
+    private static String getSecurityType(String capabilities) {
+        if (TextUtils.isEmpty(capabilities)) return "unknown";
+        String caps = capabilities.toUpperCase();
+        if (caps.contains("WPA3-SAE") || caps.contains("SAE")) {
+            if (caps.contains("WPA2")) return "WPA2/WPA3-PSK";
+            return "WPA3-SAE";
+        }
+        if (caps.contains("WPA2") && caps.contains("-ENT")) return "WPA2-Enterprise";
+        if (caps.contains("WPA2")) return "WPA2-PSK";
+        if (caps.contains("WPA") && caps.contains("-ENT")) return "WPA-Enterprise";
+        if (caps.contains("WPA")) return "WPA-PSK";
+        if (caps.contains("WEP")) return "WEP";
+        if (caps.contains("ESS") || caps.contains("IBSS")) return "Open";
+        return "unknown";
+    }
+
+    /**
+     * Determine 802.11 generation for a ScanResult based on frequency and capabilities.
+     */
+    private static String getScanResultGeneration(ScanResult scan) {
+        int freq = scan.frequency;
+        String standard = null;
+        String caps = scan.capabilities != null ? scan.capabilities.toUpperCase() : "";
+
+        if (freq >= 5955 && freq <= 7115) {
+            standard = "802.11ax"; // WiFi 6E
+        } else if (freq >= 5170 && freq <= 5825) {
+            if (scan.channelWidth > ScanResult.CHANNEL_WIDTH_40MHZ || caps.contains("VHT")) {
+                standard = "802.11ac"; // WiFi 5 (or ax on 5GHz)
+            } else {
+                standard = "802.11a";
+            }
+        } else if (freq >= 2412 && freq <= 2484) {
+            if (scan.channelWidth > ScanResult.CHANNEL_WIDTH_20MHZ || caps.contains("HT")) {
+                standard = "802.11n"; // WiFi 4
+            } else {
+                standard = "802.11g";
+            }
+        }
+        if (standard == null) return null;
+
+        return getWifiGeneration(freq, standard);
+    }
+
+    // ─── Existing methods (keep for backward compat via old action strings) ───
+
+    public static void onReceiveWifiConnectionInfo(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveWifiConnectionInfo");
+
+        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+            @SuppressLint("HardwareIds")
+            @Override
+            public void writeJson(JsonWriter out) throws Exception {
+                WifiManager manager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                WifiInfo info = manager.getConnectionInfo();
+                out.beginObject();
+                if (info == null) {
+                    out.name("API_ERROR").value("No current connection");
+                } else {
+                    out.name("bssid").value(info.getBSSID());
+                    out.name("frequency_mhz").value(info.getFrequency());
+                    //noinspection deprecation
+                    out.name("ip").value(Formatter.formatIpAddress(info.getIpAddress()));
+                    out.name("link_speed_mbps").value(info.getLinkSpeed());
+                    out.name("mac_address").value(info.getMacAddress());
+                    out.name("network_id").value(info.getNetworkId());
+                    out.name("rssi").value(info.getRssi());
+                    out.name("ssid").value(info.getSSID().replaceAll("\"", ""));
+                    out.name("ssid_hidden").value(info.getHiddenSSID());
+                    out.name("supplicant_state").value(info.getSupplicantState().toString());
+
+                    // ── New fields (Task 2) ──
+                    int freq = info.getFrequency();
+                    out.name("channel").value(frequencyToChannel(freq));
+                    String standard = getWifiStandard(info);
+                    out.name("standard").value(standard);
+                    String generation = getWifiGeneration(freq, standard);
+                    if (generation != null) {
+                        out.name("wifi_generation").value(generation);
+                    }
+                }
+                out.endObject();
+            }
+        });
+    }
+
+    static boolean isLocationEnabled(Context context) {
+        LocationManager lm = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+        return lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
+    }
+
+    public static void onReceiveWifiScanInfo(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveWifiScanInfo");
+
+        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+            @Override
+            public void writeJson(JsonWriter out) throws Exception {
+                WifiManager manager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                List<ScanResult> scans = manager.getScanResults();
+                if (scans == null) {
+                    out.beginObject().name("API_ERROR").value("Failed getting scan results").endObject();
+                } else if (scans.isEmpty() && !isLocationEnabled(context)) {
+                    String errorMessage = "Location needs to be enabled on the device";
+                    out.beginObject().name("API_ERROR").value(errorMessage).endObject();
+                } else {
+                    out.beginArray();
+                    for (ScanResult scan : scans) {
+                        out.beginObject();
+                        out.name("bssid").value(scan.BSSID);
+                        out.name("frequency_mhz").value(scan.frequency);
+                        out.name("rssi").value(scan.level);
+                        out.name("ssid").value(scan.SSID);
+                        out.name("timestamp").value(scan.timestamp);
+
+                        int channelWidth = scan.channelWidth;
+                        String channelWidthMhz = "???";
+                        switch (channelWidth) {
+                            case ScanResult.CHANNEL_WIDTH_20MHZ:
+                                channelWidthMhz = "20";
+                                break;
+                            case ScanResult.CHANNEL_WIDTH_40MHZ:
+                                channelWidthMhz = "40";
+                                break;
+                            case ScanResult.CHANNEL_WIDTH_80MHZ:
+                                channelWidthMhz = "80";
+                                break;
+                            case ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ:
+                                channelWidthMhz = "80+80";
+                                break;
+                            case ScanResult.CHANNEL_WIDTH_160MHZ:
+                                channelWidthMhz = "160";
+                                break;
+                        }
+                        out.name("channel_bandwidth_mhz").value(channelWidthMhz);
+                        if (channelWidth != ScanResult.CHANNEL_WIDTH_20MHZ) {
+                            out.name("center_frequency_mhz").value(scan.centerFreq0);
+                        }
+                        if (!TextUtils.isEmpty(scan.capabilities)) {
+                            out.name("capabilities").value(scan.capabilities);
+                        }
+                        if (!TextUtils.isEmpty(scan.operatorFriendlyName)) {
+                            out.name("operator_name").value(scan.operatorFriendlyName.toString());
+                        }
+                        if (!TextUtils.isEmpty(scan.venueName)) {
+                            out.name("venue_name").value(scan.venueName.toString());
+                        }
+
+                        // ── New fields (Task 2) ──
+                        if (!TextUtils.isEmpty(scan.capabilities)) {
+                            out.name("security_type").value(getSecurityType(scan.capabilities));
+                        }
+                        out.name("channel").value(frequencyToChannel(scan.frequency));
+                        String generation = getScanResultGeneration(scan);
+                        if (generation != null) {
+                            out.name("wifi_generation").value(generation);
+                        }
+
+                        out.endObject();
+                    }
+                    out.endArray();
+                }
+            }
+        });
+    }
+
+    public static void onReceiveWifiEnable(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveWifiEnable");
+
+        ResultReturner.returnData(apiReceiver, intent, out -> {
+            WifiManager manager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            boolean state = intent.getBooleanExtra("enabled", false);
+            manager.setWifiEnabled(state);
+        });
+    }
+
+    // ─── Hotspot (Task 3) ─────────────────────────────────────────────
+
+    private static void onReceiveWifiHotspot(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveWifiHotspot");
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: LocalOnlyHotspot requires Android 8.0+ (API 26)"));
+            return;
+        }
+
+        // Check permissions:
+        // - Android 13+ needs NEARBY_WIFI_DEVICES + ACCESS_FINE_LOCATION (system requires location for startLocalOnlyHotspot)
+        // - Older Android needs ACCESS_FINE_LOCATION
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                    Manifest.permission.NEARBY_WIFI_DEVICES,
+                    Manifest.permission.ACCESS_FINE_LOCATION)) {
+                return;
+            }
+        } else {
+            if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                    Manifest.permission.ACCESS_FINE_LOCATION)) {
+                return;
+            }
+        }
+
+        // Guard: system allows only one LocalOnlyHotspot request per UID
+        if (hotspotRequestActive) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: A hotspot request is already in progress"));
+            return;
+        }
+
+        // Launch HotspotConsentActivity to get user consent
+        hotspotRequestActive = true;
+        Intent hotspotIntent = new Intent(context, HotspotConsentActivity.class);
+        hotspotIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        ResultReturner.copyIntentExtras(intent, hotspotIntent);
+        context.startActivity(hotspotIntent);
+    }
+
+    /**
+     * Activity that requests the system-local-only-hotspot consent dialog.
+     * Pattern: identical to SAFAPI$SAFActivity.
+     * Starts LocalOnlyHotspot, returns SSID+password via ResultReturner on success.
+     */
+    public static class HotspotConsentActivity extends AppCompatActivity {
+
+        private boolean resultReturned = false;
+
+        private static final String LOG_TAG = "HotspotConsentActivity";
+
+        @Override
+        protected void onCreate(@Nullable Bundle savedInstanceState) {
+            Logger.logDebug(LOG_TAG, "onCreate");
+            super.onCreate(savedInstanceState);
+
+            WifiManager manager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (manager == null) {
+                ResultReturner.returnData(this, getIntent(), out -> out.println("ERROR: WifiManager not available"));
+                resultReturned = true;
+                finish();
+                return;
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    manager.startLocalOnlyHotspot(new WifiManager.LocalOnlyHotspotCallback() {
+                        private void clear() {
+                            hotspotRequestActive = false;
+                        }
+
+                        @Override
+                        public void onStarted(WifiManager.LocalOnlyHotspotReservation reservation) {
+                            Logger.logDebug(LOG_TAG, "Hotspot started");
+                            if (resultReturned) return;
+                            resultReturned = true;
+                            clear();
+
+                            WifiConfiguration config = reservation.getWifiConfiguration();
+                            ResultReturner.returnData(HotspotConsentActivity.this, getIntent(), new ResultJsonWriter() {
+                                @Override
+                                public void writeJson(JsonWriter out) throws Exception {
+                                    out.beginObject();
+                                    if (config != null) {
+                                        out.name("ssid").value(config.SSID);
+                                        out.name("password").value(config.preSharedKey);
+                                    } else {
+                                        out.name("API_ERROR").value("Hotspot started but no configuration returned");
+                                    }
+                                    out.endObject();
+                                }
+                            });
+
+                            finish();
+                        }
+
+                        @Override
+                        public void onStopped() {
+                            Logger.logDebug(LOG_TAG, "Hotspot stopped");
+                            if (resultReturned) return;
+                            resultReturned = true;
+                            clear();
+                            ResultReturner.returnData(HotspotConsentActivity.this, getIntent(),
+                                out -> out.println("ERROR: Hotspot was stopped"));
+                            finish();
+                        }
+
+                        @Override
+                        public void onFailed(int reason) {
+                            Logger.logDebug(LOG_TAG, "Hotspot failed: " + reason);
+                            if (resultReturned) return;
+                            resultReturned = true;
+                            clear();
+                            String reasonStr;
+                            switch (reason) {
+                                case WifiManager.LocalOnlyHotspotCallback.ERROR_NO_CHANNEL:
+                                    reasonStr = "No channel available";
+                                    break;
+                                case WifiManager.LocalOnlyHotspotCallback.ERROR_GENERIC:
+                                    reasonStr = "Generic error";
+                                    break;
+                                case WifiManager.LocalOnlyHotspotCallback.ERROR_INCOMPATIBLE_MODE:
+                                    reasonStr = "Incompatible mode (another hotspot active?)";
+                                    break;
+                                case WifiManager.LocalOnlyHotspotCallback.ERROR_TETHERING_DISALLOWED:
+                                    reasonStr = "Tethering disallowed";
+                                    break;
+                                default:
+                                    reasonStr = "Unknown error (" + reason + ")";
+                            }
+                            ResultReturner.returnData(HotspotConsentActivity.this, getIntent(),
+                                out -> out.println("ERROR: " + reasonStr));
+                            finish();
+                        }
+                    }, null);
+                } catch (IllegalStateException e) {
+                    Logger.logError(LOG_TAG, "Hotspot already active: " + e.getMessage());
+                    if (!resultReturned) {
+                        resultReturned = true;
+                        hotspotRequestActive = false;
+                        ResultReturner.returnData(this, getIntent(),
+                            out -> out.println("ERROR: Hotspot is already active or requested"));
+                    }
+                    finish();
+                }
+            } else {
+                ResultReturner.returnData(this, getIntent(),
+                    out -> out.println("ERROR: LocalOnlyHotspot requires Android 8.0+"));
+                resultReturned = true;
+                finish();
+            }
+        }
+
+        @Override
+        protected void onDestroy() {
+            Logger.logDebug(LOG_TAG, "onDestroy");
+            super.onDestroy();
+            finishAndRemoveTask();
+            hotspotRequestActive = false;
+            if (!resultReturned) {
+                ResultReturner.returnData(this, getIntent(), out -> out.write(""));
+                resultReturned = true;
+            }
+        }
+    }
+
+    // ─── WiFi Direct (P2P) — Task 4 ───────────────────────────────────
+
+    /**
+     * Initialize (or return existing) WifiP2pManager and Channel.
+     */
+    private static WifiP2pManager getP2pManager(Context context) {
+        if (p2pManager == null) {
+            p2pManager = (WifiP2pManager) context.getApplicationContext().getSystemService(Context.WIFI_P2P_SERVICE);
+        }
+        return p2pManager;
+    }
+
+    private static WifiP2pManager.Channel getP2pChannel(Context context) {
+        WifiP2pManager manager = getP2pManager(context);
+        if (manager == null) return null;
+        if (p2pChannel == null) {
+            p2pChannel = manager.initialize(context, context.getMainLooper(), null);
+        }
+        return p2pChannel;
+    }
+
+    /**
+     * Format a WifiP2pDevice list to JSON.
+     */
+    private static void writePeersToJson(JsonWriter out, Collection<WifiP2pDevice> peers) throws Exception {
+        out.beginArray();
+        for (WifiP2pDevice device : peers) {
+            out.beginObject();
+            out.name("device_name").value(device.deviceName != null ? device.deviceName : "");
+            out.name("device_address").value(device.deviceAddress != null ? device.deviceAddress : "");
+            String status;
+            switch (device.status) {
+                case WifiP2pDevice.AVAILABLE:       status = "available"; break;
+                case WifiP2pDevice.INVITED:         status = "invited"; break;
+                case WifiP2pDevice.CONNECTED:       status = "connected"; break;
+                case WifiP2pDevice.FAILED:          status = "failed"; break;
+                case WifiP2pDevice.UNAVAILABLE:     status = "unavailable"; break;
+                default:                            status = "unknown"; break;
+            }
+            out.name("status").value(status);
+            out.name("primary_device_type").value(device.primaryDeviceType != null ? device.primaryDeviceType : "");
+            out.name("is_group_owner").value(device.isGroupOwner());
+            out.endObject();
+        }
+        out.endArray();
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.KITKAT)
+    private static void onReceiveP2pDiscover(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveP2pDiscover");
+
+        // Permission check: Android 13+ needs NEARBY_WIFI_DEVICES + ACCESS_FINE_LOCATION
+        // (system service enforces location for discoverPeers internally)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                    Manifest.permission.NEARBY_WIFI_DEVICES,
+                    Manifest.permission.ACCESS_FINE_LOCATION)) {
+                return;
+            }
+        } else {
+            if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                    Manifest.permission.ACCESS_FINE_LOCATION)) {
+                return;
+            }
+        }
+
+        WifiP2pManager manager = getP2pManager(context);
+        WifiP2pManager.Channel channel = getP2pChannel(context);
+        if (manager == null || channel == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: WiFi P2P not available on this device"));
+            return;
+        }
+
+        // Ensure WiFi is enabled before P2P discovery
+        WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+        if (!wifiManager.isWifiEnabled()) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: WiFi must be enabled for P2P discovery"));
+            return;
+        }
+
+        final int discoverTimeout = intent.getIntExtra("timeout", 10000);
+
+        manager.discoverPeers(channel, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Logger.logDebug(LOG_TAG, "P2P discover initiated");
+
+                // Wait briefly for peers to be discovered, then request peer list
+                try {
+                    Thread.sleep(Math.min(discoverTimeout, 10000));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+
+                manager.requestPeers(channel, new WifiP2pManager.PeerListListener() {
+                    @Override
+                    public void onPeersAvailable(WifiP2pDeviceList peerList) {
+                        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+                            @Override
+                            public void writeJson(JsonWriter out) throws Exception {
+                                Collection<WifiP2pDevice> peers = peerList.getDeviceList();
+                                out.beginObject();
+                                out.name("peers_count").value(peers.size());
+                                out.name("peers");
+                                writePeersToJson(out, peers);
+                                out.endObject();
+                            }
+                        });
+                    }
+                });
+            }
+
+            @Override
+            public void onFailure(int reason) {
+                String reasonStr;
+                switch (reason) {
+                    case WifiP2pManager.BUSY:             reasonStr = "BUSY"; break;
+                    case WifiP2pManager.ERROR:            reasonStr = "ERROR"; break;
+                    case WifiP2pManager.P2P_UNSUPPORTED:  reasonStr = "P2P_UNSUPPORTED"; break;
+                    default:                              reasonStr = "UNKNOWN(" + reason + ")"; break;
+                }
+                ResultReturner.returnData(apiReceiver, intent,
+                    out -> out.println("ERROR: P2P discover failed: " + reasonStr));
+            }
+        });
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.KITKAT)
+    private static void onReceiveP2pConnect(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveP2pConnect");
+
+        String deviceAddress = intent.getStringExtra("address");
+        if (deviceAddress == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: Missing 'address' extra (MAC address of peer)"));
+            return;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                    Manifest.permission.NEARBY_WIFI_DEVICES)) {
+                return;
+            }
+        } else {
+            if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                    Manifest.permission.ACCESS_FINE_LOCATION)) {
+                return;
+            }
+        }
+
+        WifiP2pManager manager = getP2pManager(context);
+        WifiP2pManager.Channel channel = getP2pChannel(context);
+        if (manager == null || channel == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: WiFi P2P not available on this device"));
+            return;
+        }
+
+        WifiP2pConfig config = new WifiP2pConfig();
+        config.deviceAddress = deviceAddress;
+
+        // Set WPS method (default: PBC, can be overridden via extra)
+        String wpsMethod = intent.getStringExtra("wps_method");
+        if ("keypad".equals(wpsMethod)) {
+            config.wps.setup = WpsInfo.KEYPAD;
+        } else if ("display".equals(wpsMethod)) {
+            config.wps.setup = WpsInfo.DISPLAY;
+        } else {
+            config.wps.setup = WpsInfo.PBC;
+        }
+
+        manager.connect(channel, config, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Logger.logDebug(LOG_TAG, "P2P connect initiated successfully");
+                ResultReturner.returnData(apiReceiver, intent,
+                    out -> out.println("Connected to " + deviceAddress));
+            }
+
+            @Override
+            public void onFailure(int reason) {
+                String reasonStr;
+                switch (reason) {
+                    case WifiP2pManager.BUSY:             reasonStr = "BUSY"; break;
+                    case WifiP2pManager.ERROR:            reasonStr = "ERROR"; break;
+                    case WifiP2pManager.P2P_UNSUPPORTED:  reasonStr = "P2P_UNSUPPORTED"; break;
+                    default:                              reasonStr = "UNKNOWN(" + reason + ")"; break;
+                }
+                ResultReturner.returnData(apiReceiver, intent,
+                    out -> out.println("ERROR: P2P connect failed: " + reasonStr));
+            }
+        });
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.KITKAT)
+    private static void onReceiveP2pGroupInfo(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveP2pGroupInfo");
+
+        WifiP2pManager manager = getP2pManager(context);
+        WifiP2pManager.Channel channel = getP2pChannel(context);
+        if (manager == null || channel == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: WiFi P2P not available on this device"));
+            return;
+        }
+
+        manager.requestGroupInfo(channel, new WifiP2pManager.GroupInfoListener() {
+            @Override
+            public void onGroupInfoAvailable(WifiP2pGroup group) {
+                ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+                    @Override
+                    public void writeJson(JsonWriter out) throws Exception {
+                        out.beginObject();
+                        if (group == null) {
+                            out.name("API_ERROR").value("Not part of a P2P group");
+                        } else {
+                            out.name("network_name").value(group.getNetworkName());
+                            out.name("is_group_owner").value(group.isGroupOwner());
+                            WifiP2pDevice owner = group.getOwner();
+                            if (owner != null) {
+                                out.name("owner_device_name").value(owner.deviceName != null ? owner.deviceName : "");
+                                out.name("owner_device_address").value(owner.deviceAddress != null ? owner.deviceAddress : "");
+                            }
+                            out.name("passphrase").value(group.getPassphrase());
+                            out.name("interface").value(group.getInterface());
+                            Collection<WifiP2pDevice> clients = group.getClientList();
+                            out.name("clients_count").value(clients.size());
+                            out.name("clients");
+                            writePeersToJson(out, clients);
+                        }
+                        out.endObject();
+                    }
+                });
+            }
+        });
+    }
+
+    // ─── WiFi Aware (NAN) — Task 5 ────────────────────────────────────
+
+    @RequiresApi(api = Build.VERSION_CODES.O_MR1)
+    private static void onReceiveAwareAttach(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveAwareAttach");
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                    Manifest.permission.NEARBY_WIFI_DEVICES)) {
+                return;
+            }
+        }
+
+        if (awareManager == null) {
+            awareManager = (WifiAwareManager) context.getApplicationContext()
+                    .getSystemService(Context.WIFI_AWARE_SERVICE);
+        }
+        if (awareManager == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: WiFi Aware not available on this device"));
+            return;
+        }
+
+        if (!awareManager.isAvailable()) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: WiFi Aware is not available on this device"));
+            return;
+        }
+
+        awareManager.attach(new AttachCallback() {
+            @Override
+            public void onAttached(WifiAwareSession session) {
+                Logger.logDebug(LOG_TAG, "Aware session attached");
+                awareSession = session;
+                ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+                    @Override
+                    public void writeJson(JsonWriter out) throws Exception {
+                        out.beginObject();
+                        out.name("status").value("attached");
+                        out.name("session_id").value(System.identityHashCode(session));
+                        out.endObject();
+                    }
+                });
+            }
+
+            @Override
+            public void onAwareSessionTerminated() {
+                Logger.logDebug(LOG_TAG, "Aware session terminated");
+                awareSession = null;
+            }
+        }, new Handler(Looper.getMainLooper()));
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.O_MR1)
+    private static void onReceiveAwarePublish(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveAwarePublish");
+
+        if (awareSession == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: Not attached to WiFi Aware. Run 'aware-attach' first."));
+            return;
+        }
+
+        String serviceName = intent.getStringExtra("service_name");
+        if (serviceName == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: Missing 'service_name' extra"));
+            return;
+        }
+
+        byte[] serviceSpecificInfo = intent.getStringExtra("service_info") != null
+            ? intent.getStringExtra("service_info").getBytes(java.nio.charset.StandardCharsets.UTF_8)
+            : null;
+
+        PublishConfig config = new PublishConfig.Builder()
+                .setServiceName(serviceName)
+                .setServiceSpecificInfo(serviceSpecificInfo)
+                .build();
+
+        awareSession.publish(config, new DiscoverySessionCallback() {
+            @Override
+            public void onPublishStarted(PublishDiscoverySession session) {
+                Logger.logDebug(LOG_TAG, "Aware publish started for: " + serviceName);
+                ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+                    @Override
+                    public void writeJson(JsonWriter out) throws Exception {
+                        out.beginObject();
+                        out.name("status").value("publishing");
+                        out.name("service_name").value(serviceName);
+                        out.endObject();
+                    }
+                });
+            }
+
+            @Override
+            public void onSessionConfigFailed() {
+                ResultReturner.returnData(apiReceiver, intent,
+                    out -> out.println("ERROR: Failed to configure publish session"));
+            }
+
+            @Override
+            public void onSessionTerminated() {
+                Logger.logDebug(LOG_TAG, "Aware publish session terminated");
+            }
+        }, new Handler(Looper.getMainLooper()));
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.O_MR1)
+    private static void onReceiveAwareSubscribe(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveAwareSubscribe");
+
+        if (awareSession == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: Not attached to WiFi Aware. Run 'aware-attach' first."));
+            return;
+        }
+
+        String serviceName = intent.getStringExtra("service_name");
+        if (serviceName == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: Missing 'service_name' extra"));
+            return;
+        }
+
+        SubscribeConfig config = new SubscribeConfig.Builder()
+                .setServiceName(serviceName)
+                .build();
+
+        awareSession.subscribe(config, new DiscoverySessionCallback() {
+            @Override
+            public void onSubscribeStarted(SubscribeDiscoverySession session) {
+                Logger.logDebug(LOG_TAG, "Aware subscribe started for: " + serviceName);
+                ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+                    @Override
+                    public void writeJson(JsonWriter out) throws Exception {
+                        out.beginObject();
+                        out.name("status").value("subscribing");
+                        out.name("service_name").value(serviceName);
+                        out.endObject();
+                    }
+                });
+            }
+
+            @Override
+            public void onSessionConfigFailed() {
+                ResultReturner.returnData(apiReceiver, intent,
+                    out -> out.println("ERROR: Failed to configure subscribe session"));
+            }
+
+            @Override
+            public void onSessionTerminated() {
+                Logger.logDebug(LOG_TAG, "Aware subscribe session terminated");
+            }
+        }, new Handler(Looper.getMainLooper()));
+    }
+
+    // ─── WiFi RTT (Ranging) — Task 5 ──────────────────────────────────
+
+    @RequiresApi(api = Build.VERSION_CODES.P)
+    private static void onReceiveRttRange(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveRttRange");
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: WiFi RTT requires Android 9.0+ (API 28)"));
+            return;
+        }
+
+        String targetBssid = intent.getStringExtra("bssid");
+        if (targetBssid == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: Missing 'bssid' extra"));
+            return;
+        }
+
+        WifiRttManager rttManager = (WifiRttManager) context.getApplicationContext()
+                .getSystemService(Context.WIFI_RTT_RANGING_SERVICE);
+        if (rttManager == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: WiFi RTT not available on this device"));
+            return;
+        }
+
+        // Build a ranging request: add the target by BSSID (must be from scan results)
+        RangingRequest.Builder requestBuilder = new RangingRequest.Builder();
+
+        // Try to find the ScanResult for this BSSID from the most recent scan
+        WifiManager wifiManager = (WifiManager) context.getApplicationContext()
+                .getSystemService(Context.WIFI_SERVICE);
+        List<ScanResult> scanResults = wifiManager.getScanResults();
+        boolean found = false;
+        if (scanResults != null) {
+            for (ScanResult scan : scanResults) {
+                if (targetBssid.equalsIgnoreCase(scan.BSSID)) {
+                    requestBuilder.addAccessPoint(scan);
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (!found) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: BSSID '" + targetBssid
+                    + "' not found in recent scan results. Run 'scan-info' first."));
+            return;
+        }
+
+        RangingRequest request = requestBuilder.build();
+
+        Executors.newSingleThreadExecutor().execute(() -> {
+            rttManager.startRanging(request, Executors.newSingleThreadExecutor(),
+                new RangingResultCallback() {
+                    @Override
+                    public void onRangingFailure(int code) {
+                        ResultReturner.returnData(apiReceiver, intent,
+                            out -> out.println("ERROR: RTT ranging failed with code " + code));
+                    }
+
+                    @Override
+                    public void onRangingResults(List<RangingResult> results) {
+                        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+                            @Override
+                            public void writeJson(JsonWriter out) throws Exception {
+                                out.beginArray();
+                                for (RangingResult result : results) {
+                                    out.beginObject();
+                                    out.name("mac_address").value(result.getMacAddress().toString());
+                                    out.name("distance_mm").value(result.getDistanceMm());
+                                    out.name("distance_std_dev_mm").value(result.getDistanceStdDevMm());
+                                    out.name("rssi").value(result.getRssi());
+                                    out.name("num_attempted_measurements")
+                                        .value(result.getNumAttemptedMeasurements());
+                                    out.name("num_successful_measurements")
+                                        .value(result.getNumSuccessfulMeasurements());
+                                    int status = result.getStatus();
+                                    String statusStr;
+                                    switch (status) {
+                                        case RangingResult.STATUS_SUCCESS:   statusStr = "success"; break;
+                                        case RangingResult.STATUS_FAIL:      statusStr = "fail"; break;
+                                        default:                            statusStr = "unknown(" + status + ")"; break;
+                                    }
+                                    out.name("status").value(statusStr);
+                                    out.endObject();
+                                }
+                                out.endArray();
+                            }
+                        });
+                    }
+                });
+        });
+    }
+
+    // ─── Network Suggestions — Task 5 ─────────────────────────────────
+
+    @RequiresApi(api = Build.VERSION_CODES.Q)
+    private static void onReceiveNetworkSuggestion(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveNetworkSuggestion");
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: Network suggestions require Android 10.0+ (API 29)"));
+            return;
+        }
+
+        String ssid = intent.getStringExtra("ssid");
+        if (ssid == null) {
+            ResultReturner.returnData(apiReceiver, intent,
+                out -> out.println("ERROR: Missing 'ssid' extra"));
+            return;
+        }
+
+        WifiNetworkSuggestion.Builder builder = new WifiNetworkSuggestion.Builder()
+                .setSsid(ssid);
+
+        String password = intent.getStringExtra("password");
+        String securityType = intent.getStringExtra("security_type");
+        boolean isHidden = intent.getBooleanExtra("is_hidden", false);
+        boolean isAppInteraction = intent.getBooleanExtra("app_interaction_required", false);
+
+        if (isHidden) {
+            builder.setIsHiddenSsid(true);
+        }
+
+        if (isAppInteraction) {
+            builder.setIsAppInteractionRequired(true);
+        }
+
+        if (password != null && securityType != null) {
+            switch (securityType.toUpperCase()) {
+                case "WPA2":
+                    builder.setWpa2Passphrase(password);
+                    break;
+                case "WPA3":
+                    builder.setWpa3Passphrase(password);
+                    break;
+                default:
+                    builder.setWpa2Passphrase(password);
+                    break;
+            }
+        }
+        // If no password: open network (no credential set)
+
+        WifiNetworkSuggestion suggestion = builder.build();
+
+        WifiManager manager = (WifiManager) context.getApplicationContext()
+                .getSystemService(Context.WIFI_SERVICE);
+
+        List<WifiNetworkSuggestion> suggestionsList = Collections.singletonList(suggestion);
+        int result = manager.addNetworkSuggestions(suggestionsList);
+
+        final String resultMsg;
+        switch (result) {
+            case WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS:
+                resultMsg = "success";
+                break;
+            case WifiManager.STATUS_NETWORK_SUGGESTIONS_ERROR_ADD_DUPLICATE:
+                resultMsg = "duplicate";
+                break;
+            case WifiManager.STATUS_NETWORK_SUGGESTIONS_ERROR_ADD_EXCEEDS_MAX_PER_APP:
+                resultMsg = "exceeded_max_per_app";
+                break;
+            case WifiManager.STATUS_NETWORK_SUGGESTIONS_ERROR_ADD_NOT_ALLOWED:
+                resultMsg = "not_allowed";
+                break;
+            case WifiManager.STATUS_NETWORK_SUGGESTIONS_ERROR_ADD_INVALID:
+                resultMsg = "add_invalid";
+                break;
+            case WifiManager.STATUS_NETWORK_SUGGESTIONS_ERROR_APP_DISALLOWED:
+                resultMsg = "app_disallowed";
+                break;
+            case WifiManager.STATUS_NETWORK_SUGGESTIONS_ERROR_INTERNAL:
+                resultMsg = "internal_error";
+                break;
+            default:
+                resultMsg = "unknown(" + result + ")";
+        }
+
+        final boolean success = result == WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS;
+
+        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+            @Override
+            public void writeJson(JsonWriter out) throws Exception {
+                out.beginObject();
+                out.name("status").value(success ? "success" : "error");
+                out.name("result").value(resultMsg);
+                if (success) {
+                    out.name("ssid").value(ssid);
+                }
+                out.endObject();
+            }
+        });
+    }
+}

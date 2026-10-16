@@ -203,7 +203,7 @@
 
         <!-- Termux:API broadcast receiver — handle API commands from termux-api-broadcast C binary -->
         <receiver
-            android:name="com.texmux.api.TermuxApiReceiver"
+            android:name="com.termux.api.TermuxApiReceiver"
             android:exported="true" />
 
 

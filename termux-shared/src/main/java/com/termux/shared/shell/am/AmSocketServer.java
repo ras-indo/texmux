@@ -8,7 +8,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.termux.am.Am;
-import com.texmux.shared.R;
+import com.termux.shared.R;
 import com.termux.shared.android.PackageUtils;
 import com.termux.shared.android.PermissionUtils;
 import com.termux.shared.errors.Error;
@@ -234,9 +234,9 @@ public class AmSocketServer {
                         break;
                     }
                 }
-                if ("com.texmux.RUN_COMMAND".equals(action)) {
+                if ("com.termux.RUN_COMMAND".equals(action)) {
                     Intent intent = new Intent(action);
-                    intent.setClassName("com.texmux", "com.termux.app.RunCommandService");
+                    intent.setClassName("com.termux", "com.termux.app.RunCommandService");
                     for (int j = 1; j < amCommandArray.length; j++) {
                         if ("--es".equals(amCommandArray[j]) && j + 2 < amCommandArray.length) {
                             intent.putExtra(amCommandArray[j + 1], amCommandArray[j + 2]);

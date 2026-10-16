@@ -2,7 +2,7 @@
 
 ## RINGKASAN
 
-Modul Android app utama — semua activities, manajemen sesi terminal, service lifecycle, dan layar preferensi per-plugin. 36 file Java di `app/src/main/java/com/termux/app/`. Plugin Gradle `com.android.application`, namespace `com.texmux`.
+Modul Android app utama — semua activities, manajemen sesi terminal, service lifecycle, dan layar preferensi per-plugin. 36 file Java di `app/src/main/java/com/termux/app/`. Plugin Gradle `com.android.application`, namespace `com.termux`.
 
 ## STRUKTUR
 
@@ -48,7 +48,7 @@ app/
 
 ## KONVENSI (Khusus Modul)
 
-- **namespace**: `com.texmux` (bukan `com.termux`). Nilai lama `com.termux` masih ada di `TermuxConstants` untuk kompatibilitas intent.
+- **namespace**: `com.termux` (bukan `com.termux`). Nilai lama `com.termux` masih ada di `TermuxConstants` untuk kompatibilitas intent.
 - **packageVariant**: Dikontrol env `TERMUX_PACKAGE_VARIANT`. Default `apt-android-7`, fallback `apt-android-5`.
 - **Penamaan APK**: Pola `texmux-app_<variant>-<buildType>_<abi>.apk`. Dikontrol env `TERMUX_APK_VERSION_TAG`, `TERMUX_SPLIT_APKS_FOR_*_BUILDS`.
 - **VersionName**: Validasi regex semver 2.0.0 di `validateVersionName()`.

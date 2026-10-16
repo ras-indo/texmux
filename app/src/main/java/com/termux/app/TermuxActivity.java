@@ -33,7 +33,7 @@ import androidx.dynamicanimation.animation.DynamicAnimation;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
 
-import com.texmux.R;
+import com.termux.R;
 import com.termux.app.api.file.FileReceiverActivity;
 import com.termux.app.terminal.TermuxActivityRootView;
 import com.termux.app.terminal.TermuxTerminalSessionActivityClient;
@@ -822,13 +822,13 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                     TermuxActivity.this, requestCode, !isPermissionCallback)) {
                     if (isPermissionCallback)
                         Logger.logInfoAndShowToast(TermuxActivity.this, LOG_TAG,
-                            getString(com.texmux.shared.R.string.msg_storage_permission_granted_on_request));
+                            getString(com.termux.shared.R.string.msg_storage_permission_granted_on_request));
 
                     TermuxInstaller.setupStorageSymlinks(TermuxActivity.this);
                 } else {
                     if (isPermissionCallback)
                         Logger.logInfoAndShowToast(TermuxActivity.this, LOG_TAG,
-                            getString(com.texmux.shared.R.string.msg_storage_permission_not_granted_on_request));
+                            getString(com.termux.shared.R.string.msg_storage_permission_not_granted_on_request));
                 }
             }
         }.start();

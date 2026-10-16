@@ -9,7 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.viewpager.widget.PagerAdapter;
 import androidx.viewpager.widget.ViewPager;
 
-import com.texmux.R;
+import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.app.terminal.StylePanelFragment;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;

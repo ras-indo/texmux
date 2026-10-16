@@ -16,7 +16,7 @@ import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 
-import com.texmux.shared.R;
+import com.termux.shared.R;
 import com.termux.shared.activity.media.AppCompatActivityUtils;
 import com.termux.shared.data.DataUtils;
 import com.termux.shared.file.FileUtils;

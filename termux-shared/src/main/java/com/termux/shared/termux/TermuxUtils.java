@@ -11,7 +11,7 @@ import android.net.Uri;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.texmux.shared.R;
+import com.termux.shared.R;
 import com.termux.shared.android.AndroidUtils;
 import com.termux.shared.data.DataUtils;
 import com.termux.shared.file.FileUtils;
@@ -587,7 +587,7 @@ public class TermuxUtils {
     public static String geAPTInfoMarkdownString(@NonNull final Context context) {
 
         String aptInfoScript;
-        InputStream inputStream = context.getResources().openRawResource(com.texmux.shared.R.raw.apt_info_script);
+        InputStream inputStream = context.getResources().openRawResource(com.termux.shared.R.raw.apt_info_script);
         try {
             aptInfoScript = IOUtils.toString(inputStream, Charset.defaultCharset());
         } catch (IOException e) {

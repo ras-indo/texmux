@@ -10,7 +10,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
-import com.texmux.shared.R;
+import com.termux.shared.R;
 import com.termux.shared.logger.Logger;
 
 public class MessageDialogUtils {

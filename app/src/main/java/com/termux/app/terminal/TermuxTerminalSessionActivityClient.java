@@ -16,7 +16,7 @@ import android.widget.ListView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.texmux.R;
+import com.termux.R;
 import com.termux.shared.interact.ShareUtils;
 import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.shared.termux.interact.TextInputDialogUtils;
@@ -290,7 +290,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build()).build();
 
             try {
-                mBellSoundId = mBellSoundPool.load(mActivity, com.texmux.shared.R.raw.bell, 1);
+                mBellSoundId = mBellSoundPool.load(mActivity, com.termux.shared.R.raw.bell, 1);
             } catch (Exception e){
                 // Catch java.lang.RuntimeException: Unable to resume activity {com.termux/com.termux.app.TermuxActivity}: android.content.res.Resources$NotFoundException: File res/raw/bell.ogg from drawable resource ID
                 Logger.logStackTraceWithMessage(LOG_TAG, "Failed to load bell sound pool", e);

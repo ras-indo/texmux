@@ -16,7 +16,7 @@ import android.graphics.Typeface;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import com.texmux.R;
+import com.termux.R;
 import com.termux.shared.file.FileUtils;
 import com.termux.shared.termux.crash.TermuxCrashUtils;
 import com.termux.shared.termux.file.TermuxFileUtils;
@@ -67,7 +67,7 @@ final class TermuxInstaller {
 
     // ─── New layout paths (relative to TERMUX_FILES_DIR) ─────────────
     private static final String APPS_BIN = "apps/bin";
-    private static final String APPS_COM_TEXMUX = "apps/com.texmux";
+    private static final String APPS_COM_TEXMUX = "apps/com.termux";
     private static final String TMP_DIR = "tmp";
     private static final String ROOTFS_TARBALL = "rootfs.tar.gz";
 
@@ -557,8 +557,8 @@ final class TermuxInstaller {
 
     // ─── Deploy proot, am-socket, and termux-am ──────────────────────────────────────────
     //   proot              → apps/bin/proot      (static talloc, Bionic-linked)
-   // termux-am-socket   → apps/com.texmux/bin/termux-am-socket  (static, for AM socket inside proot)
-   // termux-am          → apps/com.texmux/bin/termux-am         (wrapper script, calls termux-am-socket)
+   // termux-am-socket   → apps/com.termux/bin/termux-am-socket  (static, for AM socket inside proot)
+   // termux-am          → apps/com.termux/bin/termux-am         (wrapper script, calls termux-am-socket)
     //   libproot-loader.so → via jniLibs, auto-extracted by Android to nativeLibraryDir
     private static void deployProotBinaries(Activity activity) throws Exception {
         File appsBin = new File(TERMUX_FILES_DIR_PATH, APPS_BIN);
@@ -977,11 +977,11 @@ final class TermuxInstaller {
     }
 
     // ─── Deploy Termux:API package ──────────────────────────────────────────────────────────
-    // Deploys the termux-api C binary + shell scripts to apps/com.texmux/:
-    //   termux-api-broadcast  → apps/com.texmux/libexec/termux-api-broadcast
-    //   termux-api            → apps/com.texmux/bin/termux-api (build-time copy via CMake)
-    //   termux-callback       → apps/com.texmux/libexec/termux-callback
-    //   termux-*.sh scripts   → apps/com.texmux/bin/
+    // Deploys the termux-api C binary + shell scripts to apps/com.termux/:
+    //   termux-api-broadcast  → apps/com.termux/libexec/termux-api-broadcast
+    //   termux-api            → apps/com.termux/bin/termux-api (build-time copy via CMake)
+    //   termux-callback       → apps/com.termux/libexec/termux-callback
+    //   termux-*.sh scripts   → apps/com.termux/bin/
     private static void deployTermuxApiPackage(Activity activity) throws Exception {
         File apiDir = new File(TERMUX_FILES_DIR_PATH, APPS_COM_TEXMUX);
         File libexecDir = new File(apiDir, "libexec");

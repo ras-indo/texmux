@@ -6,7 +6,7 @@ App plugin yang mengekspos API sistem Android (battery, camera, clipboard, senso
 
 ## Package
 
-Pakai `com.texmux.api` (BUKAN `com.termux.api`). Ini disengaja dan berbeda dari modul lain. Semua file sumber di bawah package ini.
+Pakai `com.termux.api` (BUKAN `com.termux.api`). Ini disengaja dan berbeda dari modul lain. Semua file sumber di bawah package ini.
 
 ## Struktur
 
@@ -18,7 +18,7 @@ Pakai `com.texmux.api` (BUKAN `com.termux.api`). Ini disengaja dan berbeda dari 
 | `settings/` | TermuxAPISettingsActivity, fragment preferensi |
 | `util/` | ApiRequest, JsonUtils, PluginUtils, ResultReturner, ViewUtils |
 | `native/scripts/` | Template skrip shell yang di-deploy via paket termux-api (file .in) |
-| root (com.texmux.api) | ApiLogConfig, TermuxAPIConstants, TermuxApiReceiver, SocketListener, DirectDispatcher, NativeBridge |
+| root (com.termux.api) | ApiLogConfig, TermuxAPIConstants, TermuxApiReceiver, SocketListener, DirectDispatcher, NativeBridge |
 
 ## Cari di Sini
 

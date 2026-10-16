@@ -8,7 +8,7 @@ import android.os.Build;
 
 import androidx.annotation.Nullable;
 
-import com.texmux.shared.R;
+import com.termux.shared.R;
 import com.termux.shared.android.resource.ResourceUtils;
 import com.termux.shared.notification.NotificationUtils;
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
@@ -91,7 +91,7 @@ public class TermuxNotificationUtils {
             builder.setSmallIcon(iconResId);
         } else {
             // Fallback: use current package's R class
-            builder.setSmallIcon(com.texmux.shared.R.drawable.ic_error_notification);
+            builder.setSmallIcon(com.termux.shared.R.drawable.ic_error_notification);
         }
 
         // Set background color for small notification icon

@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
 
 android {
-    namespace "com.texmux.view"
+    namespace "com.termux.view"
     compileSdkVersion project.properties.compileSdkVersion.toInteger()
 
     dependencies {
@@ -52,7 +52,7 @@ afterEvaluate {
             // Creates a Maven publication called "release".
             release(MavenPublication) {
                 from components.default
-                groupId = 'com.texmux'
+                groupId = 'com.termux'
                 artifactId = 'terminal-view'
                 version = '0.118.0'
                 artifact(sourceJar)

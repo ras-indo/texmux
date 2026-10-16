@@ -3,7 +3,7 @@ package com.termux.app;
 import android.app.Application;
 import android.content.Context;
 
-import com.texmux.BuildConfig;
+import com.termux.BuildConfig;
 import com.termux.shared.errors.Error;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.TermuxProot;
@@ -15,8 +15,8 @@ import com.termux.shared.termux.settings.properties.TermuxAppSharedProperties;
 import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;
 import com.termux.shared.termux.shell.am.TermuxAmSocketServer;
 import com.termux.shared.termux.shell.TermuxShellManager;
-import com.texmux.api.SocketListener;
-import com.texmux.api.util.ResultReturner;
+import com.termux.api.SocketListener;
+import com.termux.api.util.ResultReturner;
 import com.termux.shared.termux.theme.TermuxThemeUtils;
 
 public class TermuxApplication extends Application {

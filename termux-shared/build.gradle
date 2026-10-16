@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
 
 android {
-    namespace = "com.texmux.shared"
+    namespace = "com.termux.shared"
 
     compileSdkVersion project.properties.compileSdkVersion.toInteger()
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
@@ -90,7 +90,7 @@ afterEvaluate {
             // Creates a Maven publication called "release".
             release(MavenPublication) {
                 from components.default
-                groupId = 'com.texmux'
+                groupId = 'com.termux'
                 artifactId = 'termux-shared'
                 version = '0.118.0'
                 artifact(sourceJar)
