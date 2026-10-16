@@ -54,7 +54,9 @@
                         android:layout_height="wrap_content"
                         android:paddingHorizontal="12dp"
                         android:paddingTop="14dp"
-                        android:paddingBottom="4dp">
+                        android:paddingBottom="4dp"
+                        android:clipToPadding="false"
+                        android:clipChildren="false">
 
                         <ImageButton
                             android:id="@+id/settings_button"

@@ -1,24 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Thin glowing cyan square edge for the header settings/design icon buttons.
-
-     The stroke is INSET 3dp from the view bounds via a single layer-list item. A shape
-     background draws its stroke right at the drawable edge (inset 0), which leaves the top
-     edge flush against the button's top bound and easy to clip — that clipped top is what
-     made the border read as an open U. Insetting the whole shape so the stroke sits ~3dp
-     inside on all sides keeps every edge well clear of the bounds. One item only (no stacked
-     multi-layer strokes, which rendered as open brackets). -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:top="3dp"
-        android:bottom="3dp"
-        android:left="3dp"
-        android:right="3dp">
-        <shape android:shape="rectangle">
-            <solid android:color="@android:color/transparent" />
-            <stroke
-                android:width="1.5dp"
-                android:color="#B306B6D4" />
-            <corners android:radius="6dp" />
-        </shape>
-    </item>
-</layer-list>
+     Single shape, one stroke, low radius — a clean thin square border on all four sides. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+    <stroke
+        android:width="1.5dp"
+        android:color="#B306B6D4" />
+    <corners android:radius="6dp" />
+</shape>
