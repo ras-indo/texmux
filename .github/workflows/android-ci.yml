@@ -40,6 +40,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Build PRoot (arm64) with seccomp fast-path
+        run: |
+          echo "=== Building proot with HAVE_SECCOMP_FILTER + HAVE_PROCESS_VM ==="
+          make -C termux-proot install \
+            NDK_DIR="$ANDROID_HOME/ndk/25.0.8775105" \
+            API_LEVEL=24
+          echo "=== Verify built proot is a fresh arm64 ELF ==="
+          file app/src/main/assets/proot/proot
+          ls -lh app/src/main/assets/proot/proot
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 

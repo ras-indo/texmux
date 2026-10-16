@@ -390,6 +390,8 @@ $$(BUILD_DIR)/proot-$1/build.h:
 	@echo "#ifndef BUILD_H" >> $$@
 	@echo "#define BUILD_H" >> $$@
 	@echo "#define VERSION \"5.4.0-android\"" >> $$@
+	@echo "#define HAVE_SECCOMP_FILTER" >> $$@
+	@echo "#define HAVE_PROCESS_VM" >> $$@
 	@echo "#endif /* BUILD_H */" >> $$@
 
 # Determine which objects need build.h
