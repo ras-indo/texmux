@@ -155,16 +155,20 @@ download-proot:
 	@mkdir -p $(BUILD_DIR)
 	git clone --depth=1 https://github.com/proot-me/proot.git $(PROOT_SRC_DIR)
 
+TALLOC_VERSION := 2.4.2
+TALLOC_TARBALL := $(BUILD_DIR)/talloc-$(TALLOC_VERSION).tar.gz
+TALLOC_URL := https://download.samba.org/pub/talloc/talloc-$(TALLOC_VERSION).tar.gz
+
 download-talloc:
-	@echo "==> Downloading talloc source (from Samba)"
-	@rm -rf $(TALLOC_SRC_DIR)
+	@echo "==> Downloading talloc $(TALLOC_VERSION) (standalone tarball, includes lib/replace)"
 	@mkdir -p $(BUILD_DIR)
-	git clone --depth=1 --branch talloc-2.4.2 \
-		https://git.samba.org/talloc.git $(TALLOC_SRC_DIR) 2>/dev/null || \
-	git clone --depth=1 \
-		https://github.com/samba-team/samba.git /tmp/samba-talloc && \
-		cp -a /tmp/samba-talloc/lib/talloc $(TALLOC_SRC_DIR) && \
-		rm -rf /tmp/samba-talloc
+	@if [ ! -f $(TALLOC_TARBALL) ]; then \
+		(command -v curl >/dev/null && curl -sSL -o $(TALLOC_TARBALL) $(TALLOC_URL)) || \
+		wget -q -O $(TALLOC_TARBALL) $(TALLOC_URL); \
+	fi
+	@rm -rf $(TALLOC_SRC_DIR)
+	@tar xzf $(TALLOC_TARBALL) -C $(BUILD_DIR)
+	@mv $(BUILD_DIR)/talloc-$(TALLOC_VERSION) $(TALLOC_SRC_DIR)
 
 # ------------------------------------------------------------------
 # 2. NDK standalone toolchain
@@ -222,30 +226,53 @@ setup-toolchain-arm:
 # static library so it gets linked directly into the proot binary.
 
 TALLOC_SRC := $(TALLOC_SRC_DIR)/talloc.c
+TALLOC_CFGFLAGS := --disable-python
+TALLOC_COMPILE_DEFS := -D_GNU_SOURCE=1 -D_XOPEN_SOURCE_EXTENDED=1 -fPIC \
+	-D__STDC_WANT_LIB_EXT1__=1 \
+	-DSTATIC_talloc_MODULES=NULL \
+	'-DSTATIC_talloc_MODULES_PROTO=extern void __talloc_dummy_module_proto(void)'
 
-$(BUILD_DIR)/talloc-arm64/talloc.o: $(TALLOC_SRC) | download-talloc setup-toolchain-arm64
+# Configure talloc (waf) -> generates bin/default/config.h with target-correct
+# SIZEOF_*/HAVE_* (CHECK_SIZEOF is compile-only, safe to cross-compile).
+$(BUILD_DIR)/talloc-arm64/.configured: download-talloc setup-toolchain-arm64
+	@echo "==> Configuring talloc (arm64) via waf"
+	@cd $(TALLOC_SRC_DIR) && CC=$(TOOLCHAIN_CC_arm64) CFLAGS="-fPIC -O2" \
+		./configure $(TALLOC_CFGFLAGS) >/dev/null 2>&1
+	@mkdir -p $(dir $@) && touch $@
+
+# Compile using the exact waf recipe, run from bin/default so the relative
+# -I paths (config.h, lib/replace) resolve. Verified on host.
+$(BUILD_DIR)/talloc-arm64/talloc.o: $(BUILD_DIR)/talloc-arm64/.configured
+	@echo "==> Compiling talloc.c (arm64)"
 	@mkdir -p $(dir $@)
-	$(TOOLCHAIN_CC_arm64) \
-		$(PROOT_CFLAGS_arm64) \
-		-c $(TALLOC_SRC_DIR)/talloc.c \
-		-o $@
+	@cd $(TALLOC_SRC_DIR)/bin/default && \
+		$(TOOLCHAIN_CC_arm64) $(TALLOC_COMPILE_DEFS) \
+		-I. -I../.. -Ilib/replace -I../../lib/replace \
+		../../talloc.c -c -o $@
 
 $(BUILD_DIR)/talloc-arm64/libtalloc.a: $(BUILD_DIR)/talloc-arm64/talloc.o
 	@mkdir -p $(dir $@)
-	$(TOOLCHAIN_AR_arm64) rcs $@ $^
+	$(TOOLCHAIN_AR_arm64) rcs $@ $<
 
 talloc-arm64: $(BUILD_DIR)/talloc-arm64/libtalloc.a
 
-$(BUILD_DIR)/talloc-arm/talloc.o: $(TALLOC_SRC) | download-talloc setup-toolchain-arm
+$(BUILD_DIR)/talloc-arm/.configured: download-talloc setup-toolchain-arm
+	@echo "==> Configuring talloc (arm) via waf"
+	@cd $(TALLOC_SRC_DIR) && CC=$(TOOLCHAIN_CC_arm) CFLAGS="-fPIC -O2" \
+		./configure $(TALLOC_CFGFLAGS) >/dev/null 2>&1
+	@mkdir -p $(dir $@) && touch $@
+
+$(BUILD_DIR)/talloc-arm/talloc.o: $(BUILD_DIR)/talloc-arm/.configured
+	@echo "==> Compiling talloc.c (arm)"
 	@mkdir -p $(dir $@)
-	$(TOOLCHAIN_CC_arm) \
-		$(PROOT_CFLAGS_arm) \
-		-c $(TALLOC_SRC_DIR)/talloc.c \
-		-o $@
+	@cd $(TALLOC_SRC_DIR)/bin/default && \
+		$(TOOLCHAIN_CC_arm) $(TALLOC_COMPILE_DEFS) \
+		-I. -I../.. -Ilib/replace -I../../lib/replace \
+		../../talloc.c -c -o $@
 
 $(BUILD_DIR)/talloc-arm/libtalloc.a: $(BUILD_DIR)/talloc-arm/talloc.o
 	@mkdir -p $(dir $@)
-	$(TOOLCHAIN_AR_arm) rcs $@ $^
+	$(TOOLCHAIN_AR_arm) rcs $@ $<
 
 talloc-arm: $(BUILD_DIR)/talloc-arm/libtalloc.a
 
