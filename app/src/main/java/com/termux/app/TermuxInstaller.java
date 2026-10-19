@@ -32,6 +32,7 @@ import com.termux.shared.termux.TermuxUtils;
 
 import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -121,6 +122,11 @@ final class TermuxInstaller {
 
         // Check if essential artifacts already exist
         if (checkEssentialArtifacts()) {
+            try {
+                refreshProotBinaryIfNeeded(activity);
+            } catch (Exception e) {
+                Logger.logWarn(LOG_TAG, "refreshProotBinaryIfNeeded failed: " + e.getMessage());
+            }
             try {
                 deployMissingBinaries(activity);
             } catch (Exception e) {
@@ -560,6 +566,63 @@ final class TermuxInstaller {
    // termux-am-socket   → apps/com.termux/bin/termux-am-socket  (static, for AM socket inside proot)
    // termux-am          → apps/com.termux/bin/termux-am         (wrapper script, calls termux-am-socket)
     //   libproot-loader.so → via jniLibs, auto-extracted by Android to nativeLibraryDir
+    /**
+     * Version stamp of the proot binary shipped in this APK's assets.
+     * Keep in sync with PROOT_VERSION in termux-proot/Makefile: the bootstrap is
+     * skipped once the container exists, so this stamp is what makes an upgraded
+     * APK actually replace apps/bin/proot instead of silently running the old one.
+     */
+    private static final String PROOT_BINARY_VERSION = "5.5.0-android-pcache";
+
+    /** Overwrite apps/bin/proot when the deployed copy is not the one this APK ships. */
+    private static void refreshProotBinaryIfNeeded(Activity activity) {
+        File appsBin = new File(TERMUX_FILES_DIR_PATH, APPS_BIN);
+        File dst = new File(appsBin, "proot");
+        File stamp = new File(appsBin, ".proot_version");
+
+        String current = "";
+        if (stamp.isFile()) {
+            try (FileInputStream in = new FileInputStream(stamp)) {
+                byte[] buf = new byte[128];
+                int read = in.read(buf);
+                if (read > 0) current = new String(buf, 0, read, StandardCharsets.UTF_8).trim();
+            } catch (Exception e) {
+                current = "";
+            }
+        }
+
+        if (PROOT_BINARY_VERSION.equals(current) && dst.isFile()) return;
+
+        try {
+            appsBin.mkdirs();
+            File tmp = new File(appsBin, "proot.tmp");
+            try (InputStream in = activity.getAssets().open("proot/proot");
+                 FileOutputStream out = new FileOutputStream(tmp)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+            }
+            tmp.setExecutable(true, false);
+            if (!tmp.renameTo(dst)) {
+                try (InputStream in = activity.getAssets().open("proot/proot");
+                     FileOutputStream out = new FileOutputStream(dst)) {
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+                }
+                dst.setExecutable(true, false);
+                tmp.delete();
+            }
+            try (FileOutputStream out = new FileOutputStream(stamp)) {
+                out.write((PROOT_BINARY_VERSION + "\n").getBytes(StandardCharsets.UTF_8));
+            }
+            Logger.logInfo(LOG_TAG, "proot refreshed: " + (current.isEmpty() ? "<none>" : current)
+                + " -> " + PROOT_BINARY_VERSION + " (" + dst.length() + " bytes)");
+        } catch (Exception e) {
+            Logger.logWarn(LOG_TAG, "refreshProotBinaryIfNeeded failed: " + e.getMessage());
+        }
+    }
+
     private static void deployProotBinaries(Activity activity) throws Exception {
         File appsBin = new File(TERMUX_FILES_DIR_PATH, APPS_BIN);
         appsBin.mkdirs();
@@ -576,6 +639,9 @@ final class TermuxInstaller {
             }
             dst.setExecutable(true, false);
             Logger.logInfo(LOG_TAG, "Deployed proot to " + dst.getAbsolutePath() + " (" + dst.length() + " bytes)");
+            try (FileOutputStream out = new FileOutputStream(new File(appsBin, ".proot_version"))) {
+                out.write((PROOT_BINARY_VERSION + "\n").getBytes(StandardCharsets.UTF_8));
+            }
         } catch (java.io.FileNotFoundException e) {
             Logger.logWarn(LOG_TAG, "proot binary not found in assets/proot/, skipping");
         }
