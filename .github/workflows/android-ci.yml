@@ -169,10 +169,16 @@ jobs:
         run: |
           set -uo pipefail
           cd /tmp/proot/test
-          make check 2>&1 | tee /tmp/check.log | tail -25
-          if grep -q 'FAILED' /tmp/check.log; then
-            echo "!! test failures:"
-            grep 'FAILED' /tmp/check.log
+          make check 2>&1 | tee /tmp/check.log
+          rc=${PIPESTATUS[0]}
+          echo "make check exit=$rc"
+          if [ -s failure ]; then
+            echo "=== failing checks ==="
+            sed -n '1,120p' failure
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "=== last 80 log lines ==="
+            tail -80 /tmp/check.log
             exit 1
           fi
           echo "OK: no test failures"
