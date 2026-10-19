@@ -12,11 +12,26 @@ if [ ! -f "$LINKER" ]; then
   LINKER="/system/bin/linker"
 fi
 
+# ── Android shell fallback ───────────────────────────────────────────
+# Kalau proot gagal start (unknown option / binary rusak / rootfs tak
+# lengkap), JANGAN matiin session — drop ke shell Android host yang
+# sudah disiapkan di apps/bin/android, atau mksh host sebagai cadangan.
+android_fallback() {
+  /system/bin/echo ""
+  /system/bin/echo "=== PRoot launch failed — dropping to Android host shell ==="
+  /system/bin/echo "=== (fix the container, then run: /data/data/com.termux/files/apps/bin/sandbox) ==="
+  if [ -x "$APPS_BIN/android" ]; then
+    exec "$APPS_BIN/android"
+  fi
+  # Cadangan terakhir: mksh host langsung
+  exec /system/bin/sh -i
+}
+
 # ── Proot binary ────────────────────────────────────────────────────
 PROOT="$APPS_BIN/proot"
 if [ ! -f "$PROOT" ]; then
   /system/bin/echo "FATAL: proot not found at $PROOT"
-  exit 1
+  android_fallback
 fi
 
 # ── PROOT_LOADER — resolve once, cache result ──────────────────────
@@ -171,7 +186,6 @@ ARGS="$ARGS -b /sys"
 ARGS="$ARGS -r $ROOTFS_DIR"
 ARGS="$ARGS -0"
 ARGS="$ARGS --link2symlink"
-ARGS="$ARGS --sysvipc"
 ARGS="$ARGS -L"
 
 # ── Launch ──────────────────────────────────────────────────────────
@@ -184,7 +198,15 @@ fi
 
 if [ ! -r "$INIT_EXEC" ]; then
   /system/bin/echo "ERROR: Could not find init or init.sh in $APPS_BIN"
-  exit 1
+  android_fallback
+fi
+
+# ── Pre-flight: validate proot + args + rootfs sebelum commit ──────
+# Cek cepat (argumen valid, binary OK, rootfs ada /bin/true). Kalau
+# gagal → android_fallback, jangan biarkan session mati tanpa output.
+if ! $LINKER "$PROOT" $ARGS /bin/true >/dev/null 2>&1; then
+  /system/bin/echo "Pre-flight check failed for: $LINKER $PROOT (args or rootfs problem)"
+  android_fallback
 fi
 
 exec $LINKER "$PROOT" $ARGS /bin/sh "$INIT_EXEC" "$@"
