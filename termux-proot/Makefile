@@ -106,6 +106,7 @@ PROOT_SRCS := \
 	path/glue.c \
 	path/canon.c \
 	path/path.c \
+	path/pcache.c \
 	path/proc.c \
 	path/temp.c \
 	syscall/seccomp.c \
@@ -155,7 +156,7 @@ download-proot:
 	@echo "==> Downloading PRoot source"
 	@rm -rf $(PROOT_SRC_DIR)
 	@mkdir -p $(BUILD_DIR)
-	git clone --depth=1 https://github.com/proot-me/proot.git $(PROOT_SRC_DIR)
+	git clone --depth=1 --branch master https://github.com/ras-indo/proot.git $(PROOT_SRC_DIR)
 
 TALLOC_VERSION := 2.4.2
 TALLOC_TARBALL := $(BUILD_DIR)/talloc-$(TALLOC_VERSION).tar.gz
@@ -302,28 +303,28 @@ PROOT_CPPFLAGS := \
 # Architecture-specific flags
 PROOT_CFLAGS_arm64 := \
 	-target aarch64-linux-android$(API_LEVEL) \
-	-g -O2 -Wall -Wextra \
+	-O3 -DNDEBUG -fomit-frame-pointer -ffunction-sections -fdata-sections -Wall -Wextra \
 	-fPIE \
 	-I$(BUILD_DIR)/talloc-arm64/include \
 	-I$(TOOLCHAIN_arm64)/sysroot/usr/include
 
 PROOT_CFLAGS_arm := \
 	-target armv7a-linux-androideabi$(API_LEVEL) \
-	-g -O2 -Wall -Wextra \
+	-O3 -DNDEBUG -fomit-frame-pointer -ffunction-sections -fdata-sections -Wall -Wextra \
 	-fPIE \
 	-I$(BUILD_DIR)/talloc-arm/include \
 	-I$(TOOLCHAIN_arm)/sysroot/usr/include
 
 PROOT_LDFLAGS_arm64 := \
 	-fPIE -pie \
-	-Wl,-z,noexecstack \
+	-Wl,-z,noexecstack -Wl,--gc-sections -Wl,-s \
 	-L$(BUILD_DIR)/talloc-arm64 \
 	-L$(TOOLCHAIN_arm64)/sysroot/usr/lib/$(TOOLCHAIN_TARGET_arm64)/$(API_LEVEL) \
 	-ltalloc
 
 PROOT_LDFLAGS_arm := \
 	-fPIE -pie \
-	-Wl,-z,noexecstack \
+	-Wl,-z,noexecstack -Wl,--gc-sections -Wl,-s \
 	-L$(BUILD_DIR)/talloc-arm \
 	-L$(TOOLCHAIN_arm)/sysroot/usr/lib/$(TOOLCHAIN_TARGET_arm)/$(API_LEVEL) \
 	-ltalloc
