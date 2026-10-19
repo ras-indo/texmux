@@ -122,7 +122,19 @@ jobs:
             '-DSTATIC_talloc_MODULES_PROTO=extern void __talloc_dummy_module_proto(void)' \
             -O2 -I"$V" -I"$V/lib/replace" "$V/talloc.c"
           cp "$V/talloc.h" /tmp/talloc/include/
+          {
+            echo 'prefix=/tmp/talloc'
+            echo 'libdir=${prefix}/lib'
+            echo 'includedir=${prefix}/include'
+            echo ''
+            echo 'Name: talloc'
+            echo 'Description: hierarchical pool based memory system'
+            echo 'Version: 2.4.2'
+            echo 'Libs: -L${libdir} -ltalloc'
+            echo 'Cflags: -I${includedir}'
+          } > /tmp/talloc/talloc.pc
           ls -lh /tmp/talloc/lib
+          PKG_CONFIG_PATH=/tmp/talloc pkg-config --exists talloc && echo "OK: talloc.pc visible"
 
       - name: Clone the optimized proot fork
         run: git clone --depth=1 --branch master https://github.com/ras-indo/proot.git /tmp/proot
@@ -130,6 +142,7 @@ jobs:
       - name: Build proot (host) with the Android optimization flags
         run: |
           set -euo pipefail
+          export PKG_CONFIG_PATH=/tmp/talloc
           make -C /tmp/proot/src -j"$(nproc)" \
             CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
             LDFLAGS="-Wl,--gc-sections -Wl,-rpath,/tmp/talloc/lib" \
