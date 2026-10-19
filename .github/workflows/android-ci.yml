@@ -165,6 +165,18 @@ jobs:
           test -f /tmp/smoke/dest/include/stdio.h
           echo "OK: extracted $(find /tmp/smoke/dest -type f | wc -l) files"
 
+      - name: Control - run the suspect test against UPSTREAM proot
+        run: |
+          set -uo pipefail
+          export PKG_CONFIG_PATH=/tmp/talloc
+          git clone --depth=1 https://github.com/proot-me/proot.git /tmp/proot-up
+          make -C /tmp/proot-up/src -j"$(nproc)" WITHOUT_PYTHON=1 \
+            CFLAGS="-O2 -I/tmp/talloc/include" \
+            LDFLAGS="-L/tmp/talloc/lib -ltalloc"
+          cd /tmp/proot-up/test
+          make check-test-fake-id0-permissions 2>&1 | tail -30
+          echo "UPSTREAM-EXIT=${PIPESTATUS[0]}"
+
       - name: Run the upstream PRoot test suite
         run: |
           set -uo pipefail
