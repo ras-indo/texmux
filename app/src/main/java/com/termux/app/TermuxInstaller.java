@@ -575,7 +575,7 @@ final class TermuxInstaller {
                 }
             }
             dst.setExecutable(true, false);
-            Logger.logInfo(LOG_TAG, "Deployed proot to " + dst.getAbsolutePath());
+            Logger.logInfo(LOG_TAG, "Deployed proot to " + dst.getAbsolutePath() + " (" + dst.length() + " bytes)");
         } catch (java.io.FileNotFoundException e) {
             Logger.logWarn(LOG_TAG, "proot binary not found in assets/proot/, skipping");
         }

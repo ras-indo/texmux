@@ -394,6 +394,8 @@ endef
 $(eval $(call compile_proot_template,arm64))
 $(eval $(call compile_proot_template,arm))
 
+PROOT_VERSION ?= 5.5.0-android-pcache
+
 # Generate build.h for version info
 define generate_build_h_template
 # $1 = architecture suffix
@@ -404,7 +406,7 @@ $$(BUILD_DIR)/proot-$1/build.h:
 	@echo "/* Auto-generated */" > $$@
 	@echo "#ifndef BUILD_H" >> $$@
 	@echo "#define BUILD_H" >> $$@
-	@echo "#define VERSION \"5.4.0-android\"" >> $$@
+	@echo "#define VERSION \"$(PROOT_VERSION)\"" >> $$@
 	@echo "#define HAVE_SECCOMP_FILTER" >> $$@
 	@echo "#define HAVE_PROCESS_VM" >> $$@
 	@echo "#endif /* BUILD_H */" >> $$@

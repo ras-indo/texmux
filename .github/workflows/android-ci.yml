@@ -47,8 +47,15 @@ jobs:
             NDK_DIR="$ANDROID_HOME/ndk/25.0.8775105" \
             API_LEVEL=24
           echo "=== Verify built proot is a fresh arm64 ELF ==="
-          file app/src/main/assets/proot/proot
-          ls -lh app/src/main/assets/proot/proot
+          BIN=app/src/main/assets/proot/proot
+          file "$BIN"
+          ls -lh "$BIN"
+          file "$BIN" | grep -q 'ARM aarch64' || { echo "!! proot is not arm64"; exit 1; }
+          strings "$BIN" | grep -q 'android-pcache' || { echo "!! proot is STALE (no pcache marker)"; exit 1; }
+          SIZE=$(stat -c%s "$BIN")
+          echo "proot size: $SIZE bytes"
+          [ "$SIZE" -lt 400000 ] || { echo "!! proot not stripped/gc-sections applied"; exit 1; }
+          echo "OK: optimized proot (pcache marker present, stripped)"
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -60,6 +67,13 @@ jobs:
         run: |
           echo "=== APK files ==="
           find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+          echo "=== Verify the APK really ships OUR proot ==="
+          APK=$(find app/build/outputs/apk/debug -name '*_arm64-v8a.apk' | head -1)
+          unzip -p "$APK" assets/proot/proot > /tmp/apk-proot
+          ls -lh /tmp/apk-proot
+          strings /tmp/apk-proot | grep -q 'android-pcache' || { echo "!! APK ships a different proot"; exit 1; }
+          file /tmp/apk-proot | grep -q 'ARM aarch64' || { echo "!! APK proot not arm64"; exit 1; }
+          echo "OK: APK contains the optimized proot"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |
