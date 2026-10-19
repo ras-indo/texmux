@@ -171,8 +171,8 @@ jobs:
           export PKG_CONFIG_PATH=/tmp/talloc
           git clone --depth=1 https://github.com/proot-me/proot.git /tmp/proot-up
           make -C /tmp/proot-up/src -j"$(nproc)" WITHOUT_PYTHON=1 \
-            CFLAGS="-O2 -I/tmp/talloc/include" \
-            LDFLAGS="-L/tmp/talloc/lib -ltalloc"
+            CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
+            LDFLAGS="-Wl,--gc-sections -L/tmp/talloc/lib -ltalloc"
           cd /tmp/proot-up/test
           make check-test-fake-id0-permissions 2>&1 | tail -30
           echo "UPSTREAM-EXIT=${PIPESTATUS[0]}"
