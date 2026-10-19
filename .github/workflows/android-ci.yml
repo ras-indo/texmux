@@ -145,8 +145,7 @@ jobs:
           export PKG_CONFIG_PATH=/tmp/talloc
           make -C /tmp/proot/src -j"$(nproc)" WITHOUT_PYTHON=1 \
             CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
-            LDFLAGS="-Wl,--gc-sections -Wl,-rpath,/tmp/talloc/lib" \
-            LDLIBS="-L/tmp/talloc/lib -ltalloc"
+            LDFLAGS="-Wl,--gc-sections -Wl,-rpath,/tmp/talloc/lib -L/tmp/talloc/lib -ltalloc"
           file /tmp/proot/src/proot
           strings /tmp/proot/src/proot | grep -q 'PROOT_NO_PATH_CACHE' || { echo "!! pcache not built in"; exit 1; }
           echo "OK: pcache present in host build"
