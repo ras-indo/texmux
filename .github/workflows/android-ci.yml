@@ -165,6 +165,13 @@ jobs:
           test -f /tmp/smoke/dest/include/stdio.h
           echo "OK: extracted $(find /tmp/smoke/dest -type f | wc -l) files"
 
+      - name: Trace the failing fake_id0 test (our build)
+        run: |
+          set -uo pipefail
+          cd /tmp/proot/test
+          PROOT=/tmp/proot/src/proot PATH="$PATH:/bin" sh -ex test-fake-id0-permissions.sh 2>&1 | tail -70
+          echo "OUR-EXIT=${PIPESTATUS[0]}"
+
       - name: Control - run the suspect test against UPSTREAM proot
         run: |
           set -uo pipefail
