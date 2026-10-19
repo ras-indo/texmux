@@ -103,6 +103,11 @@ jobs:
   # flags used for Android, exercise the exact installer extraction path
   # (--link2symlink + tar), and run the upstream test suite.  This is where
   # proot behaviour is verified — not on the B860H device.
+  # ── PRoot regression gate ────────────────────────────────────────────────
+  # Builds the proot changes on the CI host with the same optimization flags
+  # used for Android, exercises the exact installer extraction path
+  # (--link2symlink + tar), and runs the upstream test suite.  This is where
+  # proot behaviour is verified — not on the B860H device.
   proot-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -111,30 +116,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build vendored talloc (host static-ish .so)
+      - name: Build vendored talloc as a static library
         run: |
           set -euo pipefail
           V="$GITHUB_WORKSPACE/termux-proot/vendor/talloc"
-          mkdir -p /tmp/talloc/lib /tmp/talloc/include
-          gcc -shared -fPIC -o /tmp/talloc/lib/libtalloc.so.2 \
+          mkdir -p /tmp/talloc/lib /tmp/talloc/include /tmp/talloc/obj
+          gcc -c -O2 -fPIC \
             -D_GNU_SOURCE=1 -D_XOPEN_SOURCE_EXTENDED=1 -D__STDC_WANT_LIB_EXT1__=1 \
             -DSTATIC_talloc_MODULES=NULL \
             '-DSTATIC_talloc_MODULES_PROTO=extern void __talloc_dummy_module_proto(void)' \
-            -O2 -I"$V" -I"$V/lib/replace" "$V/talloc.c"
+            -I"$V" -I"$V/lib/replace" \
+            "$V/talloc.c" -o /tmp/talloc/obj/talloc.o
+          ar rcs /tmp/talloc/lib/libtalloc.a /tmp/talloc/obj/talloc.o
           cp "$V/talloc.h" /tmp/talloc/include/
-          {
-            echo 'prefix=/tmp/talloc'
-            echo 'libdir=${prefix}/lib'
-            echo 'includedir=${prefix}/include'
-            echo ''
-            echo 'Name: talloc'
-            echo 'Description: hierarchical pool based memory system'
-            echo 'Version: 2.4.2'
-            echo 'Libs: -L${libdir} -ltalloc'
-            echo 'Cflags: -I${includedir}'
-          } > /tmp/talloc/talloc.pc
-          ls -lh /tmp/talloc/lib
-          PKG_CONFIG_PATH=/tmp/talloc pkg-config --exists talloc && echo "OK: talloc.pc visible"
+          echo 'prefix=/tmp/talloc' > /tmp/talloc/talloc.pc
+          echo 'libdir=${prefix}/lib' >> /tmp/talloc/talloc.pc
+          echo 'includedir=${prefix}/include' >> /tmp/talloc/talloc.pc
+          echo 'Name: talloc' >> /tmp/talloc/talloc.pc
+          echo 'Description: hierarchical pool based memory system' >> /tmp/talloc/talloc.pc
+          echo 'Version: 2.4.2' >> /tmp/talloc/talloc.pc
+          echo 'Libs: -L${libdir} -ltalloc' >> /tmp/talloc/talloc.pc
+          echo 'Cflags: -I${includedir}' >> /tmp/talloc/talloc.pc
+          PKG_CONFIG_PATH=/tmp/talloc pkg-config --exists talloc
+          ls -lh /tmp/talloc/lib/libtalloc.a
 
       - name: Clone the optimized proot fork
         run: git clone --depth=1 --branch master https://github.com/ras-indo/proot.git /tmp/proot
@@ -145,7 +149,7 @@ jobs:
           export PKG_CONFIG_PATH=/tmp/talloc
           make -C /tmp/proot/src -j"$(nproc)" WITHOUT_PYTHON=1 \
             CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
-            LDFLAGS="-Wl,--gc-sections -Wl,-rpath,/tmp/talloc/lib -L/tmp/talloc/lib -ltalloc"
+            LDFLAGS="-Wl,--gc-sections -L/tmp/talloc/lib -ltalloc"
           file /tmp/proot/src/proot
           strings /tmp/proot/src/proot | grep -q 'PROOT_NO_PATH_CACHE' || { echo "!! pcache not built in"; exit 1; }
           echo "OK: pcache present in host build"
@@ -153,7 +157,6 @@ jobs:
       - name: Smoke test the installer extraction path (--link2symlink + tar)
         run: |
           set -euo pipefail
-          export LD_LIBRARY_PATH=/tmp/talloc/lib
           mkdir -p /tmp/smoke/src /tmp/smoke/dest /tmp/smoke/l2s /tmp/smoke/ptmp
           cp -a /usr/include /tmp/smoke/src/
           tar czf /tmp/smoke/rootfs.tgz -C /tmp/smoke/src include
@@ -165,7 +168,6 @@ jobs:
       - name: Run the upstream PRoot test suite
         run: |
           set -uo pipefail
-          export LD_LIBRARY_PATH=/tmp/talloc/lib
           cd /tmp/proot/test
           make check 2>&1 | tee /tmp/check.log | tail -25
           if grep -q 'FAILED' /tmp/check.log; then
