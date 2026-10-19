@@ -574,6 +574,23 @@ final class TermuxInstaller {
      */
     private static final String PROOT_BINARY_VERSION = "5.5.0-android-pcache";
 
+    /** Last @max chars of @text, for putting extractor output into an error message. */
+    private static String tail(String text, int max) {
+        if (text == null) return "";
+        String t = text.trim();
+        if (t.isEmpty()) return "<no output>";
+        return t.length() <= max ? t : "..." + t.substring(t.length() - max);
+    }
+
+    private static String freeSpaceAt(String path) {
+        try {
+            StatFs stat = new StatFs(path);
+            return (stat.getAvailableBytes() / (1024L * 1024L)) + " MB free";
+        } catch (Exception e) {
+            return "unknown free space";
+        }
+    }
+
     /** Overwrite apps/bin/proot when the deployed copy is not the one this APK ships. */
     private static void refreshProotBinaryIfNeeded(Activity activity) {
         File appsBin = new File(TERMUX_FILES_DIR_PATH, APPS_BIN);
@@ -943,7 +960,9 @@ final class TermuxInstaller {
             // Clean up for potential retry
             marker.delete();
             deleteDirectoryRecursive(new File(l2sDir));
-            throw new Exception(ERRNO_EXTRACTION_TIMEOUT.getError(msg).getMinimalErrorString());
+            throw new Exception(ERRNO_EXTRACTION_TIMEOUT.getError(msg).getMinimalErrorString()
+                + "\n\n" + freeSpaceAt(TERMUX_FILES_DIR_PATH)
+                + "\n--- extractor output (tail) ---\n" + tail(output.toString(), 3000));
         }
 
         int exitCode = process.exitValue();
@@ -961,7 +980,9 @@ final class TermuxInstaller {
             // Clean up for clean retry
             marker.delete();
             deleteDirectoryRecursive(new File(l2sDir));
-            throw new Exception(ERRNO_EXTRACTION_FAILED.getError(msg).getMinimalErrorString());
+            throw new Exception(ERRNO_EXTRACTION_FAILED.getError(msg).getMinimalErrorString()
+                + "\n\nexit=" + exitCode + " | " + freeSpaceAt(TERMUX_FILES_DIR_PATH)
+                + "\n--- extractor output (tail) ---\n" + tail(output.toString(), 3000));
         }
 
         if (!verifyRootfs(rootfsDir)) {

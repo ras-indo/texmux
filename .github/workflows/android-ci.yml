@@ -97,3 +97,68 @@ jobs:
           name: texmux-debug-apk
           path: upload_apk/*.apk
           if-no-files-found: error
+
+  # ── PRoot regression gate ────────────────────────────────────────────────
+  # Runs the proot changes on the CI host: build with the same optimization
+  # flags used for Android, exercise the exact installer extraction path
+  # (--link2symlink + tar), and run the upstream test suite.  This is where
+  # proot behaviour is verified — not on the B860H device.
+  proot-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build vendored talloc (host static-ish .so)
+        run: |
+          set -euo pipefail
+          V="$GITHUB_WORKSPACE/termux-proot/vendor/talloc"
+          mkdir -p /tmp/talloc/lib /tmp/talloc/include
+          gcc -shared -fPIC -o /tmp/talloc/lib/libtalloc.so.2 \
+            -D_GNU_SOURCE=1 -D_XOPEN_SOURCE_EXTENDED=1 -D__STDC_WANT_LIB_EXT1__=1 \
+            -DSTATIC_talloc_MODULES=NULL \
+            '-DSTATIC_talloc_MODULES_PROTO=extern void __talloc_dummy_module_proto(void)' \
+            -O2 -I"$V" -I"$V/lib/replace" "$V/talloc.c"
+          cp "$V/talloc.h" /tmp/talloc/include/
+          ls -lh /tmp/talloc/lib
+
+      - name: Clone the optimized proot fork
+        run: git clone --depth=1 --branch master https://github.com/ras-indo/proot.git /tmp/proot
+
+      - name: Build proot (host) with the Android optimization flags
+        run: |
+          set -euo pipefail
+          make -C /tmp/proot/src -j"$(nproc)" \
+            CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
+            LDFLAGS="-Wl,--gc-sections -Wl,-rpath,/tmp/talloc/lib" \
+            LDLIBS="-L/tmp/talloc/lib -ltalloc"
+          file /tmp/proot/src/proot
+          strings /tmp/proot/src/proot | grep -q 'PROOT_NO_PATH_CACHE' || { echo "!! pcache not built in"; exit 1; }
+          echo "OK: pcache present in host build"
+
+      - name: Smoke test the installer extraction path (--link2symlink + tar)
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH=/tmp/talloc/lib
+          mkdir -p /tmp/smoke/src /tmp/smoke/dest /tmp/smoke/l2s /tmp/smoke/ptmp
+          cp -a /usr/include /tmp/smoke/src/
+          tar czf /tmp/smoke/rootfs.tgz -C /tmp/smoke/src include
+          PROOT_TMP_DIR=/tmp/smoke/ptmp PROOT_L2S_DIR=/tmp/smoke/l2s \
+            /tmp/proot/src/proot --link2symlink /bin/tar -xzf /tmp/smoke/rootfs.tgz -C /tmp/smoke/dest
+          test -f /tmp/smoke/dest/include/stdio.h
+          echo "OK: extracted $(find /tmp/smoke/dest -type f | wc -l) files"
+
+      - name: Run the upstream PRoot test suite
+        run: |
+          set -uo pipefail
+          export LD_LIBRARY_PATH=/tmp/talloc/lib
+          cd /tmp/proot/test
+          make check 2>&1 | tee /tmp/check.log | tail -25
+          if grep -q 'FAILED' /tmp/check.log; then
+            echo "!! test failures:"
+            grep 'FAILED' /tmp/check.log
+            exit 1
+          fi
+          echo "OK: no test failures"
