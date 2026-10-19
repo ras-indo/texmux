@@ -156,14 +156,22 @@ jobs:
 
       - name: Smoke test the installer extraction path (--link2symlink + tar)
         run: |
-          set -euo pipefail
-          mkdir -p /tmp/smoke/src /tmp/smoke/dest /tmp/smoke/l2s /tmp/smoke/ptmp
-          cp -a /usr/include /tmp/smoke/src/
-          tar czf /tmp/smoke/rootfs.tgz -C /tmp/smoke/src include
+          set -uo pipefail
+          mkdir -p /tmp/smoke/src/tree/dir /tmp/smoke/dest /tmp/smoke/l2s /tmp/smoke/ptmp
+          cp -a /usr/include /tmp/smoke/src/tree/include
+          echo hello > /tmp/smoke/src/tree/dir/file
+          ln /tmp/smoke/src/tree/dir/file /tmp/smoke/src/tree/dir/hardlink
+          ln -s dir/file /tmp/smoke/src/tree/symlink
+          mkfifo /tmp/smoke/src/tree/fifo
+          tar czf /tmp/smoke/rootfs.tgz -C /tmp/smoke/src tree
+          echo "archive contains: $(tar tzf /tmp/smoke/rootfs.tgz | wc -l) entries"
           PROOT_TMP_DIR=/tmp/smoke/ptmp PROOT_L2S_DIR=/tmp/smoke/l2s \
             /tmp/proot/src/proot --link2symlink /bin/tar -xzf /tmp/smoke/rootfs.tgz -C /tmp/smoke/dest
-          test -f /tmp/smoke/dest/include/stdio.h
-          echo "OK: extracted $(find /tmp/smoke/dest -type f | wc -l) files"
+          echo "tar exit=$? (non-zero is tolerated: unprivileged entries)"
+          test -f /tmp/smoke/dest/tree/include/stdio.h || { echo "!! regular files missing"; exit 1; }
+          test -f /tmp/smoke/dest/tree/dir/file || { echo "!! hardlinked payload missing"; exit 1; }
+          readlink /tmp/smoke/dest/tree/symlink >/dev/null || { echo "!! symlink missing"; exit 1; }
+          echo "OK: extracted $(find /tmp/smoke/dest -type f | wc -l) files (hardlink+symlink+fifo present)"
 
       - name: Trace the failing fake_id0 test (our build)
         run: |

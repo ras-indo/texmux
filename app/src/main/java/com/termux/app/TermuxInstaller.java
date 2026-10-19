@@ -582,6 +582,31 @@ final class TermuxInstaller {
         return t.length() <= max ? t : "..." + t.substring(t.length() - max);
     }
 
+    /**
+     * Pull the lines that look like extractor errors out of the captured
+     * output, so a failure report shows *why* tar failed instead of just
+     * the tail of the (mostly harmless) file listing.
+     */
+    private static String errorLines(String output) {
+        if (output == null) return "<no output>";
+        StringBuilder sb = new StringBuilder();
+        for (String line : output.split("\n")) {
+            String t = line.trim();
+            if (t.isEmpty()) continue;
+            if (t.startsWith("tar:") || t.startsWith("proot")
+                || t.contains("Operation not permitted")
+                || t.contains("Permission denied")
+                || t.contains("No space left")
+                || t.contains("Read-only file system")
+                || t.contains("cannot ")
+                || t.contains("Cannot ")) {
+                sb.append(t).append('\n');
+                if (sb.length() > 4000) break;
+            }
+        }
+        return sb.length() == 0 ? "<no error lines matched>" : sb.toString();
+    }
+
     private static String freeSpaceAt(String path) {
         try {
             StatFs stat = new StatFs(path);
@@ -974,15 +999,27 @@ final class TermuxInstaller {
         } catch (Exception ignored) {}
 
         if (exitCode != 0) {
-            String msg = "Rootfs extraction failed (exit " + exitCode + ").\nOutput:\n" + output;
-            Logger.logError(LOG_TAG, msg);
-            log.accept("  ERROR: Extraction failed (exit " + exitCode + ")");
-            // Clean up for clean retry
-            marker.delete();
-            deleteDirectoryRecursive(new File(l2sDir));
-            throw new Exception(ERRNO_EXTRACTION_FAILED.getError(msg).getMinimalErrorString()
-                + "\n\nexit=" + exitCode + " | " + freeSpaceAt(TERMUX_FILES_DIR_PATH)
-                + "\n--- extractor output (tail) ---\n" + tail(output.toString(), 3000));
+            String errs = errorLines(output.toString());
+            if (verifyRootfs(rootfsDir)) {
+                /* tar exits non-zero for entries it cannot create as an
+                 * unprivileged app on Android (device nodes, ownership,
+                 * some xattrs), while the rootfs itself is perfectly usable.
+                 * Only a missing /etc/passwd or /bin/sh is fatal.  */
+                Logger.logWarn(LOG_TAG, "extraction exited " + exitCode
+                    + " but the rootfs verified; continuing. Errors:\n" + errs);
+                log.accept("  WARN: tar reported errors, rootfs looks complete");
+            } else {
+                String msg = "Rootfs extraction failed (exit " + exitCode + ").";
+                Logger.logError(LOG_TAG, msg + "\n" + errs);
+                log.accept("  ERROR: Extraction failed (exit " + exitCode + ")");
+                // Clean up for clean retry
+                marker.delete();
+                deleteDirectoryRecursive(new File(l2sDir));
+                throw new Exception(ERRNO_EXTRACTION_FAILED.getError(msg).getMinimalErrorString()
+                    + "\n\nexit=" + exitCode + " | " + freeSpaceAt(TERMUX_FILES_DIR_PATH)
+                    + "\n--- extractor errors ---\n" + tail(errs, 3000)
+                    + "\n--- extractor output (tail) ---\n" + tail(output.toString(), 1500));
+            }
         }
 
         if (!verifyRootfs(rootfsDir)) {
