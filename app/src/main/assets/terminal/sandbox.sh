@@ -2,6 +2,10 @@
 # sandbox.sh — Enter PRoot container (re:Terminal compatible)
 # No PREFIX directory — everything is under files/ directly.
 FILES_DIR="/data/data/com.termux/files"
+# Bump this whenever sandbox.sh changes: it is printed as the first line of
+# files/tmp/preflight.log, so a pasted log always identifies the script that
+# produced it (an old APK once kept getting debugged against a newer diagnosis).
+SANDBOX_BUILD="2026-10-20-rseq-guard"
 ROOTFS_DIR="${FILES_DIR}/ROOTFS"
 APPS_BIN="${FILES_DIR}/apps/bin"
 TMP_DIR="${FILES_DIR}/tmp"
@@ -241,7 +245,7 @@ fi
 # tidak bisa di-resolve dan proot mencetak warning binding yang menyesatkan.
 PREFLIGHT_LOG="${TMP_DIR}/preflight.log"
 PROBE_OUT="${TMP_DIR}/.probe.out"
-: > "$PREFLIGHT_LOG"
+/system/bin/echo "sandbox.sh build=$SANDBOX_BUILD  (GLIBC_TUNABLES=${GLIBC_TUNABLES-<unset>})" > "$PREFLIGHT_LOG"
 $LINKER "$PROOT" --version >> "$PREFLIGHT_LOG" 2>&1
 
 # probe <label> <noseccomp|""> <argstring> [target...]
@@ -286,6 +290,10 @@ elif probe "minimal + PROOT_NO_SECCOMP=1" noseccomp "-r $ROOTFS_DIR"; then
   LAUNCH_ARGS="-r $ROOTFS_DIR"
   LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="minimal/seccomp-off"
 else
+  # Every rung failed: capture one -v 9 run so the log itself names the last
+  # syscall / signal proot saw. Without this the report is just "exit 255".
+  /system/bin/echo "--- verbose (-v 9) tail ---" >> "$PREFLIGHT_LOG"
+  $LINKER "$PROOT" $ARGS -v 9 /bin/true 2>&1 | /system/bin/tail -30 >> "$PREFLIGHT_LOG"
   /system/bin/echo "Pre-flight failed: no proot configuration reached the rootfs."
   /system/bin/echo "--- last 40 lines of $PREFLIGHT_LOG ---"
   /system/bin/tail -40 "$PREFLIGHT_LOG"

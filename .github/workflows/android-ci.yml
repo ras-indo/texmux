@@ -221,6 +221,8 @@ jobs:
           [ -n "$FIRSTPROBE" ] || { echo "!! no probe calls found"; exit 1; }
           [ "$TUNABLE" -lt "$FIRSTPROBE" ] || { echo "!! rseq guard is exported AFTER proot runs"; exit 1; }
           echo "OK: rseq(293) guard exported before any proot run"
+          grep -q 'SANDBOX_BUILD="' "$SH" || { echo "!! SANDBOX_BUILD stamp missing (logs would be unattributable)"; exit 1; }
+          echo "OK: sandbox build stamp present: $(grep -oP 'SANDBOX_BUILD="\K[^"]+' "$SH")"
 
       - name: Run the upstream PRoot test suite
         run: |
