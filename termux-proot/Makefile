@@ -355,7 +355,7 @@ define build_loader_template
 
 .PHONY: loader-$1
 
-loader-$1: $$(BUILD_DIR)/loader-$1/loader.elf
+loader-$1: $$(BUILD_DIR)/loader-$1/loader.exe
 
 # Build loader objects
 PROOT_SRC_$1 := $(PROOT_SRC_DIR)/src
@@ -379,17 +379,29 @@ $$(BUILD_DIR)/loader-$1/loader: $$(BUILD_DIR)/loader-$1/loader.o $$(BUILD_DIR)/l
 $$(BUILD_DIR)/loader-$1/loader.stripped: $$(BUILD_DIR)/loader-$1/loader
 	$$(TOOLCHAIN_STRIP_$1) -o $$@ $$<
 
-$$(BUILD_DIR)/loader-$1/loader.elf: $$(BUILD_DIR)/loader-$1/loader.stripped
+# loader.c (termux/proot) references the embedded image as
+# _binary_loader_exe_start/_end, so the objcopy input must be named
+# loader.exe - the symbol names follow the input file name.
+$$(BUILD_DIR)/loader-$1/loader.exe: $$(BUILD_DIR)/loader-$1/loader.stripped
 	cp $$< $$@
 
 # objcopy to wrap loader as a .o file for linking
-$$(BUILD_DIR)/proot-$1/loader-wrapped.o: $$(BUILD_DIR)/loader-$1/loader.elf
+$$(BUILD_DIR)/proot-$1/loader-wrapped.o: $$(BUILD_DIR)/loader-$1/loader.exe
 	@mkdir -p $$(dir $$@)
 	cd $$(BUILD_DIR)/loader-$1 && $$(TOOLCHAIN_OBJCOPY_$1) \
 		--input-target binary \
 		--output-target $$(shell $$(TOOLCHAIN_OBJDUMP_$1) -f $$(BUILD_DIR)/proot-$1/cli/cli.o | grep 'file format' | awk '{print $$$$4}') \
 		--binary-architecture $$(shell $$(TOOLCHAIN_OBJDUMP_$1) -f $$(BUILD_DIR)/proot-$1/cli/cli.o | grep architecture | cut -f 1 -d , | awk '{print $$$$2}') \
-		loader.elf $$(abspath $$@)
+		loader.exe $$(abspath $$@)
+
+# loader-info.c: the pokedata offset the loader needs at run time.  The awk is
+# the fork's portable one - mawk on Debian/Ubuntu has no strtonum().
+$$(BUILD_DIR)/proot-$1/loader-info.c: $$(BUILD_DIR)/loader-$1/loader.exe
+	@mkdir -p $$(dir $$@)
+	readelf -s $$< | awk -f $$(PROOT_SRC_DIR)/src/loader/loader-info.awk > $$@
+
+$$(BUILD_DIR)/proot-$1/loader-info.o: $$(BUILD_DIR)/proot-$1/loader-info.c
+	$$(TOOLCHAIN_CC_$1) $$(PROOT_CFLAGS_$1) $$(PROOT_CPPFLAGS) -c $$< -o $$@
 
 endef
 
@@ -464,7 +476,8 @@ proot-arm64: \
 		talloc-arm64 \
 		$(BUILD_DIR)/talloc-arm64/include/talloc.h \
 		$(addprefix $(BUILD_DIR)/proot-arm64/,$(PROOT_OBJS)) \
-		$(BUILD_DIR)/proot-arm64/loader-wrapped.o
+		$(BUILD_DIR)/proot-arm64/loader-wrapped.o \
+		$(BUILD_DIR)/proot-arm64/loader-info.o
 	@echo "==> Linking proot (arm64)"
 	@mkdir -p $(BUILD_DIR)/proot-arm64
 	$(TOOLCHAIN_CC_arm64) \
@@ -473,6 +486,7 @@ proot-arm64: \
 		-o $(BUILD_DIR)/proot-arm64/proot \
 		$(addprefix $(BUILD_DIR)/proot-arm64/,$(PROOT_OBJS)) \
 		$(BUILD_DIR)/proot-arm64/loader-wrapped.o \
+		$(BUILD_DIR)/proot-arm64/loader-info.o \
 		$(PROOT_LDFLAGS_arm64)
 	@echo "==> Checking ELF interpreter"
 	-readelf -l $(BUILD_DIR)/proot-arm64/proot 2>/dev/null | grep -q 'interpreter' && \
@@ -488,7 +502,8 @@ proot-arm: \
 		talloc-arm \
 		$(BUILD_DIR)/talloc-arm/include/talloc.h \
 		$(addprefix $(BUILD_DIR)/proot-arm/,$(PROOT_OBJS)) \
-		$(BUILD_DIR)/proot-arm/loader-wrapped.o
+		$(BUILD_DIR)/proot-arm/loader-wrapped.o \
+		$(BUILD_DIR)/proot-arm/loader-info.o
 	@echo "==> Linking proot (arm)"
 	@mkdir -p $(BUILD_DIR)/proot-arm
 	$(TOOLCHAIN_CC_arm) \
@@ -497,6 +512,7 @@ proot-arm: \
 		-o $(BUILD_DIR)/proot-arm/proot \
 		$(addprefix $(BUILD_DIR)/proot-arm/,$(PROOT_OBJS)) \
 		$(BUILD_DIR)/proot-arm/loader-wrapped.o \
+		$(BUILD_DIR)/proot-arm/loader-info.o \
 		$(PROOT_LDFLAGS_arm)
 	@echo "==> Build complete: $(BUILD_DIR)/proot-arm/proot"
 	@file $(BUILD_DIR)/proot-arm/proot
