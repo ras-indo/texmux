@@ -99,14 +99,9 @@ jobs:
           if-no-files-found: error
 
   # ── PRoot regression gate ────────────────────────────────────────────────
-  # Runs the proot changes on the CI host: build with the same optimization
-  # flags used for Android, exercise the exact installer extraction path
-  # (--link2symlink + tar), and run the upstream test suite.  This is where
-  # proot behaviour is verified — not on the B860H device.
-  # ── PRoot regression gate ────────────────────────────────────────────────
   # Builds the proot changes on the CI host with the same optimization flags
   # used for Android, exercises the exact installer extraction path
-  # (--link2symlink + tar), and runs the upstream test suite.  This is where
+  # (-l/--link2symlink + tar), and runs the upstream test suite. This is where
   # proot behaviour is verified — not on the B860H device.
   proot-regression:
     runs-on: ubuntu-latest
@@ -154,7 +149,7 @@ jobs:
           strings /tmp/proot/src/proot | grep -q 'PROOT_NO_PATH_CACHE' || { echo "!! pcache not built in"; exit 1; }
           echo "OK: pcache present in host build"
 
-      - name: Smoke test the installer extraction path (--link2symlink + tar)
+      - name: Smoke test the installer extraction path (-l + tar)
         run: |
           set -uo pipefail
           mkdir -p /tmp/smoke/src/tree/dir /tmp/smoke/dest /tmp/smoke/l2s /tmp/smoke/ptmp
@@ -164,37 +159,27 @@ jobs:
           ln -s dir/file /tmp/smoke/src/tree/symlink
           mkfifo /tmp/smoke/src/tree/fifo
           # Real Ubuntu rootfs tarballs carry device nodes; an unprivileged
-          # Android app cannot mknod them, which is what makes tar exit 1.
+          # Android app cannot mknod them, which is what makes tar exit non-zero.
           sudo mknod /tmp/smoke/src/tree/devnode c 1 3 && echo "device node added"
           tar czf /tmp/smoke/rootfs.tgz -C /tmp/smoke/src tree
           echo "archive contains: $(tar tzf /tmp/smoke/rootfs.tgz | wc -l) entries"
+
+          # Mirror the installer EXACTLY: proot -l (= --link2symlink), tar -xf,
+          # PROOT_TMP_DIR + PROOT_L2S_DIR exported. tar's exit status is
+          # EXPECTED to be non-zero here (unprivileged mknod) — the installer
+          # tolerates it whenever the rootfs verifies, so this step must too.
+          set +e
           PROOT_TMP_DIR=/tmp/smoke/ptmp PROOT_L2S_DIR=/tmp/smoke/l2s \
-            /tmp/proot/src/proot --link2symlink /bin/tar -xzf /tmp/smoke/rootfs.tgz -C /tmp/smoke/dest
-          echo "tar exit=$? (non-zero is tolerated: unprivileged entries)"
+            /tmp/proot/src/proot -l /bin/tar -xf /tmp/smoke/rootfs.tgz -C /tmp/smoke/dest
+          tar_rc=$?
+          set -e
+          echo "tar exit=$tar_rc (non-zero tolerated: unprivileged device node)"
+
           test -f /tmp/smoke/dest/tree/include/stdio.h || { echo "!! regular files missing"; exit 1; }
           test -f /tmp/smoke/dest/tree/dir/file || { echo "!! hardlinked payload missing"; exit 1; }
           readlink /tmp/smoke/dest/tree/symlink >/dev/null || { echo "!! symlink missing"; exit 1; }
-          echo "device node present after extract: $([ -e /tmp/smoke/dest/tree/devnode ] && echo yes || echo no)"
-          echo "OK: extracted $(find /tmp/smoke/dest -type f | wc -l) files (hardlink+symlink+fifo present)"
-
-      - name: Trace the failing fake_id0 test (our build)
-        run: |
-          set -uo pipefail
-          cd /tmp/proot/test
-          PROOT=/tmp/proot/src/proot PATH="$PATH:/bin" sh -ex test-fake-id0-permissions.sh 2>&1 | tail -70
-          echo "OUR-EXIT=${PIPESTATUS[0]}"
-
-      - name: Control - run the suspect test against UPSTREAM proot
-        run: |
-          set -uo pipefail
-          export PKG_CONFIG_PATH=/tmp/talloc
-          git clone --depth=1 https://github.com/proot-me/proot.git /tmp/proot-up
-          make -C /tmp/proot-up/src -j"$(nproc)" WITHOUT_PYTHON=1 \
-            CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
-            LDFLAGS="-Wl,--gc-sections -L/tmp/talloc/lib -ltalloc"
-          cd /tmp/proot-up/test
-          make check-test-fake-id0-permissions 2>&1 | tail -30
-          echo "UPSTREAM-EXIT=${PIPESTATUS[0]}"
+          echo "extracted files: $(find /tmp/smoke/dest -type f | wc -l)"
+          echo "OK: extraction usable despite tar exit=$tar_rc"
 
       - name: Run the upstream PRoot test suite
         run: |

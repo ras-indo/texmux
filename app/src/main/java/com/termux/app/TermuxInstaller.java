@@ -939,13 +939,26 @@ final class TermuxInstaller {
         Logger.logInfo(LOG_TAG, "Extracting rootfs to " + rootfsDir);
         log.accept("  Extracting rootfs (this may take a while)...");
 
-        String shScript = "LINKER=/system/bin/linker64; " +
-            "[ -f "$LINKER" ] || LINKER=/system/bin/linker; " +
-            "export PROOT_TMP_DIR='" + prootTmp + "'; " +
-            "export PROOT_L2S_DIR='" + l2sDir + "'; " +
-            "export PROOT_LOADER='" + prootLoader + "'; " +
-            """ + "$LINKER" + "" "" + prootBin + "" -l /system/bin/tar " +
-            "-xf "" + tarball + "" -C "" + rootfsDir + "";        ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c", shScript);
+        // Build the extraction command piece by piece. The shell string is
+        // assembled with a StringBuilder because the proot invocation needs
+        // BOTH flavours of quoting: single quotes around the exported paths
+        // and double quotes around the "$LINKER" expansion.
+        StringBuilder sh = new StringBuilder();
+        sh.append("LINKER=/system/bin/linker64; ");
+        sh.append("[ -f \"$LINKER\" ] || LINKER=/system/bin/linker; ");
+        sh.append("export PROOT_TMP_DIR='").append(prootTmp).append("'; ");
+        sh.append("export PROOT_L2S_DIR='").append(l2sDir).append("'; ");
+        if (prootLoader != null) {
+            sh.append("export PROOT_LOADER='").append(prootLoader).append("'; ");
+        }
+        // -l == --link2symlink: an unprivileged Android app cannot create
+        // hardlinks, so the rootfs tarball's hardlink entries must become
+        // symlinks or tar fails and the container stays half-extracted.
+        sh.append("\"$LINKER\" \"").append(prootBin).append("\" -l /system/bin/tar -xf \"")
+          .append(tarball).append("\" -C \"").append(rootfsDir).append("\"");
+        String shScript = sh.toString();
+
+        ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c", shScript);
         pb.redirectErrorStream(true);
         pb.environment().put("PROOT_TMP_DIR", prootTmp);
         pb.environment().put("PROOT_L2S_DIR", l2sDir);
