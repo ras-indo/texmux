@@ -203,6 +203,26 @@ ARGS="$ARGS -0"
 # ── Launch ──────────────────────────────────────────────────────────
 export PATH=/system/bin:/system/xbin:/bin:/sbin:/usr/bin:/usr/sbin
 
+# ── glibc rseq must stay OFF inside Android ─────────────────────────
+# Android's app seccomp policy (inherited by every forked tracee) traps
+# syscall 293 (rseq) with SIGSYS, and glibc >= 2.35 registers rseq at
+# startup, so every guest binary dies instantly:
+#   proot info: ptrace acceleration (seccomp mode 2) enabled
+#   proot info: vpid 1: terminated with signal 31
+# (= SIGSYS -> proot's last_exit_status stays -1 -> exit 255, no output).
+# PROOT_NO_SECCOMP does NOT help: that only disables proot's own filter,
+# not Android's. The fix is to stop glibc from issuing the syscall; the
+# tunable is parsed by the guest's ld.so (glibc 2.35+), and ignored by
+# non-glibc rootfs (Alpine/musl).
+if [ -z "${GLIBC_TUNABLES-}" ]; then
+  export GLIBC_TUNABLES="glibc.pthread.rseq=0"
+else
+  case "$GLIBC_TUNABLES" in
+    *rseq*) : ;;
+    *) export GLIBC_TUNABLES="$GLIBC_TUNABLES:glibc.pthread.rseq=0" ;;
+  esac
+fi
+
 INIT_EXEC="$APPS_BIN/init"
 if [ ! -r "$INIT_EXEC" ]; then
   INIT_EXEC="$APPS_BIN/init.sh"

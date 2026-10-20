@@ -192,7 +192,7 @@ jobs:
           echo "extracted files: $(find /tmp/smoke/dest -type f | wc -l)"
           echo "OK: extraction usable despite tar exit=$tar_rc (hardlinks intact)"
 
-      - name: Lint sandbox.sh proot flags against the fork's CLI table
+      - name: Lint sandbox.sh (proot flags + rseq guard ordering)
         run: |
           set -euo pipefail
           SH="$GITHUB_WORKSPACE/app/src/main/assets/terminal/sandbox.sh"
@@ -210,6 +210,17 @@ jobs:
             exit 1
           fi
           echo "OK: every sandbox.sh proot flag exists in the CLI table"
+
+          # Android's app seccomp policy traps rseq(293) with SIGSYS and glibc
+          # >= 2.35 registers it at startup, so the tunable MUST be exported
+          # before the first proot probe / launch.
+          TUNABLE=$(grep -n 'GLIBC_TUNABLES="glibc.pthread.rseq=0"' "$SH" | head -1 | cut -d: -f1)
+          FIRSTPROBE=$(grep -n '^probe "' "$SH" | head -1 | cut -d: -f1)
+          echo "rseq guard at line ${TUNABLE:-<none>}, first probe at line ${FIRSTPROBE:-<none>}"
+          [ -n "$TUNABLE" ] || { echo "!! GLIBC_TUNABLES rseq guard is missing"; exit 1; }
+          [ -n "$FIRSTPROBE" ] || { echo "!! no probe calls found"; exit 1; }
+          [ "$TUNABLE" -lt "$FIRSTPROBE" ] || { echo "!! rseq guard is exported AFTER proot runs"; exit 1; }
+          echo "OK: rseq(293) guard exported before any proot run"
 
       - name: Run the upstream PRoot test suite
         run: |
