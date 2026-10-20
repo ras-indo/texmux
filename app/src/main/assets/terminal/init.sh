@@ -31,6 +31,39 @@ if [ -f ~/.profile ]; then
     . ~/.profile
 fi
 
+# ── `ps` and file ownership under the fake root ────────────────────
+# proot reports geteuid()==0 but /proc/<pid>/status keeps the real app uid.
+# procps' default selection for a bare `ps` is "same euid + same tty", so it
+# compares 0 against the real uid, matches nothing, and prints only its header.
+# Two small repairs, both idempotent and outside the rootfs tarball:
+#   1. a `ps` wrapper that, with no arguments, selects the caller's session
+#      (that is what people mean by "which processes are running here")
+#   2. a passwd entry for the real uid, so `ps aux` and `ls -l` show a name
+#      instead of a bare number for files we own
+_RU=$(awk '/^Uid:/{print $2; exit}' /proc/self/status 2>/dev/null)
+_RG=$(awk '/^Gid:/{print $2; exit}' /proc/self/status 2>/dev/null)
+
+if [ -n "$_RU" ] && [ "$_RU" != "0" ] && [ -w /etc/passwd ] \
+   && ! awk -F: -v u="$_RU" '$3 == u { found = 1 } END { exit !found }' /etc/passwd; then
+    echo "root:x:$_RU:${_RG:-$_RU}:root:/root:/bin/bash" >> /etc/passwd
+fi
+
+_PS_WRAPPER="/usr/local/bin/ps"
+if ! grep -qs "select by session" "$_PS_WRAPPER" 2>/dev/null; then
+    mkdir -p /usr/local/bin
+    cat > "$_PS_WRAPPER" << 'PS_WRAPPER_EOF'
+#!/bin/sh
+# Bare `ps`: select by session.  The default selection cannot work here
+# because proot fakes geteuid() while /proc reports the real uid.
+if [ $# -eq 0 ]; then
+    _sid=$(/bin/ps -o sess= -p $$ 2>/dev/null | tr -d ' \n')
+    [ -n "$_sid" ] && exec /bin/ps -s "$_sid"
+fi
+exec /bin/ps "$@"
+PS_WRAPPER_EOF
+    chmod 755 "$_PS_WRAPPER"
+fi
+
 # If arguments passed, exec them (non-interactive command)
 if [ $# -gt 0 ]; then
     exec "$@"

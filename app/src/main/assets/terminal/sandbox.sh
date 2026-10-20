@@ -95,6 +95,18 @@ for _sf in stat vmstat loadavg uptime version \
   fi
 done
 
+# Fake /proc/stat only carries the cpu line, and procps needs a btime line to
+# turn a process' starttime into a clock time - without it every START column
+# reads 1970.  uptime is faked as 0.00 above, so "booted now" is the value
+# consistent with it.  Refreshed every session (one date call) so the cached
+# file cannot go stale.
+if [ -f "$SYS_DATA_DIR/stat" ]; then
+  {
+    /system/bin/echo "cpu  0 0 0 0 0 0 0 0 0 0"
+    /system/bin/echo "btime $(/system/bin/date +%s)"
+  } > "$SYS_DATA_DIR/stat" 2>/dev/null
+fi
+
 # ── PROOT_L2S_DIR — link2symlink backing files di dalam rootfs ─────
 L2S_DIR="${ROOTFS_DIR}/.l2s"
 export PROOT_L2S_DIR="$L2S_DIR"
