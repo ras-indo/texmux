@@ -3,6 +3,11 @@
 export PATH=/system/bin:/system/xbin
 export HOME=/data/data/com.termux
 echo "Android host shell (Ctrl+D to return to container)"
-# mksh ignores PS1 from env for root; force it via ENV rc file
-printf '%s\n' 'PS1="$ "' 'cd /data/data/com.termux' > /tmp/.androidrc
-ENV=/tmp/.androidrc exec /system/bin/sh -i
+# mksh ignores PS1 from env for root; force it via an ENV rc file.
+# /tmp does NOT exist in the Android host namespace (it only exists inside the
+# proot rootfs), so the rc file must live under the app's own files/tmp.
+RC_DIR="${TMPDIR:-/data/data/com.termux/files/tmp}"
+[ -d "$RC_DIR" ] || /system/bin/mkdir -p "$RC_DIR" 2>/dev/null
+RC="$RC_DIR/.androidrc"
+printf '%s\n' 'PS1="$ "' 'cd /data/data/com.termux' > "$RC"
+ENV="$RC" exec /system/bin/sh -i

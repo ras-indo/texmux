@@ -181,6 +181,25 @@ jobs:
           echo "extracted files: $(find /tmp/smoke/dest -type f | wc -l)"
           echo "OK: extraction usable despite tar exit=$tar_rc"
 
+      - name: Lint sandbox.sh proot flags against the fork's CLI table
+        run: |
+          set -euo pipefail
+          SH="$GITHUB_WORKSPACE/app/src/main/assets/terminal/sandbox.sh"
+          # Every flag this proot accepts, straight from its generated CLI table.
+          grep -oP '\.name = "\K-[^"]+' /tmp/proot/src/cli/proot.h | sort -u > /tmp/known.txt
+          # Every flag sandbox.sh actually passes to proot (ARGS assignments only).
+          grep -E '^[[:space:]]*ARGS="' "$SH" \
+            | grep -oP '(?<=[\s"])(--?[A-Za-z0-9][A-Za-z0-9_-]*)' | sort -u > /tmp/used.txt
+          echo "known: $(tr '\n' ' ' < /tmp/known.txt)"
+          echo "used : $(tr '\n' ' ' < /tmp/used.txt)"
+          if BAD=$(comm -23 /tmp/used.txt /tmp/known.txt) && [ -n "$BAD" ]; then
+            echo "!! sandbox.sh passes flags proot does not accept:"
+            echo "$BAD"
+            echo "   (proot exits with \"unknown option\" and the session dies)"
+            exit 1
+          fi
+          echo "OK: every sandbox.sh proot flag exists in the CLI table"
+
       - name: Run the upstream PRoot test suite
         run: |
           set -uo pipefail

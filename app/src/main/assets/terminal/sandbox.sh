@@ -186,7 +186,9 @@ ARGS="$ARGS -b /sys"
 ARGS="$ARGS -r $ROOTFS_DIR"
 ARGS="$ARGS -0"
 ARGS="$ARGS --link2symlink"
-ARGS="$ARGS -L"
+# NB: --kill-on-exit sudah dipasang di awal ARGS. JANGAN tambah "-L" di sini:
+# proot tidak punya opsi itu (tabel CLI cuma --kill-on-exit), dan proot langsung
+# exit "unknown option '-L'" sehingga pre-flight selalu gagal.
 
 # ── Launch ──────────────────────────────────────────────────────────
 export PATH=/system/bin:/system/xbin:/bin:/sbin:/usr/bin:/usr/sbin
@@ -202,10 +204,19 @@ if [ ! -r "$INIT_EXEC" ]; then
 fi
 
 # ── Pre-flight: validate proot + args + rootfs sebelum commit ──────
-# Cek cepat (argumen valid, binary OK, rootfs ada /bin/true). Kalau
-# gagal → android_fallback, jangan biarkan session mati tanpa output.
-if ! $LINKER "$PROOT" $ARGS /bin/true >/dev/null 2>&1; then
-  /system/bin/echo "Pre-flight check failed for: $LINKER $PROOT (args or rootfs problem)"
+# Output pre-flight JANGAN dibuang: kalau proot nolak sebuah opsi, pesan
+# "unknown option" hanya muncul di stderr — tanpa ini kegagalan terlihat
+# seperti "rootfs problem" padahal flag-nya yang salah.
+PREFLIGHT_LOG="${TMP_DIR}/preflight.log"
+PREFLIGHT_OUT=$($LINKER "$PROOT" $ARGS /bin/true 2>&1)
+PREFLIGHT_RC=$?
+if [ "$PREFLIGHT_RC" -ne 0 ]; then
+  /system/bin/echo "$LINKER $PROOT $ARGS /bin/true" > "$PREFLIGHT_LOG"
+  /system/bin/echo "exit=$PREFLIGHT_RC" >> "$PREFLIGHT_LOG"
+  /system/bin/echo "$PREFLIGHT_OUT" >> "$PREFLIGHT_LOG"
+  /system/bin/echo "Pre-flight failed (exit $PREFLIGHT_RC): $LINKER $PROOT"
+  /system/bin/echo "$PREFLIGHT_OUT"
+  /system/bin/echo "(detail: $PREFLIGHT_LOG)"
   android_fallback
 fi
 
