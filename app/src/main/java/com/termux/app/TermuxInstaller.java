@@ -560,25 +560,71 @@ final class TermuxInstaller {
    // termux-am-socket   → apps/com.termux/bin/termux-am-socket  (static, for AM socket inside proot)
    // termux-am          → apps/com.termux/bin/termux-am         (wrapper script, calls termux-am-socket)
     //   libproot-loader.so → via jniLibs, auto-extracted by Android to nativeLibraryDir
+    /**
+     * Deploy the proot binaries from the APK when they differ from what is
+     * already installed.
+     *
+     * Two files are shipped:
+     *   proot         → built from ras-indo/proot by CI (sysvipc + -L + pcache)
+     *   proot-legacy  → the binary Termux ships, kept as a fallback
+     *
+     * Comparing sizes is enough to notice an upgrade, and it makes a new APK
+     * actually replace apps/bin/proot on a device that already has a working
+     * container - setup is otherwise skipped once the artifacts exist, which
+     * used to leave a stale proot in place and made a fixed build look broken.
+     */
+    private static void deployProotIfChanged(Activity activity) {
+        File appsBin = new File(TERMUX_FILES_DIR_PATH, APPS_BIN);
+        appsBin.mkdirs();
+
+        String[] names = {"proot", "proot-legacy"};
+        for (String name : names) {
+            try (InputStream in = activity.getAssets().open("proot/" + name)) {
+                File dst = new File(appsBin, name);
+                long assetSize = in.available();
+                if (dst.isFile() && dst.length() == assetSize && dst.canExecute()) {
+                    Logger.logInfo(LOG_TAG, name + " already up to date (" + assetSize + " bytes)");
+                    continue;
+                }
+
+                File tmp = new File(appsBin, name + ".new");
+                try (FileOutputStream out = new FileOutputStream(tmp)) {
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, read);
+                    }
+                }
+                tmp.setExecutable(true, false);
+                if (!tmp.renameTo(dst)) {
+                    // Fall back to an in-place copy if rename is refused.
+                    try (FileOutputStream out = new FileOutputStream(dst)) {
+                        try (InputStream again = activity.getAssets().open("proot/" + name)) {
+                            byte[] buffer = new byte[8192];
+                            int read;
+                            while ((read = again.read(buffer)) != -1) {
+                                out.write(buffer, 0, read);
+                            }
+                        }
+                    }
+                    tmp.delete();
+                }
+                dst.setExecutable(true, false);
+                Logger.logInfo(LOG_TAG, "Deployed " + name + " to " + dst.getAbsolutePath());
+            } catch (java.io.FileNotFoundException e) {
+                Logger.logWarn(LOG_TAG, name + " not found in assets/proot/, skipping");
+            } catch (Exception e) {
+                Logger.logWarn(LOG_TAG, "could not deploy " + name + ": " + e.getMessage());
+            }
+        }
+    }
+
     private static void deployProotBinaries(Activity activity) throws Exception {
         File appsBin = new File(TERMUX_FILES_DIR_PATH, APPS_BIN);
         appsBin.mkdirs();
 
-        // proot binary
-        try (InputStream in = activity.getAssets().open("proot/proot")) {
-            File dst = new File(appsBin, "proot");
-            try (FileOutputStream out = new FileOutputStream(dst)) {
-                byte[] buffer = new byte[8192];
-                int read;
-                while ((read = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, read);
-                }
-            }
-            dst.setExecutable(true, false);
-            Logger.logInfo(LOG_TAG, "Deployed proot to " + dst.getAbsolutePath());
-        } catch (java.io.FileNotFoundException e) {
-            Logger.logWarn(LOG_TAG, "proot binary not found in assets/proot/, skipping");
-        }
+        // proot binaries (proot + the fallback copy shipped as proot-legacy)
+        deployProotIfChanged(activity);
 
         // termux-am-socket — static binary for AM socket inside proot
         File comTexmuxBin = new File(TERMUX_FILES_DIR_PATH, APPS_COM_TEXMUX + "/bin");
@@ -974,6 +1020,11 @@ final class TermuxInstaller {
             Logger.logInfo(LOG_TAG, "termux-api package missing — deploying now");
             deployTermuxApiPackage(activity);
         }
+
+        // An upgraded APK must replace apps/bin/proot, otherwise the device
+        // keeps running the binary from the previous install and a fixed build
+        // looks broken.
+        deployProotIfChanged(activity);
     }
 
     // ─── Deploy Termux:API package ──────────────────────────────────────────────────────────

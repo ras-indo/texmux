@@ -19,6 +19,18 @@ if [ ! -f "$PROOT" ]; then
   exit 1
 fi
 
+# ── Fallback proot ──────────────────────────────────────────────────
+# The APK ships two binaries: "proot" (built from source, with --sysvipc, -L
+# and the path cache) and "proot-legacy" (the binary Termux ships).  One 16 ms
+# probe decides which one to use, so a bad source build can never leave the
+# session without a shell to fall back to.
+if [ -x "$APPS_BIN/proot-legacy" ] && [ -f "$ROOTFS_DIR/etc/passwd" ]; then
+  if ! $LINKER "$PROOT" -r "$ROOTFS_DIR" /bin/true > /dev/null 2>&1; then
+    /system/bin/echo "proot: primary build failed its pre-flight -- using proot-legacy"
+    PROOT="$APPS_BIN/proot-legacy"
+  fi
+fi
+
 # ── PROOT_LOADER — resolve once, cache result ──────────────────────
 # The native lib dir follows a predictable pattern. Cache it so we
 # don't glob every session — that 'ls -d /data/app/com.termux*/...'

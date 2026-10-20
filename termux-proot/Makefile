@@ -109,6 +109,7 @@ PROOT_SRCS := \
 	path/pcache.c \
 	path/proc.c \
 	path/temp.c \
+	path/f2fs-bug.c \
 	syscall/seccomp.c \
 	syscall/syscall.c \
 	syscall/chain.c \
@@ -118,19 +119,46 @@ PROOT_SRCS := \
 	syscall/socket.c \
 	syscall/heap.c \
 	syscall/rlimit.c \
+	syscall/pipe_shadow.c \
 	tracee/tracee.c \
 	tracee/mem.c \
 	tracee/reg.c \
 	tracee/event.c \
+	tracee/seccomp.c \
+	tracee/statx.c \
 	ptrace/ptrace.c \
 	ptrace/user.c \
 	ptrace/wait.c \
 	extension/extension.c \
 	extension/kompat/kompat.c \
+	extension/ashmem_memfd/ashmem_memfd.c \
+	extension/fix_symlink_size/fix_symlink_size.c \
+	extension/hidden_files/hidden_files.c \
+	extension/mountinfo/mountinfo.c \
+	extension/port_switch/port_switch.c \
 	extension/fake_id0/fake_id0.c \
+	extension/fake_id0/access.c \
+	extension/fake_id0/chmod.c \
+	extension/fake_id0/chown.c \
+	extension/fake_id0/chroot.c \
+	extension/fake_id0/exec.c \
+	extension/fake_id0/getsockopt.c \
+	extension/fake_id0/helper_functions.c \
+	extension/fake_id0/link.c \
+	extension/fake_id0/mk.c \
+	extension/fake_id0/open.c \
+	extension/fake_id0/rename.c \
+	extension/fake_id0/sendmsg.c \
+	extension/fake_id0/socket.c \
+	extension/fake_id0/stat.c \
+	extension/fake_id0/symlink.c \
+	extension/fake_id0/unlink.c \
+	extension/fake_id0/utimensat.c \
 	extension/link2symlink/link2symlink.c \
-	extension/portmap/portmap.c \
-	extension/portmap/map.c
+	extension/sysvipc/sysvipc.c \
+	extension/sysvipc/sysvipc_msg.c \
+	extension/sysvipc/sysvipc_sem.c \
+	extension/sysvipc/sysvipc_shm.c
 
 PROOT_OBJS := $(PROOT_SRCS:%.c=%.o)
 

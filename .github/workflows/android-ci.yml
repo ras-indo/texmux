@@ -1,14 +1,18 @@
 name: Android CI - Texmux
 
-# Reverted to the recipe that is known to work on-device (the
-# termux-app-backup tree): build the APK and ship the proot binary that is
-# committed in app/src/main/assets/proot/proot.
+# Builds the APK and the proot binary it ships.
 #
-# Do NOT add a step that rebuilds proot into that path. The committed binary
-# is the Termux build that has the sysvipc extension and accepts the flags
-# sandbox.sh passes (-L, --sysvipc); a rebuild from termux-proot/ produces a
-# different, smaller binary without them, and every session then dies with
-# "unknown option" or a silent 255.
+# proot is compiled from github.com/ras-indo/proot (the fork), and that fork is
+# based on termux/proot so it has the two extensions this sandbox actually
+# passes: --sysvipc (SysV IPC emulation - Android's app seccomp policy traps
+# those syscalls) and -L (fix_symlink_size).  A fork without them builds fine
+# but every launch dies with "unknown option", which is exactly how several
+# rounds of device debugging were wasted.  The asserts below exist so that
+# cannot happen silently again: the built binary must contain the sysvipc
+# source marker and must list both flags.
+#
+# The binary that Termux itself ships is kept next to it as proot-legacy, and
+# sandbox.sh falls back to it if the fresh build fails its 16 ms pre-flight.
 
 on:
   push:
@@ -19,7 +23,7 @@ on:
 
 env:
   # Stamped into the APK so a build can be identified on the device
-  # (Settings > Apps > Termux, files/.apk_version, and the APK file name).
+  # (Settings > Apps > Termux and the APK file name).
   TERMUX_APP_VERSION_NAME: 0.118.0-r${{ github.run_number }}
 
 jobs:
@@ -58,18 +62,43 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Record the shipped proot checksum
+      - name: Build PRoot (arm64) from ras-indo/proot
         run: |
-          P=app/src/main/assets/proot/proot
-          ls -l "$P"
-          file "$P"
-          file "$P" | grep -q 'ARM aarch64' || { echo "!! proot asset is not arm64"; exit 1; }
-          md5sum "$P" | tee /tmp/proot.md5
-          # The sysvipc extension is what makes the shipped sandbox.sh flags
-          # (-L, --sysvipc) valid. A proot without it fails every session.
-          strings "$P" | grep -q 'extension/sysvipc/sysvipc.c' \
-            || { echo "!! this proot has no sysvipc extension"; exit 1; }
-          echo "OK: shipping the committed proot (sysvipc present)"
+          make -C termux-proot install \
+            NDK_DIR="$ANDROID_HOME/ndk/25.0.8775105" \
+            API_LEVEL=24
+          BIN=app/src/main/assets/proot/proot
+          file "$BIN"
+          ls -lh "$BIN"
+          SIZE=$(stat -c%s "$BIN")
+
+          file "$BIN" | grep -q 'ARM aarch64' \
+            || { echo "!! proot is not arm64"; exit 1; }
+
+          # feature parity with the binary the sandbox was written for
+          strings "$BIN" | grep -q 'extension/sysvipc/sysvipc.c' \
+            || { echo "!! proot has no sysvipc extension (--sysvipc would fail)"; exit 1; }
+          strings "$BIN" | grep -qx -- '--sysvipc' \
+            || { echo "!! proot does not accept --sysvipc"; exit 1; }
+          strings -n 2 "$BIN" | grep -qx -- '-L' \
+            || { echo "!! proot does not accept -L (fix_symlink_size)"; exit 1; }
+          strings "$BIN" | grep -q 'PROOT_NO_PATH_CACHE' \
+            || { echo "!! path cache not built in"; exit 1; }
+
+          echo "proot size: $SIZE bytes"
+          [ "$SIZE" -lt 1200000 ] || { echo "!! proot is unexpectedly large"; exit 1; }
+          md5sum "$BIN" | tee /tmp/proot.md5
+          echo "OK: proot built (sysvipc + -L + pcache present)"
+
+      - name: Verify the fallback binary is still in place
+        run: |
+          L=app/src/main/assets/proot/proot-legacy
+          ls -l "$L"
+          file "$L" | grep -q 'ARM aarch64' || { echo "!! proot-legacy is not arm64"; exit 1; }
+          strings "$L" | grep -q 'extension/sysvipc/sysvipc.c' \
+            || { echo "!! proot-legacy lost its sysvipc extension"; exit 1; }
+          md5sum "$L"
+          echo "OK: fallback proot available"
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
@@ -79,14 +108,17 @@ jobs:
           echo "=== APK files ==="
           find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
 
-      - name: Verify the APK ships the same proot that was checked
+      - name: Verify the APK ships the proot that was just built
         run: |
           APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
           unzip -p "$APK" assets/proot/proot > /tmp/apk-proot
-          md5sum /tmp/apk-proot
+          unzip -p "$APK" assets/proot/proot-legacy > /tmp/apk-legacy
+          md5sum /tmp/apk-proot /tmp/apk-legacy
           [ "$(md5sum /tmp/apk-proot | cut -d' ' -f1)" = "$(cut -d' ' -f1 /tmp/proot.md5)" ] \
-            || { echo "!! APK proot differs from the committed one"; exit 1; }
-          echo "OK: APK ships the committed proot"
+            || { echo "!! APK proot differs from the freshly built one"; exit 1; }
+          strings /tmp/apk-proot | grep -q 'extension/sysvipc/sysvipc.c' \
+            || { echo "!! APK proot lost sysvipc"; exit 1; }
+          echo "OK: APK ships the fresh proot + fallback"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |
@@ -103,7 +135,7 @@ jobs:
             echo "- APK: \`$(basename "$APK")\`"
             echo "- md5: \`$(md5sum "$APK" | cut -d' ' -f1)\`"
             echo "- versionName: \`$TERMUX_APP_VERSION_NAME\`"
-            echo "- proot: committed asset, sysvipc present, md5 \`$(cut -d' ' -f1 /tmp/proot.md5)\`"
+            echo "- proot: built from source, md5 \`$(cut -d' ' -f1 /tmp/proot.md5)\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
