@@ -163,9 +163,14 @@ Semua perintah mengembalikan output JSON.
 
 COMMANDS:
   connection-info              Show current WiFi connection info (JSON)
-  scan-info                    Show last WiFi scan results (JSON array)
+  scan-info [options]          Show last WiFi scan results (JSON array)
+                               Filters: --band 2.4|5|6  --ssid <substr>
+                               --bssid <prefix>  --min-rssi <dbm>  --dedupe
+                               --sort signal|ssid|freq  --limit <n>
   enable [--on|--off]          Enable or disable WiFi
   hotspot                      Start LocalOnlyHotspot (Android 8.0+)
+  hotspot-status               Hotspot state: active, SSID/password, band, channel
+  hotspot-stop                 Release the hotspot that 'hotspot' started
   p2p-discover [--timeout ms]  Discover P2P peers
   p2p-connect --address <mac>  Connect to a P2P peer
   p2p-group                    Show current P2P group info
@@ -225,6 +230,17 @@ Output JSON (field-field yang dikembalikan):
   mac_address        Alamat MAC interface WiFi perangkat
   supplicant_state   Status koneksi (COMPLETED, SCANNING, AUTHENTICATING, dll)
   wifi_generation    Generasi WiFi (802.11n, 802.11ac, 802.11ax, 802.11be)
+  band               Band frekuensi: 2.4GHz / 5GHz / 6GHz / 60GHz
+  rssi_percent       Kekuatan sinyal 0-100 (skala status bar Android)
+  tx_link_speed_mbps / rx_link_speed_mbps       Kecepatan link saat ini (Android 10+)
+  max_tx_link_speed_mbps / max_rx_link_speed_mbps  Kecepatan link maksimum (Android 10+)
+  interface          Nama interface jaringan (mis. wlan0)
+  ip_addresses       Array alamat IP + prefix (IPv4 dan IPv6)
+  gateway            Gateway default
+  dns_servers        Array resolver DNS
+  private_dns        true bila Private DNS aktif (Android 9+)
+  private_dns_server Nama host Private DNS (bila diset)
+  dhcp_server        Alamat DHCP server (Android 11+)
 
 Requires:
   - WiFi dalam keadaan ON dan terhubung ke suatu jaringan
@@ -261,8 +277,21 @@ Catatan:
   - Panggil beberapa kali dengan jeda untuk mendapatkan hasil terbaru
   - Di Android 12+, scan terbatas maksimal 4 kali per 2 menit per aplikasi
 
+Filter & peringkat (opsional):
+  --band 2.4|5|6     hanya band tertentu (6 = WiFi 6E, 60 = 60GHz)
+  --ssid <substr>    SSID mengandung substring (case-insensitive)
+  --bssid <prefix>   BSSID diawali prefix (mis. aa:bb:cc)
+  --min-rssi <dbm>   sembunyikan sinyal lemah (mis. -70)
+  --dedupe           satu SSID satu baris, ambil sinyal terkuat
+  --sort signal|ssid|freq   urutan hasil (default: sinyal terkuat dulu)
+  --limit <n>        batasi jumlah hasil
+
+Field tambahan per jaringan: band, rssi_percent (0-100)
+
 Contoh:
   termux-wifi scan-info
+  termux-wifi scan-info --band 5 --min-rssi -70 --limit 10
+  termux-wifi scan-info --dedupe --sort ssid
 EOF
 }
 
@@ -630,10 +659,31 @@ cmd_connection_info() {
 }
 
 cmd_scan_info() {
-    case "${1:-}" in
-        -h|--help) show_scan_info_usage; exit 0 ;;
-    esac
-    call_api --es command scan-info
+    local band="" ssid="" bssid="" min_rssi="" sort="" limit="" dedupe=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)  show_scan_info_usage; exit 0 ;;
+            --band)     band="$2"; shift 2 ;;
+            --ssid)     ssid="$2"; shift 2 ;;
+            --bssid)    bssid="$2"; shift 2 ;;
+            --min-rssi) min_rssi="$2"; shift 2 ;;
+            --sort)     sort="$2"; shift 2 ;;
+            --limit)    limit="$2"; shift 2 ;;
+            --dedupe)   dedupe=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
+    local extras=(--es command scan-info)
+    [ -n "$band" ]     && extras+=(--es band "$band")
+    [ -n "$ssid" ]     && extras+=(--es ssid "$ssid")
+    [ -n "$bssid" ]    && extras+=(--es bssid "$bssid")
+    [ -n "$min_rssi" ] && extras+=(--ei min_rssi "$min_rssi")
+    [ -n "$sort" ]     && extras+=(--es sort "$sort")
+    [ -n "$limit" ]    && extras+=(--ei limit "$limit")
+    [ "$dedupe" = true ] && extras+=(--ez dedupe true)
+
+    call_api "${extras[@]}"
 }
 
 cmd_enable() {
@@ -654,6 +704,57 @@ cmd_hotspot() {
         -h|--help) show_hotspot_usage; exit 0 ;;
     esac
     call_api --es command hotspot
+}
+
+cmd_hotspot_status() {
+    case "${1:-}" in
+        -h|--help)
+            cat <<EOF
+Usage: $SCRIPTNAME hotspot-status
+
+Menampilkan keadaan hotspot: apakah app ini sedang menjalankan LocalOnlyHotspot
+(aktif + kredensial), dan — Android 11+ — konfigurasi Soft AP sistem.
+
+Output JSON:
+  active           true/false (hotspot yang dijalankan app ini)
+  type             "local_only" bila aktif
+  ssid, password   kredensial hotspot yang dijalankan app (bila aktif)
+  system_ssid      SSID Soft AP sistem (Android 11+)
+  system_band      2.4GHz / 5GHz / 6GHz / 60GHz
+  system_channel   channel Soft AP
+  max_clients      batas jumlah client
+  hidden           SSID disembunyikan
+  status_note      alasan bila SoftApConfiguration tidak bisa dibaca
+
+Contoh:
+  $SCRIPTNAME hotspot-status
+  $SCRIPTNAME hotspot-status | jq -r 'if .active then .ssid else "off" end'
+EOF
+            exit 0 ;;
+    esac
+    call_api --es command hotspot-status
+}
+
+cmd_hotspot_stop() {
+    case "${1:-}" in
+        -h|--help)
+            cat <<EOF
+Usage: $SCRIPTNAME hotspot-stop
+
+Menghentikan hotspot yang dinyalakan lewat '$SCRIPTNAME hotspot' dengan
+melepas LocalOnlyHotspotReservation milik app. Hotspot yang dinyalakan dari
+menu Pengaturan Android bukan milik app ini, jadi tidak bisa dihentikan dari sini.
+
+Output JSON:
+  {"stopped": true}                    berhasil dihentikan
+  {"stopped": false, "reason": "..."}  tidak ada hotspot app yang aktif / gagal
+
+Contoh:
+  $SCRIPTNAME hotspot-stop
+EOF
+            exit 0 ;;
+    esac
+    call_api --es command hotspot-stop
 }
 
 cmd_p2p_discover() {
@@ -768,6 +869,8 @@ case "$CMD" in
     scan-info)        cmd_scan_info "$@" ;;
     enable)           cmd_enable "$@" ;;
     hotspot)          cmd_hotspot "$@" ;;
+    hotspot-status)   cmd_hotspot_status "$@" ;;
+    hotspot-stop)     cmd_hotspot_stop "$@" ;;
     p2p-discover)     cmd_p2p_discover "$@" ;;
     p2p-connect)      cmd_p2p_connect "$@" ;;
     p2p-group)        cmd_p2p_group "$@" ;;

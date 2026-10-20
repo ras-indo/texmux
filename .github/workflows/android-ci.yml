@@ -148,6 +148,22 @@ jobs:
           echo "termux-api client in APK: $size bytes, --timeout + exit codes present"
           echo "OK: one termux-api client, no stale duplicates"
 
+      - name: Verify the wifi/bluetooth API additions are in the APK
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
+          rm -rf /tmp/apk-x && mkdir -p /tmp/apk-x
+          unzip -oq "$APK" -d /tmp/apk-x 'classes*.dex' 'assets/termux-api/bin/termux-wifi'
+          for token in hotspot-status hotspot-stop system_channel rssi_percent le_supported ip_addresses; do
+            grep -aq -- "$token" /tmp/apk-x/classes*.dex \
+              || { echo "!! dex is missing the '$token' addition"; exit 1; }
+          done
+          for opt in --band --min-rssi --dedupe; do
+            grep -q -- "$opt" /tmp/apk-x/assets/termux-api/bin/termux-wifi \
+              || { echo "!! termux-wifi is missing $opt"; exit 1; }
+          done
+          echo "OK: hotspot status/stop, wifi scan filters and bluetooth details present"
+
       - name: Collect only the APK needed (arm64-v8a)
         run: |
           mkdir -p upload_apk

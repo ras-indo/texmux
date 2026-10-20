@@ -4,6 +4,7 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
@@ -25,6 +26,7 @@ import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.LocalSocket;
 import android.os.Build;
 import android.os.Bundle;
@@ -491,6 +493,22 @@ public class BluetoothAPI {
                             out.name("scan_mode").value(scanModeToString(adapter.getScanMode()));
                             out.name("state").value(adapterStateToString(adapter.getState()));
                             out.name("is_discovering").value(adapter.isDiscovering());
+                            // Adapter-level capabilities and SDP profile UUIDs: the
+                            // phone answered "which profiles does this dongle offer"
+                            // with silence until now, so scripts had to guess.
+                            out.name("le_supported").value(
+                                getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE));
+                            ParcelUuid[] adapterUuids = adapter.getUuids();
+                            out.name("uuids");
+                            out.beginArray();
+                            if (adapterUuids != null) {
+                                for (ParcelUuid uuid : adapterUuids) out.value(uuid.toString());
+                            }
+                            out.endArray();
+                            BluetoothClass adapterClass = adapter.getBluetoothClass();
+                            if (adapterClass != null) {
+                                out.name("device_class").value(adapterClass.getDeviceClass());
+                            }
                             out.name("bonded_devices").value(adapter.getBondedDevices().size());
 
                             Set<BluetoothDevice> bonded = adapter.getBondedDevices();
@@ -502,6 +520,13 @@ public class BluetoothAPI {
                                 out.name("name").value(device.getName() != null ? device.getName() : "");
                                 out.name("bond_state").value(bondStateToString(device.getBondState()));
                                 out.name("type").value(deviceTypeToString(device.getType()));
+                                ParcelUuid[] deviceUuids = device.getUuids();
+                                out.name("uuids");
+                                out.beginArray();
+                                if (deviceUuids != null) {
+                                    for (ParcelUuid uuid : deviceUuids) out.value(uuid.toString());
+                                }
+                                out.endArray();
                                 out.endObject();
                             }
                             out.endArray();

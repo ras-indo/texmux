@@ -5,6 +5,11 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.RouteInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
@@ -47,9 +52,13 @@ import com.termux.api.util.ResultReturner;
 import com.termux.api.util.ResultReturner.ResultJsonWriter;
 import com.termux.shared.logger.Logger;
 
+import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.Executors;
 
 public class WifiAPI {
@@ -68,6 +77,17 @@ public class WifiAPI {
     // Tracks whether a LocalOnlyHotspot request is active; prevents
     // duplicate requests (system allows only one per UID).
     private static boolean hotspotRequestActive = false;
+
+    /**
+     * Reservation of the last LocalOnlyHotspot we started.  The system ties the
+     * hotspot's lifetime to this object: dropping it means the hotspot shuts
+     * down at an arbitrary moment (when GC collects it), and without it there is
+     * no way to stop on purpose.  `hotspot-status` reports it and `hotspot-stop`
+     * releases it.
+     */
+    private static LocalOnlyHotspotReservation hotspotReservation = null;
+    private static String hotspotSsid = null;
+    private static String hotspotPassword = null;
 
     /**
      * Unified entry point for all wifi commands.
@@ -96,6 +116,12 @@ public class WifiAPI {
                     break;
                 case "hotspot":
                     onReceiveWifiHotspot(apiReceiver, context, intent);
+                    break;
+                case "hotspot-status":
+                    onReceiveWifiHotspotStatus(apiReceiver, context, intent);
+                    break;
+                case "hotspot-stop":
+                    onReceiveWifiHotspotStop(apiReceiver, context, intent);
                     break;
                 case "p2p-discover":
                     onReceiveP2pDiscover(apiReceiver, context, intent);
@@ -151,6 +177,149 @@ public class WifiAPI {
             return (freqMhz - 5955) / 5 + 1;
         }
         return 0;
+    }
+
+    /**
+     * Map a frequency in MHz to the band name Android uses in its Wi-Fi UI.
+     * Callers previously had to redo this arithmetic (and got 6 GHz wrong).
+     */
+    private static String bandFromFrequency(int frequencyMhz) {
+        if (frequencyMhz >= 2400 && frequencyMhz < 2500) return "2.4GHz";
+        if (frequencyMhz >= 4900 && frequencyMhz < 5925) return "5GHz";
+        if (frequencyMhz >= 5925 && frequencyMhz < 7125) return "6GHz";
+        if (frequencyMhz >= 57000) return "60GHz";
+        return "unknown";
+    }
+
+    /**
+     * RSSI in dBm (-30 at the AP, about -90 at the edge) as the 0-100 scale the
+     * status bar shows: 2 * (dBm + 100), clamped.
+     */
+    private static int rssiToPercent(int rssiDbm) {
+        int percent = 2 * (rssiDbm + 100);
+        if (percent < 0) return 0;
+        if (percent > 100) return 100;
+        return percent;
+    }
+
+    /**
+     * Network-layer details of the active connection: addresses, gateway, DNS,
+     * DHCP server and private DNS.  getConnectionInfo() only describes the
+     * Wi-Fi link, so callers had no way to learn the gateway or resolvers
+     * without shelling out to `ip route` and reading /etc/resolv.conf.
+     */
+    private static void writeLinkProperties(Context context, JsonWriter out) throws Exception {
+        ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return;
+        Network network = cm.getActiveNetwork();
+        LinkProperties lp = network != null ? cm.getLinkProperties(network) : null;
+        if (lp == null) return;
+
+        if (!TextUtils.isEmpty(lp.getInterfaceName())) {
+            out.name("interface").value(lp.getInterfaceName());
+        }
+
+        out.name("ip_addresses");
+        out.beginArray();
+        for (LinkAddress address : lp.getLinkAddresses()) {
+            out.value(address.getAddress().getHostAddress() + "/" + address.getPrefixLength());
+        }
+        out.endArray();
+
+        String gateway = null;
+        for (RouteInfo route : lp.getRoutes()) {
+            if (route.isDefaultRoute() && route.getGateway() != null) {
+                gateway = route.getGateway().getHostAddress();
+                break;
+            }
+        }
+        if (gateway != null) out.name("gateway").value(gateway);
+
+        out.name("dns_servers");
+        out.beginArray();
+        for (InetAddress dns : lp.getDnsServers()) {
+            out.value(dns.getHostAddress());
+        }
+        out.endArray();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            out.name("private_dns").value(lp.isPrivateDnsActive());
+            if (lp.getPrivateDnsServerName() != null) {
+                out.name("private_dns_server").value(lp.getPrivateDnsServerName());
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            InetAddress dhcpServer = lp.getDhcpServerAddress();
+            if (dhcpServer != null) out.name("dhcp_server").value(dhcpServer.getHostAddress());
+        }
+    }
+
+    /**
+     * Apply the filters requested by `termux-wifi scan-info`: band, ssid and
+     * bssid substrings, a minimum signal, de-duplication by SSID, ordering and a
+     * result cap.  Scanning a flat or an office returns 50+ BSSIDs, most of them
+     * mesh siblings of the same SSID, so callers used to pipe through jq/awk.
+     */
+    private static List<ScanResult> filterScans(Intent intent, List<ScanResult> scans) {
+        String band = intent.getStringExtra("band");
+        String ssid = intent.getStringExtra("ssid");
+        String bssid = intent.getStringExtra("bssid");
+        int minRssi = intent.getIntExtra("min_rssi", -127);
+        boolean dedupe = intent.getBooleanExtra("dedupe", false);
+        String sort = intent.getStringExtra("sort");
+        int limit = intent.getIntExtra("limit", 0);
+
+        List<ScanResult> result = new ArrayList<>(scans.size());
+        for (ScanResult scan : scans) {
+            if (band != null && !bandMatches(band, scan.frequency)) continue;
+            if (ssid != null) {
+                String haystack = scan.SSID == null ? "" : scan.SSID.toLowerCase(Locale.ROOT);
+                if (!haystack.contains(ssid.toLowerCase(Locale.ROOT))) continue;
+            }
+            if (bssid != null) {
+                String haystack = scan.BSSID == null ? "" : scan.BSSID.toLowerCase(Locale.ROOT);
+                if (!haystack.startsWith(bssid.toLowerCase(Locale.ROOT))) continue;
+            }
+            if (scan.level < minRssi) continue;
+            result.add(scan);
+        }
+
+        if (dedupe) {
+            java.util.LinkedHashMap<String, ScanResult> strongest = new java.util.LinkedHashMap<>();
+            for (ScanResult scan : result) {
+                String key = scan.SSID == null ? "" : scan.SSID;
+                ScanResult current = strongest.get(key);
+                if (current == null || scan.level > current.level) strongest.put(key, scan);
+            }
+            result = new ArrayList<>(strongest.values());
+        }
+
+        Comparator<ScanResult> order;
+        if ("ssid".equalsIgnoreCase(sort)) {
+            order = (a, b) -> String.CASE_INSENSITIVE_ORDER.compare(
+                a.SSID == null ? "" : a.SSID, b.SSID == null ? "" : b.SSID);
+        } else if ("frequency".equalsIgnoreCase(sort) || "freq".equalsIgnoreCase(sort)) {
+            order = (a, b) -> Integer.compare(a.frequency, b.frequency);
+        } else {
+            // Strongest first — the sane default when scanning a room.
+            order = (a, b) -> Integer.compare(b.level, a.level);
+        }
+        Collections.sort(result, order);
+
+        if (limit > 0 && result.size() > limit) {
+            result = new ArrayList<>(result.subList(0, limit));
+        }
+        return result;
+    }
+
+    private static boolean bandMatches(String band, int frequencyMhz) {
+        String wanted = band.toLowerCase(Locale.ROOT).replace(" ", "");
+        String actual = bandFromFrequency(frequencyMhz).toLowerCase(Locale.ROOT);
+        if ("2.4".equals(wanted) || "2.4ghz".equals(wanted) || "24".equals(wanted)) return "2.4ghz".equals(actual);
+        if ("5".equals(wanted) || "5ghz".equals(wanted)) return "5ghz".equals(actual);
+        if ("6".equals(wanted) || "6ghz".equals(wanted)) return "6ghz".equals(actual);
+        if ("60".equals(wanted) || "60ghz".equals(wanted)) return "60ghz".equals(actual);
+        return actual.equals(wanted);
     }
 
     /**
@@ -282,12 +451,21 @@ public class WifiAPI {
                     // ── New fields (Task 2) ──
                     int freq = info.getFrequency();
                     out.name("channel").value(frequencyToChannel(freq));
+                    out.name("band").value(bandFromFrequency(freq));
+                    out.name("rssi_percent").value(rssiToPercent(info.getRssi()));
                     String standard = getWifiStandard(info);
                     out.name("standard").value(standard);
                     String generation = getWifiGeneration(freq, standard);
                     if (generation != null) {
                         out.name("wifi_generation").value(generation);
                     }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        out.name("tx_link_speed_mbps").value(info.getTxLinkSpeedMbps());
+                        out.name("rx_link_speed_mbps").value(info.getRxLinkSpeedMbps());
+                        out.name("max_tx_link_speed_mbps").value(info.getMaxSupportedTxLinkSpeedMbps());
+                        out.name("max_rx_link_speed_mbps").value(info.getMaxSupportedRxLinkSpeedMbps());
+                    }
+                    writeLinkProperties(context, out);
                 }
                 out.endObject();
             }
@@ -307,6 +485,9 @@ public class WifiAPI {
             public void writeJson(JsonWriter out) throws Exception {
                 WifiManager manager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
                 List<ScanResult> scans = manager.getScanResults();
+                if (scans != null) {
+                    scans = filterScans(intent, scans);
+                }
                 if (scans == null) {
                     out.beginObject().name("API_ERROR").value("Failed getting scan results").endObject();
                 } else if (scans.isEmpty() && !isLocationEnabled(context)) {
@@ -318,7 +499,9 @@ public class WifiAPI {
                         out.beginObject();
                         out.name("bssid").value(scan.BSSID);
                         out.name("frequency_mhz").value(scan.frequency);
+                        out.name("band").value(bandFromFrequency(scan.frequency));
                         out.name("rssi").value(scan.level);
+                        out.name("rssi_percent").value(rssiToPercent(scan.level));
                         out.name("ssid").value(scan.SSID);
                         out.name("timestamp").value(scan.timestamp);
 
@@ -464,6 +647,13 @@ public class WifiAPI {
                             clear();
 
                             WifiConfiguration config = reservation.getWifiConfiguration();
+                            // Hold on to the reservation: the hotspot lives exactly as
+                            // long as this object does, and hotspot-stop releases it.
+                            hotspotReservation = reservation;
+                            if (config != null) {
+                                hotspotSsid = config.SSID != null ? config.SSID.replaceAll("\"", "") : null;
+                                hotspotPassword = config.preSharedKey;
+                            }
                             ResultReturner.returnData(HotspotConsentActivity.this, getIntent(), new ResultJsonWriter() {
                                 @Override
                                 public void writeJson(JsonWriter out) throws Exception {
@@ -548,6 +738,99 @@ public class WifiAPI {
                 ResultReturner.returnData(this, getIntent(), out -> out.write(""));
                 resultReturned = true;
             }
+        }
+    }
+
+    // ─── Hotspot status / stop ────────────────────────────────────────
+
+    /**
+     * Report the hotspot this app started (LocalOnlyHotspot) plus, when the
+     * platform exposes it, the system Soft AP configuration.
+     *
+     * Until now the only hotspot command started one — there was no way to ask
+     * "is it up, on which SSID/channel, with which credentials" from a shell.
+     */
+    private static void onReceiveWifiHotspotStatus(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveWifiHotspotStatus");
+
+        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+            @Override
+            public void writeJson(JsonWriter out) throws Exception {
+                out.beginObject();
+                boolean active = hotspotReservation != null;
+                out.name("active").value(active);
+                if (active) {
+                    out.name("type").value("local_only");
+                    if (hotspotSsid != null) out.name("ssid").value(hotspotSsid);
+                    if (hotspotPassword != null) out.name("password").value(hotspotPassword);
+                }
+
+                // SoftApConfiguration is readable from Android 11; below that the
+                // fields stay absent instead of guessing.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    try {
+                        WifiManager manager = (WifiManager) context.getApplicationContext()
+                            .getSystemService(Context.WIFI_SERVICE);
+                        android.net.wifi.SoftApConfiguration config =
+                            manager != null ? manager.getSoftApConfiguration() : null;
+                        if (config != null) {
+                            out.name("system_ssid").value(config.getSsid());
+                            out.name("system_band").value(softApBandToString(config.getBand()));
+                            if (config.getChannel() != 0) {
+                                out.name("system_channel").value(config.getChannel());
+                            }
+                            out.name("max_clients").value(config.getMaxNumberOfClients());
+                            out.name("hidden").value(config.isHiddenSsid());
+                        }
+                    } catch (Exception e) {
+                        // Needs NEARBY_WIFI_DEVICES / location on some builds.
+                        // Say why instead of failing the whole command.
+                        out.name("status_note")
+                           .value("SoftApConfiguration unavailable: " + e.getClass().getSimpleName());
+                    }
+                }
+
+                out.endObject();
+            }
+        });
+    }
+
+    /** Release the LocalOnlyHotspot this app started, if it still holds it. */
+    private static void onReceiveWifiHotspotStop(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveWifiHotspotStop");
+
+        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+            @Override
+            public void writeJson(JsonWriter out) throws Exception {
+                out.beginObject();
+                if (hotspotReservation == null) {
+                    out.name("stopped").value(false);
+                    out.name("reason").value("No hotspot started by this app is active");
+                } else {
+                    try {
+                        hotspotReservation.close();
+                        out.name("stopped").value(true);
+                    } catch (Exception e) {
+                        out.name("stopped").value(false);
+                        out.name("reason").value(e.getClass().getSimpleName() + ": " + e.getMessage());
+                    }
+                    hotspotReservation = null;
+                    hotspotSsid = null;
+                    hotspotPassword = null;
+                }
+                out.endObject();
+            }
+        });
+    }
+
+    private static String softApBandToString(int band) {
+        // Constants are inlined at compile time, so referencing newer ones is safe.
+        switch (band) {
+            case android.net.wifi.SoftApConfiguration.BAND_2GHZ: return "2.4GHz";
+            case android.net.wifi.SoftApConfiguration.BAND_5GHZ: return "5GHz";
+            case android.net.wifi.SoftApConfiguration.BAND_6GHZ: return "6GHz";
+            case android.net.wifi.SoftApConfiguration.BAND_60GHZ: return "60GHz";
+            default: return "unknown";
         }
     }
 
