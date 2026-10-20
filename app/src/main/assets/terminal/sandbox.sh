@@ -5,7 +5,7 @@ FILES_DIR="/data/data/com.termux/files"
 # Bump this whenever sandbox.sh changes: it is printed as the first line of
 # files/tmp/preflight.log, so a pasted log always identifies the script that
 # produced it (an old APK once kept getting debugged against a newer diagnosis).
-SANDBOX_BUILD="2026-10-20-diag1"
+SANDBOX_BUILD="2026-10-20-diag2"
 ROOTFS_DIR="${FILES_DIR}/ROOTFS"
 APPS_BIN="${FILES_DIR}/apps/bin"
 TMP_DIR="${FILES_DIR}/tmp"
@@ -308,10 +308,12 @@ else
   /system/bin/grep -m4 "terminated with signal" "$PREFLIGHT_LOG"
   /system/bin/echo "-- syscalls trapped by this app's seccomp policy --"
   if [ -x "$APPS_BIN/sysprobe" ]; then
-    "$APPS_BIN/sysprobe" 2>&1 | /system/bin/grep -E "TRAPPED|sysprobe: done"
+    timeout 30 "$APPS_BIN/sysprobe" 2>&1 | /system/bin/grep -E "TRAPPED|sysprobe:"
   else
     /system/bin/echo "(sysprobe not deployed)"
   fi
+  /system/bin/echo "-- guest loader trace (LD_DEBUG=all, last 12) --"
+  LD_DEBUG=all $LINKER "$PROOT" -r "$ROOTFS_DIR" /bin/true 2>&1 | /system/bin/tail -12
   /system/bin/echo "-- last proot syscalls --"
   /system/bin/grep -E "sysenter|sysexit" "$PREFLIGHT_LOG" | /system/bin/tail -8
   /system/bin/echo "=== END DIAGNOSIS ==========================================="

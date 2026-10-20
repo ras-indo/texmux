@@ -75,13 +75,19 @@ jobs:
           set -euo pipefail
           NDK="$ANDROID_HOME/ndk/25.0.8775105/toolchains/llvm/prebuilt/linux-x86_64/bin"
           OUT=app/src/main/assets/android-shell/sysprobe
-          "$NDK/aarch64-linux-android24-clang" -static -O2 -Wall -Wextra \
+          # Freestanding: no libc, no startup path that could itself trip the
+          # very seccomp policy we are measuring (a static bionic build aborted
+          # before printing anything).
+          "$NDK/aarch64-linux-android24-clang" -static -nostdlib -fno-builtin \
+            -fno-stack-protector -O2 -Wall -Wextra -Wl,-e,_start \
             -o "$OUT" tools/sysprobe/sysprobe.c
           file "$OUT"
           file "$OUT" | grep -q 'ARM aarch64' || { echo "!! sysprobe is not arm64"; exit 1; }
           file "$OUT" | grep -q 'statically linked' || { echo "!! sysprobe is not static"; exit 1; }
-          ls -lh "$OUT"
-          echo "OK: sysprobe built (static aarch64)"
+          SZ=$(stat -c%s "$OUT")
+          echo "sysprobe size: $SZ bytes"
+          [ "$SZ" -lt 100000 ] || { echo "!! sysprobe pulled in a libc (expected <100 KB)"; exit 1; }
+          echo "OK: sysprobe built (freestanding static aarch64)"
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
