@@ -771,16 +771,26 @@ public class WifiAPI {
                     try {
                         WifiManager manager = (WifiManager) context.getApplicationContext()
                             .getSystemService(Context.WIFI_SERVICE);
-                        android.net.wifi.SoftApConfiguration config =
-                            manager != null ? manager.getSoftApConfiguration() : null;
+                        Object config = readProperty(manager, "getSoftApConfiguration");
                         if (config != null) {
-                            out.name("system_ssid").value(config.getSsid());
-                            out.name("system_band").value(softApBandToString(config.getBand()));
-                            if (config.getChannel() != 0) {
-                                out.name("system_channel").value(config.getChannel());
+                            Object ssid = readProperty(config, "getSsid");
+                            if (ssid != null) out.name("system_ssid").value(String.valueOf(ssid));
+                            Object band = readProperty(config, "getBand");
+                            if (band instanceof Integer) {
+                                out.name("system_band").value(softApBandToString((Integer) band));
                             }
-                            out.name("max_clients").value(config.getMaxNumberOfClients());
-                            out.name("hidden").value(config.isHiddenSsid());
+                            Object channel = readProperty(config, "getChannel");
+                            if (channel instanceof Integer && (Integer) channel != 0) {
+                                out.name("system_channel").value((Integer) channel);
+                            }
+                            Object maxClients = readProperty(config, "getMaxNumberOfClients");
+                            if (maxClients instanceof Integer) {
+                                out.name("max_clients").value((Integer) maxClients);
+                            }
+                            Object hidden = readProperty(config, "isHiddenSsid");
+                            if (hidden instanceof Boolean) {
+                                out.name("hidden").value((Boolean) hidden);
+                            }
                         }
                     } catch (Exception e) {
                         // Needs NEARBY_WIFI_DEVICES / location on some builds.
@@ -823,13 +833,33 @@ public class WifiAPI {
         });
     }
 
+    /**
+     * Read a no-argument getter reflectively.
+     *
+     * SoftApConfiguration's getters (and WifiManager.getSoftApConfiguration)
+     * are not part of the public SDK stubs, so they cannot be called directly
+     * even though the framework implements them.  Reflection keeps this
+     * compiling against any SDK level while still reporting real values on a
+     * device, and returns null when the method genuinely does not exist.
+     */
+    private static Object readProperty(Object target, String getter) {
+        if (target == null) return null;
+        try {
+            java.lang.reflect.Method method = target.getClass().getMethod(getter);
+            method.setAccessible(true);
+            return method.invoke(target);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** SoftApConfiguration band constants, as defined by the platform. */
     private static String softApBandToString(int band) {
-        // Constants are inlined at compile time, so referencing newer ones is safe.
         switch (band) {
-            case android.net.wifi.SoftApConfiguration.BAND_2GHZ: return "2.4GHz";
-            case android.net.wifi.SoftApConfiguration.BAND_5GHZ: return "5GHz";
-            case android.net.wifi.SoftApConfiguration.BAND_6GHZ: return "6GHz";
-            case android.net.wifi.SoftApConfiguration.BAND_60GHZ: return "60GHz";
+            case 1: return "2.4GHz";
+            case 2: return "5GHz";
+            case 3: return "6GHz";
+            case 4: return "60GHz";
             default: return "unknown";
         }
     }

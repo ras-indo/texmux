@@ -4,7 +4,6 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
@@ -234,6 +233,26 @@ public class BluetoothAPI {
             case BluetoothDevice.DEVICE_TYPE_DUAL: return "dual";
             case BluetoothDevice.DEVICE_TYPE_UNKNOWN: return "unknown";
             default: return "unknown(" + type + ")";
+        }
+    }
+
+    /**
+     * Read a no-argument getter reflectively.
+     *
+     * Several BluetoothAdapter/BluetoothDevice getters (getUuids,
+     * getBluetoothClass) are not exposed by the public SDK stubs even though the
+     * framework implements them, so calling them directly does not compile.
+     * Reflection keeps this building and still reports real values on a device;
+     * it returns null when the method is genuinely missing.
+     */
+    private static Object readProperty(Object target, String getter) {
+        if (target == null) return null;
+        try {
+            java.lang.reflect.Method method = target.getClass().getMethod(getter);
+            method.setAccessible(true);
+            return method.invoke(target);
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 
@@ -496,18 +515,23 @@ public class BluetoothAPI {
                             // Adapter-level capabilities and SDP profile UUIDs: the
                             // phone answered "which profiles does this dongle offer"
                             // with silence until now, so scripts had to guess.
+                            // getUuids()/getBluetoothClass() are not in the public
+                            // SDK stubs, so they are read reflectively.
                             out.name("le_supported").value(
                                 getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE));
-                            ParcelUuid[] adapterUuids = adapter.getUuids();
+                            Object adapterUuids = readProperty(adapter, "getUuids");
                             out.name("uuids");
                             out.beginArray();
-                            if (adapterUuids != null) {
-                                for (ParcelUuid uuid : adapterUuids) out.value(uuid.toString());
+                            if (adapterUuids instanceof Object[]) {
+                                for (Object uuid : (Object[]) adapterUuids) out.value(String.valueOf(uuid));
                             }
                             out.endArray();
-                            BluetoothClass adapterClass = adapter.getBluetoothClass();
+                            Object adapterClass = readProperty(adapter, "getBluetoothClass");
                             if (adapterClass != null) {
-                                out.name("device_class").value(adapterClass.getDeviceClass());
+                                Object deviceClass = readProperty(adapterClass, "getDeviceClass");
+                                if (deviceClass instanceof Integer) {
+                                    out.name("device_class").value((Integer) deviceClass);
+                                }
                             }
                             out.name("bonded_devices").value(adapter.getBondedDevices().size());
 
@@ -520,11 +544,11 @@ public class BluetoothAPI {
                                 out.name("name").value(device.getName() != null ? device.getName() : "");
                                 out.name("bond_state").value(bondStateToString(device.getBondState()));
                                 out.name("type").value(deviceTypeToString(device.getType()));
-                                ParcelUuid[] deviceUuids = device.getUuids();
+                                Object deviceUuids = readProperty(device, "getUuids");
                                 out.name("uuids");
                                 out.beginArray();
-                                if (deviceUuids != null) {
-                                    for (ParcelUuid uuid : deviceUuids) out.value(uuid.toString());
+                                if (deviceUuids instanceof Object[]) {
+                                    for (Object uuid : (Object[]) deviceUuids) out.value(String.valueOf(uuid));
                                 }
                                 out.endArray();
                                 out.endObject();
