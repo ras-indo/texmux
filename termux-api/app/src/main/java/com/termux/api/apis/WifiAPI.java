@@ -876,7 +876,7 @@ public class WifiAPI {
      * interfaces.  On builds where the file is unreadable the array stays empty
      * and status_note says why.
      */
-    private static void writeHotspotClients(JsonWriter out) {
+    private static void writeHotspotClients(JsonWriter out) throws Exception {
         out.name("clients");
         out.beginArray();
         try (java.io.BufferedReader reader =
