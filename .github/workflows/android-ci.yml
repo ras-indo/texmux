@@ -186,6 +186,15 @@ jobs:
             grep -q -- "$sub" /tmp/apk-x/assets/termux-api/bin/termux-permission \
               || { echo "!! termux-permission is missing '$sub'"; exit 1; }
           done
+          # The prompt activity must be declared, otherwise the in-app prompt
+          # never starts and the user only sees a bare error.
+          if [ -n "${AAPT:-}" ]; then
+            "$AAPT" dump xmltree "$APK" AndroidManifest.xml | grep -q PermissionPromptActivity \
+              || { echo "!! manifest does not declare PermissionPromptActivity"; exit 1; }
+          else
+            unzip -p "$APK" AndroidManifest.xml | strings -a -el | grep -q PermissionPromptActivity \
+              || { echo "!! manifest does not declare PermissionPromptActivity"; exit 1; }
+          fi
           echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, in-app permission prompt present"
 
       - name: Collect only the APK needed (arm64-v8a)
