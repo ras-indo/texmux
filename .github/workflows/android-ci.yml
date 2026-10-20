@@ -70,6 +70,19 @@ jobs:
           [ -n "$MK" ] && [ "$MK" = "$JV" ] || { echo "!! proot version stamp drift"; exit 1; }
           echo "OK: stamps match"
 
+      - name: Build sysprobe (static arm64 seccomp prober)
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_HOME/ndk/25.0.8775105/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          OUT=app/src/main/assets/android-shell/sysprobe
+          "$NDK/aarch64-linux-android24-clang" -static -O2 -Wall -Wextra \
+            -o "$OUT" tools/sysprobe/sysprobe.c
+          file "$OUT"
+          file "$OUT" | grep -q 'ARM aarch64' || { echo "!! sysprobe is not arm64"; exit 1; }
+          file "$OUT" | grep -q 'statically linked' || { echo "!! sysprobe is not static"; exit 1; }
+          ls -lh "$OUT"
+          echo "OK: sysprobe built (static aarch64)"
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 

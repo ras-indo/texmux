@@ -5,7 +5,7 @@ FILES_DIR="/data/data/com.termux/files"
 # Bump this whenever sandbox.sh changes: it is printed as the first line of
 # files/tmp/preflight.log, so a pasted log always identifies the script that
 # produced it (an old APK once kept getting debugged against a newer diagnosis).
-SANDBOX_BUILD="2026-10-20-rseq3"
+SANDBOX_BUILD="2026-10-20-diag1"
 ROOTFS_DIR="${FILES_DIR}/ROOTFS"
 APPS_BIN="${FILES_DIR}/apps/bin"
 TMP_DIR="${FILES_DIR}/tmp"
@@ -294,13 +294,28 @@ elif probe "minimal + PROOT_NO_SECCOMP=1" noseccomp "-r $ROOTFS_DIR"; then
   LAUNCH_ARGS="-r $ROOTFS_DIR"
   LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="minimal/seccomp-off"
 else
-  # Every rung failed: capture one -v 9 run so the log itself names the last
-  # syscall / signal proot saw. Without this the report is just "exit 255".
+  # Every rung failed. Capture one -v 9 run and probe this app's seccomp policy
+  # so the report names the real cause instead of "exit 255 / rootfs problem".
   /system/bin/echo "--- verbose (-v 9) tail ---" >> "$PREFLIGHT_LOG"
   $LINKER "$PROOT" $ARGS -v 9 /bin/true 2>&1 | /system/bin/tail -30 >> "$PREFLIGHT_LOG"
-  /system/bin/echo "Pre-flight failed: no proot configuration reached the rootfs."
-  /system/bin/echo "--- last 40 lines of $PREFLIGHT_LOG ---"
-  /system/bin/tail -40 "$PREFLIGHT_LOG"
+
+  /system/bin/echo ""
+  /system/bin/echo "=== DIAGNOSIS ==============================================="
+  /system/bin/head -1 "$PREFLIGHT_LOG"
+  /system/bin/echo "-- rung result --"
+  /system/bin/grep -o "^--- .* (exit [0-9]*)" "$PREFLIGHT_LOG"
+  /system/bin/echo "-- signals seen by proot --"
+  /system/bin/grep -m4 "terminated with signal" "$PREFLIGHT_LOG"
+  /system/bin/echo "-- syscalls trapped by this app's seccomp policy --"
+  if [ -x "$APPS_BIN/sysprobe" ]; then
+    "$APPS_BIN/sysprobe" 2>&1 | /system/bin/grep -E "TRAPPED|sysprobe: done"
+  else
+    /system/bin/echo "(sysprobe not deployed)"
+  fi
+  /system/bin/echo "-- last proot syscalls --"
+  /system/bin/grep -E "sysenter|sysexit" "$PREFLIGHT_LOG" | /system/bin/tail -8
+  /system/bin/echo "=== END DIAGNOSIS ==========================================="
+  /system/bin/echo "full log: $PREFLIGHT_LOG"
   android_fallback
 fi
 

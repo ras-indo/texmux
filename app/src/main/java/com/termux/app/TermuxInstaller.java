@@ -520,6 +520,9 @@ final class TermuxInstaller {
         extractAsset(activity, "terminal/termux-api", new File(appsBin, "termux-api"), true);
 
         extractAsset(activity, "android-shell/android", new File(appsBin, "android"), true);
+        // Static aarch64 helper: reports which syscalls Android's app seccomp
+        // policy traps with SIGSYS (the reason guest binaries die silently).
+        extractAsset(activity, "android-shell/sysprobe", new File(appsBin, "sysprobe"), true);
 
         // Record which APK build deployed these scripts. sandbox.sh echoes this
         // into files/tmp/preflight.log, so a pasted log proves whether the
