@@ -119,7 +119,12 @@ export PROOT_L2S_DIR="$L2S_DIR"
 if [ ! -f "$ROOTFS_DIR/etc/passwd" ]; then
   # ROOTFS_DIR itself may be missing on first run
   /system/bin/mkdir -p "$ROOTFS_DIR"
-  $LINKER "$PROOT" --link2symlink /system/bin/tar -xf "$FILES_DIR/rootfs.tar.gz" -C "$ROOTFS_DIR"
+  # No --link2symlink here: /data (ext4/f2fs) supports real hardlinks, and the
+  # extension's .l2s.<name>NNNN replacement fails with ENOENT on modern kernels
+  # (proven on both this tree and upstream proot 5.5.0).  Plain extraction keeps
+  # the hardlinks as hardlinks: perl/perl5.38.2 and gunzip/uncompress share one
+  # inode with nlink=2, and no .l2s.* junk is left behind.
+  $LINKER "$PROOT" /system/bin/tar -xf "$FILES_DIR/rootfs.tar.gz" -C "$ROOTFS_DIR"
 fi
 
 # ── Temp dir inside rootfs ──────────────────────────────────────────
@@ -194,7 +199,11 @@ ARGS="$ARGS -b $ROOTFS_DIR/tmp:/dev/shm"
 ARGS="$ARGS -b /sys"
 ARGS="$ARGS -r $ROOTFS_DIR"
 ARGS="$ARGS -0"
-ARGS="$ARGS --link2symlink"
+# --link2symlink is deliberately NOT passed for the session: the extension
+# filters link/rename/symlink syscalls and costs ~10-14% on every workload
+# (du -s /usr 901ms with it vs 773ms without, 120 guest forks 713ms vs 641ms),
+# while /data supports real hardlinks.  Re-add it only for a rootfs stored on a
+# filesystem without hardlink support.
 ARGS="$ARGS --sysvipc"
 ARGS="$ARGS -L"
 
