@@ -88,6 +88,10 @@ public class WifiAPI {
     private static LocalOnlyHotspotReservation hotspotReservation = null;
     private static String hotspotSsid = null;
     private static String hotspotPassword = null;
+    private static int hotspotBand = 0;
+    private static int hotspotChannel = 0;
+    private static boolean hotspotHidden = false;
+    private static boolean hotspotCustomConfig = false;
 
     /**
      * Unified entry point for all wifi commands.
@@ -122,6 +126,15 @@ public class WifiAPI {
                     break;
                 case "hotspot-stop":
                     onReceiveWifiHotspotStop(apiReceiver, context, intent);
+                    break;
+                case "hotspot-enable":
+                    onReceiveWifiHotspotSetEnabled(apiReceiver, context, intent, true);
+                    break;
+                case "hotspot-disable":
+                    onReceiveWifiHotspotSetEnabled(apiReceiver, context, intent, false);
+                    break;
+                case "hotspot-clients":
+                    onReceiveWifiHotspotClients(apiReceiver, context, intent);
                     break;
                 case "p2p-discover":
                     onReceiveP2pDiscover(apiReceiver, context, intent);
@@ -634,7 +647,23 @@ public class WifiAPI {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
-                    manager.startLocalOnlyHotspot(new WifiManager.LocalOnlyHotspotCallback() {
+                    // Optional custom AP (Android 11+).  Without these the platform
+                    // generates a random SSID and password, which is what the
+                    // command used to be stuck with.
+                    String desiredSsid = getIntent().getStringExtra("ssid");
+                    String desiredPassword = getIntent().getStringExtra("password");
+                    int desiredBand = getIntent().getIntExtra("band", 0);
+                    int desiredChannel = getIntent().getIntExtra("channel", 0);
+                    boolean desiredHidden = getIntent().getBooleanExtra("hidden", false);
+                    int desiredMaxClients = getIntent().getIntExtra("max_clients", 0);
+                    hotspotBand = desiredBand;
+                    hotspotChannel = desiredChannel;
+                    hotspotHidden = desiredHidden;
+                    Object softApConfig = buildSoftApConfiguration(desiredSsid, desiredPassword,
+                        desiredBand, desiredChannel, desiredHidden, desiredMaxClients);
+                    hotspotCustomConfig = softApConfig != null;
+
+                    WifiManager.LocalOnlyHotspotCallback callback = new WifiManager.LocalOnlyHotspotCallback() {
                         private void clear() {
                             hotspotRequestActive = false;
                         }
@@ -664,6 +693,10 @@ public class WifiAPI {
                                     } else {
                                         out.name("API_ERROR").value("Hotspot started but no configuration returned");
                                     }
+                                    out.name("custom_config").value(hotspotCustomConfig);
+                                    out.name("band").value(hotspotBand == 0 ? "auto" : softApBandToString(hotspotBand));
+                                    if (hotspotChannel > 0) out.name("channel").value(hotspotChannel);
+                                    if (hotspotHidden) out.name("hidden").value(true);
                                     out.endObject();
                                 }
                             });
@@ -709,7 +742,16 @@ public class WifiAPI {
                                 out -> out.println("ERROR: " + reasonStr));
                             finish();
                         }
-                    }, null);
+                    };
+                    // A refused custom config (passphrase shorter than 8 chars,
+                    // unsupported band, ...) falls back to the platform-generated
+                    // credentials instead of failing the whole command.
+                    boolean custom = softApConfig != null
+                        && startHotspotWithConfig(manager, callback, softApConfig);
+                    if (!custom) {
+                        hotspotCustomConfig = false;
+                        manager.startLocalOnlyHotspot(callback, null);
+                    }
                 } catch (IllegalStateException e) {
                     Logger.logError(LOG_TAG, "Hotspot already active: " + e.getMessage());
                     if (!resultReturned) {
@@ -743,6 +785,125 @@ public class WifiAPI {
 
     // ─── Hotspot status / stop ────────────────────────────────────────
 
+    /** @return true when the platform accepted the custom SoftApConfiguration. */
+    private static boolean startHotspotWithConfig(WifiManager manager,
+                                                  WifiManager.LocalOnlyHotspotCallback callback,
+                                                  Object softApConfig) {
+        try {
+            java.lang.reflect.Method start = WifiManager.class.getMethod("startLocalOnlyHotspot",
+                WifiManager.LocalOnlyHotspotCallback.class, Handler.class, softApConfig.getClass());
+            start.invoke(manager, callback, null, softApConfig);
+            return true;
+        } catch (Throwable t) {
+            Logger.logWarn(LOG_TAG, "startLocalOnlyHotspot(SoftApConfiguration) rejected: " + t);
+            return false;
+        }
+    }
+
+    /**
+     * Build a SoftApConfiguration from the CLI options.
+     *
+     * The class and its builder are public API 30+ but are not present in the
+     * SDK stubs, so everything goes through reflection.  Returns null when no
+     * custom option was given (the platform then picks a random SSID/password)
+     * or when the platform refuses the values (e.g. a passphrase shorter than 8
+     * characters), which callers report instead of hiding.
+     */
+    private static Object buildSoftApConfiguration(String ssid, String password, int band,
+                                                   int channel, boolean hidden, int maxClients) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null;
+        if (ssid == null && password == null && band == 0 && channel == 0 && !hidden && maxClients == 0) {
+            return null;
+        }
+        try {
+            Class<?> builderClass = Class.forName("android.net.wifi.SoftApConfiguration$Builder");
+            Object builder = builderClass.getConstructor().newInstance();
+            if (ssid != null) builderClass.getMethod("setSsid", String.class).invoke(builder, ssid);
+            if (password != null) builderClass.getMethod("setPassphrase", String.class).invoke(builder, password);
+            if (band > 0) builderClass.getMethod("setBand", int.class).invoke(builder, band);
+            if (channel > 0) builderClass.getMethod("setChannel", int.class).invoke(builder, channel);
+            if (hidden) builderClass.getMethod("setHiddenSsid", boolean.class).invoke(builder, true);
+            if (maxClients > 0) builderClass.getMethod("setMaxNumberOfClients", int.class).invoke(builder, maxClients);
+            return builderClass.getMethod("build").invoke(builder);
+        } catch (Throwable t) {
+            Logger.logWarn(LOG_TAG, "SoftApConfiguration rejected the requested values: " + t);
+            return null;
+        }
+    }
+
+    /**
+     * Hotspot interfaces the platform exposes (ap0, swlan0, wlan1, softap*).
+     *
+     * This is how a system hotspot enabled from Android's own Settings becomes
+     * visible to us: we are not allowed to ask TetheringManager for its state
+     * (that needs TETHER_PRIVILEGED), but the interface list is free.
+     */
+    private static void writeApInterfaces(JsonWriter out) throws Exception {
+        java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+        java.util.List<java.net.NetworkInterface> apInterfaces = new ArrayList<>();
+        while (interfaces != null && interfaces.hasMoreElements()) {
+            java.net.NetworkInterface iface = interfaces.nextElement();
+            String name = iface.getName();
+            if (name == null) continue;
+            if (name.startsWith("ap") || name.startsWith("swlan") || name.startsWith("wlan1")
+                || name.startsWith("softap")) {
+                apInterfaces.add(iface);
+            }
+        }
+        out.name("system_hotspot_active").value(!apInterfaces.isEmpty());
+        out.name("ap_interfaces");
+        out.beginArray();
+        for (java.net.NetworkInterface iface : apInterfaces) {
+            out.beginObject();
+            out.name("name").value(iface.getName());
+            out.name("up").value(iface.isUp());
+            out.name("addresses");
+            out.beginArray();
+            for (java.net.InterfaceAddress address : iface.getInterfaceAddresses()) {
+                out.value(address.getAddress().getHostAddress() + "/" + address.getNetworkPrefixLength());
+            }
+            out.endArray();
+            out.endObject();
+        }
+        out.endArray();
+    }
+
+    /**
+     * Neighbours seen on the hotspot interfaces, read from the kernel ARP table.
+     *
+     * Android has no public API that lists clients of an access point, so this is
+     * the honest best effort: /proc/net/arp entries whose device is one of the AP
+     * interfaces.  On builds where the file is unreadable the array stays empty
+     * and status_note says why.
+     */
+    private static void writeHotspotClients(JsonWriter out) {
+        out.name("clients");
+        out.beginArray();
+        try (java.io.BufferedReader reader =
+                 new java.io.BufferedReader(new java.io.FileReader("/proc/net/arp"))) {
+            String line;
+            boolean headerSkipped = false;
+            while ((line = reader.readLine()) != null) {
+                if (!headerSkipped) { headerSkipped = true; continue; }
+                String[] parts = line.trim().split("\\s+");
+                if (parts.length < 6) continue;
+                String device = parts[5];
+                if (!(device.startsWith("ap") || device.startsWith("swlan")
+                      || device.startsWith("wlan1") || device.startsWith("softap"))) continue;
+                boolean complete = !"0x0".equals(parts[2]);
+                if (!complete) continue;
+                out.beginObject();
+                out.name("ip").value(parts[0]);
+                out.name("mac").value(parts[3]);
+                out.name("interface").value(device);
+                out.endObject();
+            }
+        } catch (Throwable ignored) {
+            // /proc/net/arp is restricted on some releases; empty list is fine.
+        }
+        out.endArray();
+    }
+
     /**
      * Report the hotspot this app started (LocalOnlyHotspot) plus, when the
      * platform exposes it, the system Soft AP configuration.
@@ -763,7 +924,17 @@ public class WifiAPI {
                     out.name("type").value("local_only");
                     if (hotspotSsid != null) out.name("ssid").value(hotspotSsid);
                     if (hotspotPassword != null) out.name("password").value(hotspotPassword);
+                    out.name("own_custom_config").value(hotspotCustomConfig);
+                    out.name("own_band").value(hotspotBand == 0 ? "auto" : softApBandToString(hotspotBand));
+                    if (hotspotChannel > 0) out.name("own_channel").value(hotspotChannel);
+                    out.name("own_hidden").value(hotspotHidden);
                 }
+
+                // Interfaces tell us whether *a* hotspot (ours or the system one
+                // from Settings) is up, which TetheringManager won't disclose
+                // without TETHER_PRIVILEGED.
+                writeApInterfaces(out);
+                writeHotspotClients(out);
 
                 // SoftApConfiguration is readable from Android 11; below that the
                 // fields stay absent instead of guessing.
@@ -828,6 +999,108 @@ public class WifiAPI {
                     hotspotSsid = null;
                     hotspotPassword = null;
                 }
+                out.endObject();
+            }
+        });
+    }
+
+    /**
+     * Enable or disable the *system* Wi-Fi hotspot — the same AP Android's
+     * Settings toggles, the one that shares the phone's connection.
+     *
+     * This is the privileged path: WifiManager.setWifiApEnabled() is @SystemApi
+     * and requires android.permission.TETHER_PRIVILEGED, which is
+     * signature|privileged.  `pm grant` refuses it; the app has to be installed
+     * as a priv-app that is whitelisted in privapp-permissions (or the device
+     * has to run the call as root).  When the permission is present the call
+     * works; when it is missing the failure is reported verbatim together with
+     * the exact XML needed to grant it, instead of failing silently.
+     */
+    private static void onReceiveWifiHotspotSetEnabled(TermuxApiReceiver apiReceiver, Context context,
+                                                       Intent intent, final boolean enable) {
+        Logger.logDebug(LOG_TAG, "onReceiveWifiHotspotSetEnabled(" + enable + ")");
+
+        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+            @Override
+            public void writeJson(JsonWriter out) throws Exception {
+                out.beginObject();
+                out.name("requested_state").value(enable ? "enabled" : "disabled");
+
+                // Path that always works, privileged or not: open the system
+                // tethering screen so the user can flip it by hand.
+                if (intent.getBooleanExtra("open_settings", false)) {
+                    Intent settings = new Intent(android.provider.Settings.ACTION_TETHER_SETTINGS);
+                    settings.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(settings);
+                    out.name("opened_settings").value(true);
+                    out.endObject();
+                    return;
+                }
+
+                String ssid = intent.getStringExtra("ssid");
+                String password = intent.getStringExtra("password");
+                WifiManager manager = (WifiManager) context.getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
+
+                try {
+                    WifiConfiguration config = null;
+                    if (ssid != null) {
+                        config = new WifiConfiguration();
+                        config.SSID = "\"" + ssid + "\"";
+                        if (password != null && !password.isEmpty()) {
+                            config.preSharedKey = "\"" + password + "\"";
+                            config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_PSK);
+                        } else {
+                            config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.NONE);
+                        }
+                    }
+                    java.lang.reflect.Method method = WifiManager.class
+                        .getMethod("setWifiApEnabled", WifiConfiguration.class, boolean.class);
+                    Object result = method.invoke(manager, config, enable);
+                    boolean accepted = Boolean.TRUE.equals(result);
+                    out.name("accepted").value(accepted);
+                    if (accepted) {
+                        out.name("note").value(enable
+                            ? "Hotspot enable requested; give clients a moment to connect"
+                            : "Hotspot disable requested");
+                    } else {
+                        out.name("API_ERROR").value("setWifiApEnabled() returned false");
+                    }
+                } catch (java.lang.reflect.InvocationTargetException e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    out.name("accepted").value(false);
+                    out.name("error_type").value(cause.getClass().getSimpleName());
+                    out.name("error").value(String.valueOf(cause.getMessage()));
+                    out.name("required_permission").value("android.permission.TETHER_PRIVILEGED");
+                    out.name("grant_note").value(
+                        "signature|privileged: `pm grant` rejects it. Install the APK as a priv-app "
+                        + "and whitelist it, or perform the call as root.");
+                    out.name("privapp_permissions_xml").value(
+                        "<permissions><privapp-permissions package=\"com.termux\">"
+                        + "<permission name=\"android.permission.TETHER_PRIVILEGED\"/>"
+                        + "<permission name=\"android.permission.NETWORK_SETTINGS\"/>"
+                        + "</privapp-permissions></permissions>");
+                    out.name("settings_fallback").value("termux-wifi hotspot-enable --open-settings");
+                } catch (NoSuchMethodException e) {
+                    out.name("accepted").value(false);
+                    out.name("error_type").value("NoSuchMethodException");
+                    out.name("error").value(
+                        "WifiManager.setWifiApEnabled() is not available on this Android version");
+                    out.name("settings_fallback").value("termux-wifi hotspot-enable --open-settings");
+                }
+                out.endObject();
+            }
+        });
+    }
+
+    /** Clients seen on the hotspot interfaces (kernel ARP table, best effort). */
+    private static void onReceiveWifiHotspotClients(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
+        Logger.logDebug(LOG_TAG, "onReceiveWifiHotspotClients");
+        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+            @Override
+            public void writeJson(JsonWriter out) throws Exception {
+                out.beginObject();
+                writeHotspotClients(out);
                 out.endObject();
             }
         });

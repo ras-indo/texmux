@@ -169,8 +169,17 @@ COMMANDS:
                                --sort signal|ssid|freq  --limit <n>
   enable [--on|--off]          Enable or disable WiFi
   hotspot                      Start LocalOnlyHotspot (Android 8.0+)
-  hotspot-status               Hotspot state: active, SSID/password, band, channel
+                               Options (Android 11+): --ssid <nama>
+                               --password <pass>  --band 2.4|5|6|60
+                               --channel <n>  --max-clients <n>  --hidden
+  hotspot-status               Hotspot state: active, SSID/password, band, channel,
+                               system AP interfaces and ARP clients
   hotspot-stop                 Release the hotspot that 'hotspot' started
+  hotspot-enable [options]     Enable the SYSTEM hotspot (tethering). Needs
+                               TETHER_PRIVILEGED (priv-app + whitelist);
+                               --open-settings opens Android's tethering page
+  hotspot-disable              Disable the SYSTEM hotspot
+  hotspot-clients              Clients seen on the hotspot interface (ARP)
   p2p-discover [--timeout ms]  Discover P2P peers
   p2p-connect --address <mac>  Connect to a P2P peer
   p2p-group                    Show current P2P group info
@@ -337,23 +346,35 @@ Requires:
   - WiFi dalam keadaan ON
 
 Output JSON:
-  { "ssid": "DIRECT-...", "password": "xxxxx", "frequency": 2450 }
+  { "ssid": "TermuxAP", "password": "rahasia123", "custom_config": true,
+    "band": "5GHz", "channel": 36, "hidden": true }
 
-  ssid       Nama jaringan hotspot (dibuat acak oleh sistem, tidak bisa
-             dikustomisasi)
-  password   Password jaringan (dibuat acak oleh sistem)
-  frequency  Frekuensi dalam MHz (2450 = 2.4 GHz, 5180 = 5 GHz)
+  ssid           Nama hotspot
+  password       Password hotspot
+  custom_config  true bila opsi di bawah dipakai (Android 11+)
+  band           Band hasil konfigurasi ("auto" bila tidak diset)
+  channel        Channel (bila diset)
+
+OPSI (Android 11+; tanpa opsi = SSID/password acak dari sistem):
+  --ssid <nama>        SSID hotspot
+  --password <pass>    Password (minimal 8 karakter untuk WPA2)
+  --band 2.4|5|6|60    Band frekuensi
+  --channel <n>        Channel tertentu
+  --max-clients <n>    Batas jumlah client
+  --hidden             Sembunyikan SSID
 
 Catatan:
-  - Hanya SATU hotspot yang dapat aktif per UID (application) dalam satu waktu
-  - SSID dan password TIDAK dapat dikustomisasi—ditentukan oleh sistem
-  - Hotspot berhenti ketika tidak ada client yang terhubung (idle timeout)
-  - Pada beberapa device, hotspot berhenti saat aplikasi masuk ke background
-  - Gunakan Ctrl+C untuk menghentikan hotspot secara manual
-  - Jika hotspot ditolak (kebijakan device), lihat log sistem untuk detail
+  - Ini LocalOnlyHotspot milik app: TIDAK membagi koneksi internet
+  - Untuk hotspot SISTEM (tethering, bagi koneksi internet):
+      termux-wifi hotspot-enable                    (butuh TETHER_PRIVILEGED)
+      termux-wifi hotspot-enable --open-settings     (buka menu, tanpa izin)
+  - Hanya SATU hotspot per UID dalam satu waktu
+  - Hotspot berhenti bila reservation dilepas (hotspot-stop) atau app dimatikan
 
 Contoh:
   termux-wifi hotspot
+  termux-wifi hotspot --ssid TermuxAP --password rahasia123 --band 5
+  termux-wifi hotspot --ssid TermuxAP --password rahasia123 --hidden --max-clients 4
 EOF
 }
 
@@ -700,10 +721,39 @@ cmd_enable() {
 }
 
 cmd_hotspot() {
-    case "${1:-}" in
-        -h|--help) show_hotspot_usage; exit 0 ;;
+    local ssid="" password="" band="" channel="" max_clients="" hidden=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)      show_hotspot_usage; exit 0 ;;
+            --ssid)         ssid="$2"; shift 2 ;;
+            --password)     password="$2"; shift 2 ;;
+            --band)         band="$2"; shift 2 ;;
+            --channel)      channel="$2"; shift 2 ;;
+            --max-clients)  max_clients="$2"; shift 2 ;;
+            --hidden)       hidden=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
+    # Nama band -> konstanta SoftApConfiguration (1=2.4, 2=5, 3=6, 4=60GHz)
+    local band_num=""
+    case "$band" in
+        ""|auto)        ;;
+        2.4|2.4ghz|24)  band_num=1 ;;
+        5|5ghz)         band_num=2 ;;
+        6|6ghz)         band_num=3 ;;
+        60|60ghz)       band_num=4 ;;
+        *) echo "Unknown band: $band (pakai 2.4, 5, 6, atau 60)" >&2; exit 1 ;;
     esac
-    call_api --es command hotspot
+
+    local extras=(--es command hotspot)
+    [ -n "$ssid" ]        && extras+=(--es ssid "$ssid")
+    [ -n "$password" ]    && extras+=(--es password "$password")
+    [ -n "$band_num" ]    && extras+=(--ei band "$band_num")
+    [ -n "$channel" ]     && extras+=(--ei channel "$channel")
+    [ -n "$max_clients" ] && extras+=(--ei max_clients "$max_clients")
+    [ "$hidden" = true ]  && extras+=(--ez hidden true)
+    call_api "${extras[@]}"
 }
 
 cmd_hotspot_status() {
@@ -755,6 +805,95 @@ EOF
             exit 0 ;;
     esac
     call_api --es command hotspot-stop
+}
+
+cmd_hotspot_enable() {
+    local ssid="" password="" open=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                cat <<EOF
+Usage: $SCRIPTNAME hotspot-enable [--ssid <nama>] [--password <pass>] [--open-settings]
+
+Menyalakan hotspot SISTEM (tethering — berbagi koneksi internet), bukan
+LocalOnlyHotspot milik app.
+
+IZIN: WifiManager.setWifiApEnabled() butuh android.permission.TETHER_PRIVILEGED.
+Izin itu signature|privileged, jadi 'pm grant' DITOLAK. Cara yang benar:
+  1. Pasang APK sebagai priv-app, lalu whitelist di
+     /system/etc/permissions/privapp-permissions-<rom>.xml :
+       <permissions><privapp-permissions package="com.termux">
+         <permission name="android.permission.TETHER_PRIVILEGED"/>
+         <permission name="android.permission.NETWORK_SETTINGS"/>
+       </privapp-permissions></permissions>
+  2. Reboot.
+Tanpa itu, pakai --open-settings untuk membuka menu tethering Android.
+
+Output JSON:
+  accepted            true bila platform menerima permintaan
+  requested_state     "enabled"
+  error/error_type    alasan penolakan (mis. SecurityException)
+  required_permission izin yang kurang
+  settings_fallback   perintah alternatif bila izin tidak ada
+
+Contoh:
+  termux-wifi hotspot-enable
+  termux-wifi hotspot-enable --ssid TermuxAP --password rahasia123
+  termux-wifi hotspot-enable --open-settings
+EOF
+                exit 0 ;;
+            --ssid)          ssid="$2"; shift 2 ;;
+            --password)      password="$2"; shift 2 ;;
+            --open-settings) open=true; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    local extras=(--es command hotspot-enable)
+    [ -n "$ssid" ] && extras+=(--es ssid "$ssid")
+    [ -n "$password" ] && extras+=(--es password "$password")
+    [ "$open" = true ] && extras+=(--ez open_settings true)
+    call_api "${extras[@]}"
+}
+
+cmd_hotspot_disable() {
+    case "${1:-}" in
+        -h|--help)
+            cat <<EOF
+Usage: $SCRIPTNAME hotspot-disable
+
+Mematikan hotspot SISTEM (kebalikan dari hotspot-enable).
+Butuh TETHER_PRIVILEGED seperti hotspot-enable.
+
+Output JSON: { "requested_state": "disabled", "accepted": true/false, ... }
+
+Contoh:
+  termux-wifi hotspot-disable
+EOF
+            exit 0 ;;
+    esac
+    call_api --es command hotspot-disable
+}
+
+cmd_hotspot_clients() {
+    case "${1:-}" in
+        -h|--help)
+            cat <<EOF
+Usage: $SCRIPTNAME hotspot-clients
+
+Menampilkan client yang terlihat di interface hotspot, dibaca dari tabel ARP
+kernel (/proc/net/arp). Android tidak punya API publik untuk daftar client AP,
+jadi ini best-effort: hanya client yang sudah bertukar trafik (entry ARP
+lengkap) yang muncul.
+
+Output JSON:
+  clients            array { ip, mac, interface }
+
+Contoh:
+  termux-wifi hotspot-clients | jq -r '.clients[] | "\\(.ip)\\t\\(.mac)"'
+EOF
+            exit 0 ;;
+    esac
+    call_api --es command hotspot-clients
 }
 
 cmd_p2p_discover() {
@@ -871,6 +1010,9 @@ case "$CMD" in
     hotspot)          cmd_hotspot "$@" ;;
     hotspot-status)   cmd_hotspot_status "$@" ;;
     hotspot-stop)     cmd_hotspot_stop "$@" ;;
+    hotspot-enable)   cmd_hotspot_enable "$@" ;;
+    hotspot-disable)  cmd_hotspot_disable "$@" ;;
+    hotspot-clients)  cmd_hotspot_clients "$@" ;;
     p2p-discover)     cmd_p2p_discover "$@" ;;
     p2p-connect)      cmd_p2p_connect "$@" ;;
     p2p-group)        cmd_p2p_group "$@" ;;

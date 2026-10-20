@@ -154,10 +154,20 @@ jobs:
           APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
           rm -rf /tmp/apk-x && mkdir -p /tmp/apk-x
           unzip -oq "$APK" -d /tmp/apk-x 'classes*.dex' 'assets/termux-api/bin/termux-wifi'
-          for token in hotspot-status hotspot-stop system_channel rssi_percent le_supported ip_addresses; do
+          for token in hotspot-status hotspot-stop hotspot-enable hotspot-disable hotspot-clients \
+                       system_channel rssi_percent le_supported ip_addresses; do
             grep -aq -- "$token" /tmp/apk-x/classes*.dex \
               || { echo "!! dex is missing the '$token' addition"; exit 1; }
           done
+          # TETHER_PRIVILEGED lives in the binary manifest, not in the dex.
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | head -1)
+          if [ -n "${AAPT:-}" ]; then
+            "$AAPT" dump permissions "$APK" | grep -q TETHER_PRIVILEGED \
+              || { echo "!! manifest lost TETHER_PRIVILEGED"; exit 1; }
+          else
+            unzip -p "$APK" AndroidManifest.xml | strings -a -el | grep -q TETHER_PRIVILEGED \
+              || { echo "!! manifest lost TETHER_PRIVILEGED"; exit 1; }
+          fi
           for opt in --band --min-rssi --dedupe; do
             grep -q -- "$opt" /tmp/apk-x/assets/termux-api/bin/termux-wifi \
               || { echo "!! termux-wifi is missing $opt"; exit 1; }
