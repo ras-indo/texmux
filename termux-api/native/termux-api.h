@@ -2,6 +2,8 @@
 #define TERMUX_API_H
 
 #include <stdlib.h>
+#include <stdint.h>
+#include <stddef.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -27,6 +29,17 @@ int transmit_socket_to_stdout(int);
 
 /* Main entry point: connect to SocketListener, send command, return FD */
 int run_api_command(int, char**);
+
+/* Process exit status for the command line client.  run_api_command() keeps
+ * returning the received descriptor (or -1) so fd-passing APIs like termux-usb
+ * still work, while the status that main() reports is tracked here:
+ *   0 = ok, 1 = usage error, 2 = could not reach the API, 3 = no response. */
+extern int termux_api_exit_status;
+
+#define TERMUX_API_EXIT_OK 0
+#define TERMUX_API_EXIT_USAGE 1
+#define TERMUX_API_EXIT_NO_CONNECTION 2
+#define TERMUX_API_EXIT_NO_RESPONSE 3
 
 /* ─── JNI-accessible utility functions ─────────────────────────── */
 

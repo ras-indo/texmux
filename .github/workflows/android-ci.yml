@@ -100,6 +100,16 @@ jobs:
           md5sum "$L"
           echo "OK: fallback proot available"
 
+      - name: Termux:API client protocol test (vs mock daemon)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tapi-build
+          gcc -O2 -Wall -DPREFIX='"/tmp/apitest"' \
+            -o /tmp/tapi-build/termux-api \
+            termux-api/native/termux-api-broadcast.c termux-api/native/termux-api.c
+          file /tmp/tapi-build/termux-api
+          python3 termux-api/native/test-protocol.py /tmp/tapi-build/termux-api
+
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
@@ -119,6 +129,24 @@ jobs:
           strings /tmp/apk-proot | grep -q 'extension/sysvipc/sysvipc.c' \
             || { echo "!! APK proot lost sysvipc"; exit 1; }
           echo "OK: APK ships the fresh proot + fallback"
+
+      - name: Verify the APK ships a single, fixed termux-api client
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
+          unzip -p "$APK" assets/termux-api/bin/termux-api > /tmp/apk-termux-api
+          file /tmp/apk-termux-api | grep -q 'ELF 64-bit' \
+            || { echo "!! assets/termux-api/bin/termux-api is not an ELF binary"; exit 1; }
+          strings /tmp/apk-termux-api | grep -q -- '--timeout' \
+            || { echo "!! client lost the --timeout option (stale binary shipped?)"; exit 1; }
+          strings /tmp/apk-termux-api | grep -q 'Exit status: 0 ok, 1 usage error' \
+            || { echo "!! client lost its documented exit codes"; exit 1; }
+          if unzip -l "$APK" | grep -qE 'assets/termux-api/(termux-api$|libexec/termux-api-broadcast)'; then
+            echo "!! stale duplicate termux-api assets are still bundled"; exit 1
+          fi
+          size=$(stat -c%s /tmp/apk-termux-api)
+          echo "termux-api client in APK: $size bytes, --timeout + exit codes present"
+          echo "OK: one termux-api client, no stale duplicates"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |

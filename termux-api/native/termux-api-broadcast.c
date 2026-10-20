@@ -19,5 +19,5 @@ int main(int argc, char** argv) {
 
     if (fd != -1) { exec_callback(fd); }
 
-    return 0;
+    return termux_api_exit_status;
 }

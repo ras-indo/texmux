@@ -8,6 +8,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +34,45 @@
 #define FILESYSTEM_SOCKET_PATH "/data/data/com.termux/files/termux-api.sock"
 #define SOCKET_TIMEOUT_SEC 30
 #define STDIN_MAX_BYTES (64 * 1024 * 1024)  /* 64 MB — safety cap for inline stdin */
+
+/* Exit status reported by main(); see termux-api.h. */
+int termux_api_exit_status = TERMUX_API_EXIT_OK;
+
+/* Seconds to wait for the handler's response; --timeout overrides it. */
+static int response_timeout_sec = SOCKET_TIMEOUT_SEC;
+
+static void print_usage(FILE *out, const char *prog) {
+    fprintf(out,
+        "Usage: %s <method> [extras...]\n"
+        "\n"
+        "Send one Termux API call to the running app and print its response.\n"
+        "\n"
+        "Arguments\n"
+        "  --es  <key> <string>    string extra\n"
+        "  -e    <key> <string>    same as --es\n"
+        "  --ez  <key> <bool>      boolean extra (true/false)\n"
+        "  --ei  <key> <int>       integer extra\n"
+        "  --ef  <key> <float>     float extra\n"
+        "  --esa <key> <a,b,c>     string array extra (comma separated)\n"
+        "  --eia <key> <1,2,3>     int array extra\n"
+        "  --ela <key> <1,2,3>     long array extra\n"
+        "  -a    <action>          intent action to dispatch\n"
+        "  --timeout <seconds>     how long to wait for a response (default %d)\n"
+        "  -h, --help              this help\n"
+        "  --version               print the client version\n"
+        "\n"
+        "Data piped on stdin is inlined for methods that accept it\n"
+        "(Clipboard, SmsSend, Tts, StorageGet, MediaScanner).\n"
+        "\n"
+        "Exit status: 0 ok, 1 usage error, 2 API unreachable, 3 no response.\n"
+        "\n"
+        "Examples\n"
+        "  %s BatteryStatus\n"
+        "  %s Toast --es text \"hello\" --ez short false\n"
+        "  %s Notification --es title Build --es content done --ei id 7\n"
+        "  echo hello | %s Clipboard Set --es text hello\n",
+        prog, SOCKET_TIMEOUT_SEC, prog, prog, prog, prog);
+}
 
 /*
  * JSON protocol client for Termux API.
@@ -387,14 +427,15 @@ char *build_json_command(int argc, char **argv, size_t *out_len) {
             }
         }
         else {
-            /* Bare value (legacy compatibility) — treat as string arg */
-            char *ev = json_escape(flag);
+            /* Bare value (legacy compatibility) — treat as string key with a
+             * true value, e.g. `Clipboard Set` becomes {"Set": true}.  The key
+             * must keep both quotes: dropping the opening one produced
+             * {"args":{Set:true}}, which is not valid JSON at all. */
+            char *ek = json_escape(flag);
             if (first_arg) { pos += snprintf(buf + pos, cap - pos, ",\"args\":{"); first_arg = 0; }
             else { pos += snprintf(buf + pos, cap - pos, ","); }
-            pos += snprintf(buf + pos, cap - pos, "%s", ev + 1); /* skip leading " */
-            buf[pos - 1] = ':'; /* change trailing " to : */
-            pos += snprintf(buf + pos, cap - pos, "true"); /* just a flag */
-            free(ev);
+            pos += snprintf(buf + pos, cap - pos, "%s:true", ek);
+            free(ek);
         }
 
         if (pos + 256 >= cap) { cap *= 2; buf = realloc(buf, cap); }
@@ -485,6 +526,12 @@ static int read_response_on_connection(int fd) {
         } else if (errno == EINTR) {
             msg.msg_controllen = sizeof(cbuf);
             continue;
+        } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            /* SO_RCVTIMEO fired — the handler never wrote a response. */
+            fprintf(stderr, "ERROR: no response within %d s\n", response_timeout_sec);
+            termux_api_exit_status = TERMUX_API_EXIT_NO_RESPONSE;
+            n = 0;
+            break;
         } else {
             break;
         }
@@ -552,9 +599,31 @@ int run_api_command(int argc, char **argv) {
         fflush(stdout);
         return -1;
     }
-    if (argc < 2) {
-        fprintf(stderr, "Usage: termux-api <method> [extras...]\n");
+    if (argc >= 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+        print_usage(stdout, "termux-api");
         return -1;
+    }
+    if (argc < 2) {
+        print_usage(stderr, "termux-api");
+        termux_api_exit_status = TERMUX_API_EXIT_USAGE;
+        return -1;
+    }
+
+    /* --timeout N is a client-side option, so drop it from argv before the
+     * JSON builder runs — otherwise it would be sent to the app as a bare
+     * `"--timeout": true` argument (unknown flags become boolean extras). */
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--timeout") != 0) continue;
+        if (i + 1 >= argc) {
+            fprintf(stderr, "ERROR: --timeout needs a value in seconds\n");
+            termux_api_exit_status = TERMUX_API_EXIT_USAGE;
+            return -1;
+        }
+        int t = atoi(argv[i + 1]);
+        if (t > 0) response_timeout_sec = t;
+        for (int j = i; j + 2 < argc; j++) argv[j] = argv[j + 2];
+        argc -= 2;
+        i--;
     }
 
     const char *method = argv[1];
@@ -571,8 +640,27 @@ int run_api_command(int argc, char **argv) {
      */
     int fd = connect_dispatcher();
     if (fd == -1) {
-        return run_api_command_fallback(argc, argv);
+        /* The legacy path shells out to $PREFIX/bin/am.  When that binary is
+         * missing (app not installed, or PREFIX not deployed) there is nothing
+         * to wait for, so fail immediately instead of burning the response
+         * timeout — scripts used to hang 30 s on every call in that state. */
+        if (access(PREFIX "/bin/am", X_OK) != 0) {
+            fprintf(stderr,
+                "ERROR: Termux API unreachable and " PREFIX "/bin/am is missing.\n"
+                "       Is the Termux app installed and running?\n");
+            termux_api_exit_status = TERMUX_API_EXIT_NO_CONNECTION;
+            return -1;
+        }
+        int rc = run_api_command_fallback(argc, argv);
+        if (rc == -1) termux_api_exit_status = TERMUX_API_EXIT_NO_CONNECTION;
+        return rc;
     }
+
+    /* --timeout applies to both writing the request and reading the answer, so
+     * a handler that never replies cannot hang a script forever. */
+    struct timeval tv = { .tv_sec = response_timeout_sec, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
     /* ── Create output socket for streaming APIs ──────────────── */
     int output_server_fd = -1;
@@ -583,7 +671,7 @@ int run_api_command(int argc, char **argv) {
         generate_uuid(output_addr_str);
         output_server_fd = create_abstract_server_socket(output_addr_str, &output_addr);
         if (output_server_fd == -1) { close(fd); return 1; }
-        set_accept_timeout(output_server_fd, SOCKET_TIMEOUT_SEC);
+        set_accept_timeout(output_server_fd, response_timeout_sec);
     }
 
     /* ── Build JSON command ────────────────────────────────────── */
@@ -616,6 +704,7 @@ int run_api_command(int argc, char **argv) {
 
     if (!ok) {
         fprintf(stderr, "ERROR: Failed to send command\n");
+        termux_api_exit_status = TERMUX_API_EXIT_NO_CONNECTION;
         close(fd);
         if (output_server_fd != -1) close(output_server_fd);
         return 1;
@@ -734,7 +823,7 @@ static int run_api_command_fallback(int argc, char **argv) {
     int response_fd;
     for (;;) {
         struct pollfd pfd = { .fd = input_server_fd, .events = POLLIN };
-        int pr = poll(&pfd, 1, SOCKET_TIMEOUT_SEC * 1000);
+        int pr = poll(&pfd, 1, response_timeout_sec * 1000);
         if (pr < 0) {
             if (errno == EINTR) continue;
             perror("poll(input)");
@@ -874,9 +963,13 @@ void* transmit_stdin_to_socket(void* arg) {
 
 int transmit_socket_to_stdout(int input_server_fd) {
     struct pollfd pfd = { .fd = input_server_fd, .events = POLLIN };
-    int pr = poll(&pfd, 1, SOCKET_TIMEOUT_SEC * 1000);
+    int pr = poll(&pfd, 1, response_timeout_sec * 1000);
     if (pr <= 0) {
-        if (pr == 0) fprintf(stderr, "ERROR: Timeout waiting for streaming connection.\n");
+        if (pr == 0) {
+            fprintf(stderr, "ERROR: no response within %d s (streaming connection never arrived)\n",
+                    response_timeout_sec);
+            termux_api_exit_status = TERMUX_API_EXIT_NO_RESPONSE;
+        }
         else perror("poll(input)");
         return -1;
     }

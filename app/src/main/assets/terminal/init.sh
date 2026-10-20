@@ -185,9 +185,15 @@ for _tapi_script in "${TERMUX_API_PREFIX}/bin/termux-"*; do
     ln -sf "$_tapi_script" "/usr/local/bin/${_tapi_name}"
 done
 
-# Symlink termux-api → termux-api-broadcast (kalo belum ada)
-if [ -f "${TERMUX_API_PREFIX}/libexec/termux-api-broadcast" ] && [ ! -e "/usr/local/bin/termux-api" ]; then
-    ln -sf "${TERMUX_API_PREFIX}/libexec/termux-api-broadcast" "/usr/local/bin/termux-api"
+# termux-api → client terkompilasi.  Link lama bisa menunjuk ke
+# libexec/termux-api-broadcast (build lama: tanpa --timeout/--help/exit code),
+# jadi yang dicek target link-nya, bukan cuma keberadaan path.
+_TAPI_CLIENT="${TERMUX_API_PREFIX}/bin/termux-api"
+if [ -f "$_TAPI_CLIENT" ]; then
+    _tapi_current=$(readlink "/usr/local/bin/termux-api" 2>/dev/null)
+    if [ "$_tapi_current" != "$_TAPI_CLIENT" ]; then
+        ln -sf "$_TAPI_CLIENT" "/usr/local/bin/termux-api"
+    fi
 fi
 
 # ---- 'android' command — cek dulu baru tulis ──────────────────────

@@ -509,9 +509,11 @@ final class TermuxInstaller {
         extractAsset(activity, "terminal/setup.sh", new File(appsBin, "setup"), true);
         extractAsset(activity, "terminal/utils", new File(appsBin, "utils"), true);
 
-        // Deploy the Java-based termux-api client (replaces the C binary for direct socket communication).
-        // This is extracted as termux-api-client so it doesn't collide with the C binary at $PREFIX/libexec/termux-api.
-        extractAsset(activity, "terminal/termux-api", new File(appsBin, "termux-api"), true);
+        // The termux-api entry point is the compiled client deployed by
+        // deployTermuxApiPackage into apps/com.termux/bin.  Nothing is written
+        // to apps/bin/termux-api any more: the shell wrapper that used to live
+        // there shelled out to a client that is never built and produced
+        // invalid JSON for array/boolean extras.
 
         extractAsset(activity, "android-shell/android", new File(appsBin, "android"), true);
 
@@ -544,14 +546,18 @@ final class TermuxInstaller {
         Logger.logInfo(LOG_TAG, "Extracted asset " + assetPath + " to " + target.getAbsolutePath());
     }
 
-    /** Deploy a termux-api binary from assets, tolerating FileNotFoundException for incremental builds. */
-    private static void deployTermuxApiBinary(Activity activity, String assetPath, File dir, String name) {
-        try {
-            extractAsset(activity, assetPath, new File(dir, name), true);
-        } catch (java.io.FileNotFoundException e) {
-            Logger.logDebug(LOG_TAG, "termux-api binary not found in assets, skipping: " + assetPath);
+    /**
+     * True when {@code file} starts with the ELF magic.  Used to catch a build
+     * where a script ended up at a path that must hold the compiled client.
+     */
+    private static boolean isElfBinary(File file) {
+        if (file == null || !file.isFile()) return false;
+        try (java.io.FileInputStream in = new java.io.FileInputStream(file)) {
+            byte[] magic = new byte[4];
+            if (in.read(magic) != 4) return false;
+            return magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F';
         } catch (Exception e) {
-            Logger.logWarn(LOG_TAG, "Failed to deploy " + name + ": " + e.getMessage());
+            return false;
         }
     }
 
@@ -1040,8 +1046,10 @@ final class TermuxInstaller {
         libexecDir.mkdirs();
         binDir.mkdirs();
 
-        // termux-api-broadcast — direct socket, no fork (stdin/notification support)
-        deployTermuxApiBinary(activity, "termux-api/libexec/termux-api-broadcast", libexecDir, "termux-api-broadcast");
+        // termux-api-broadcast is no longer shipped as its own asset.  The copy
+        // that lived there drifted from bin/termux-api (older build: no
+        // --timeout, no --help, no exit codes), so it is derived from the
+        // freshly deployed client below instead.
 
         // termux-callback script
         try (InputStream in = activity.getAssets().open("termux-api/libexec/termux-callback")) {
@@ -1101,6 +1109,30 @@ final class TermuxInstaller {
             }
         }
         Logger.logInfo(LOG_TAG, "Deployed " + scriptNames.length + " termux-api scripts to " + binDir.getAbsolutePath());
+
+        // Keep libexec/termux-api-broadcast as an exact copy of the client we
+        // just installed, so the pre-flight checks and any caller using that
+        // path run the same build as bin/termux-api.
+        File apiEntryPoint = new File(binDir, "termux-api");
+        File apiBroadcastCopy = new File(libexecDir, "termux-api-broadcast");
+        if (apiEntryPoint.isFile()) {
+            try (InputStream in = new java.io.FileInputStream(apiEntryPoint);
+                 FileOutputStream out = new FileOutputStream(apiBroadcastCopy)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                }
+            }
+            apiBroadcastCopy.setExecutable(true, false);
+            if (isElfBinary(apiEntryPoint)) {
+                Logger.logInfo(LOG_TAG, "termux-api-broadcast refreshed from bin/termux-api");
+            } else {
+                Logger.logWarn(LOG_TAG, "bin/termux-api is not an ELF client — termux-api calls will fall back");
+            }
+        } else {
+            Logger.logWarn(LOG_TAG, "bin/termux-api missing after deployment");
+        }
 
         Logger.logInfo(LOG_TAG, "Termux:API package deployment complete");
     }
