@@ -1377,12 +1377,11 @@ public class BluetoothAPI {
             } catch (Exception ignored) { }
 
             final boolean timedOut = !completed;
-            final String deviceName;
+            String resolvedName = null;
             try {
-                deviceName = device.getName();
-            } catch (Exception e) {
-                deviceName = null;
-            }
+                resolvedName = device.getName();
+            } catch (Exception ignored) { }
+            final String deviceName = resolvedName;
 
             ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
                 @Override
