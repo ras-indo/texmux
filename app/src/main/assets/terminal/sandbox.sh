@@ -108,9 +108,13 @@ export PROOT_L2S_DIR="$L2S_DIR"
 # single well-known file that always exists in an extracted rootfs.
 # This avoids forking TWO subprocesses on every session start.
 if [ ! -f "$ROOTFS_DIR/etc/passwd" ]; then
-  # ROOTFS_DIR itself may be missing on first run
+  # ROOTFS_DIR itself may be missing on first run.
+  # Extraction runs WITHOUT --link2symlink: real hardlinks work on /data
+  # (ext4), while the link2symlink conversion fails with ENOENT and leaves
+  # .l2s.* junk behind, so every hardlink entry (perl, uncompress, ...)
+  # would be lost.
   /system/bin/mkdir -p "$ROOTFS_DIR"
-  $LINKER "$PROOT" -l /system/bin/tar -xf "$FILES_DIR/rootfs.tar.gz" -C "$ROOTFS_DIR"
+  $LINKER "$PROOT" /system/bin/tar -xf "$FILES_DIR/rootfs.tar.gz" -C "$ROOTFS_DIR"
 fi
 
 # ── Temp dir inside rootfs ──────────────────────────────────────────
@@ -186,7 +190,12 @@ ARGS="$ARGS -b /sys"
 ARGS_BASE="$ARGS"
 ARGS="$ARGS -r $ROOTFS_DIR"
 ARGS="$ARGS -0"
-ARGS="$ARGS --link2symlink"
+# NO --link2symlink by default. The link2symlink extension rewrites every
+# hardlink into a .l2s.<name>NNNN store plus two symlinks, and that conversion
+# fails with ENOENT on modern kernels (verified against upstream proot too), so
+# dpkg/apt/perl hardlinks break and .l2s.* junk piles up in the rootfs. The
+# rootfs is on ext4 (/data), where real hardlinks work; the ladder below still
+# retries WITH the extension if the plain configuration cannot start.
 # NB: --kill-on-exit sudah dipasang di awal ARGS. JANGAN tambah "-L" di sini:
 # proot tidak punya opsi itu (tabel CLI cuma --kill-on-exit), dan proot langsung
 # exit "unknown option '-L'" sehingga pre-flight selalu gagal.
@@ -244,13 +253,13 @@ if probe "full" "" "$ARGS"; then
   :
 elif probe "full + PROOT_NO_SECCOMP=1" noseccomp "$ARGS"; then
   LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="full/seccomp-off"
-elif probe "no --root-id" "" "$ARGS_BASE -r $ROOTFS_DIR --link2symlink"; then
-  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR --link2symlink"; LAUNCH_MODE="no-root-id"
-elif probe "no --root-id + PROOT_NO_SECCOMP=1" noseccomp "$ARGS_BASE -r $ROOTFS_DIR --link2symlink"; then
-  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR --link2symlink"
+elif probe "full + --link2symlink" "" "$ARGS --link2symlink"; then
+  LAUNCH_ARGS="$ARGS --link2symlink"; LAUNCH_MODE="full/link2symlink"
+elif probe "no --root-id" "" "$ARGS_BASE -r $ROOTFS_DIR"; then
+  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR"; LAUNCH_MODE="no-root-id"
+elif probe "no --root-id + PROOT_NO_SECCOMP=1" noseccomp "$ARGS_BASE -r $ROOTFS_DIR"; then
+  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR"
   LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="no-root-id/seccomp-off"
-elif probe "no --link2symlink" "" "$ARGS_BASE -r $ROOTFS_DIR -0"; then
-  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR -0"; LAUNCH_MODE="no-link2symlink"
 elif probe "minimal (-r only)" "" "-r $ROOTFS_DIR"; then
   LAUNCH_ARGS="-r $ROOTFS_DIR"; LAUNCH_MODE="minimal"
 elif probe "minimal + PROOT_NO_SECCOMP=1" noseccomp "-r $ROOTFS_DIR"; then

@@ -164,13 +164,14 @@ jobs:
           tar czf /tmp/smoke/rootfs.tgz -C /tmp/smoke/src tree
           echo "archive contains: $(tar tzf /tmp/smoke/rootfs.tgz | wc -l) entries"
 
-          # Mirror the installer EXACTLY: proot -l (= --link2symlink), tar -xf,
-          # PROOT_TMP_DIR + PROOT_L2S_DIR exported. tar's exit status is
-          # EXPECTED to be non-zero here (unprivileged mknod) — the installer
-          # tolerates it whenever the rootfs verifies, so this step must too.
+          # Mirror the installer EXACTLY: proot running tar -xf, with
+          # PROOT_TMP_DIR + PROOT_L2S_DIR exported and NO --link2symlink
+          # (the extension breaks hardlinks with ENOENT on modern kernels).
+          # tar's exit status is EXPECTED to be non-zero here (unprivileged
+          # mknod) — the installer tolerates it whenever the rootfs verifies.
           set +e
           PROOT_TMP_DIR=/tmp/smoke/ptmp PROOT_L2S_DIR=/tmp/smoke/l2s \
-            /tmp/proot/src/proot -l /bin/tar -xf /tmp/smoke/rootfs.tgz -C /tmp/smoke/dest
+            /tmp/proot/src/proot /bin/tar -xf /tmp/smoke/rootfs.tgz -C /tmp/smoke/dest
           tar_rc=$?
           set -e
           echo "tar exit=$tar_rc (non-zero tolerated: unprivileged device node)"
@@ -178,8 +179,18 @@ jobs:
           test -f /tmp/smoke/dest/tree/include/stdio.h || { echo "!! regular files missing"; exit 1; }
           test -f /tmp/smoke/dest/tree/dir/file || { echo "!! hardlinked payload missing"; exit 1; }
           readlink /tmp/smoke/dest/tree/symlink >/dev/null || { echo "!! symlink missing"; exit 1; }
+          # Hardlinks must stay REAL hardlinks (same inode), not .l2s.* symlinks
+          # and not silently missing: that regression broke perl/uncompress.
+          test -f /tmp/smoke/dest/tree/dir/hardlink || { echo "!! hardlink entry lost"; exit 1; }
+          A=$(stat -c '%i' /tmp/smoke/dest/tree/dir/file)
+          B=$(stat -c '%i' /tmp/smoke/dest/tree/dir/hardlink)
+          echo "inodes: file=$A hardlink=$B"
+          [ "$A" = "$B" ] || { echo "!! hardlink is not a real hardlink (different inodes)"; exit 1; }
+          if find /tmp/smoke/dest -name '.l2s.*' | grep -q .; then
+            echo "!! link2symlink scratch files leaked into the tree"; exit 1
+          fi
           echo "extracted files: $(find /tmp/smoke/dest -type f | wc -l)"
-          echo "OK: extraction usable despite tar exit=$tar_rc"
+          echo "OK: extraction usable despite tar exit=$tar_rc (hardlinks intact)"
 
       - name: Lint sandbox.sh proot flags against the fork's CLI table
         run: |

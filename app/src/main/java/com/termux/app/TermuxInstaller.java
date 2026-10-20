@@ -951,10 +951,14 @@ final class TermuxInstaller {
         if (prootLoader != null) {
             sh.append("export PROOT_LOADER='").append(prootLoader).append("'; ");
         }
-        // -l == --link2symlink: an unprivileged Android app cannot create
-        // hardlinks, so the rootfs tarball's hardlink entries must become
-        // symlinks or tar fails and the container stays half-extracted.
-        sh.append("\"$LINKER\" \"").append(prootBin).append("\" -l /system/bin/tar -xf \"")
+        // NO --link2symlink here. The extension tried to fake hardlinks by
+        // renaming the payload to .l2s.<name>NNNN and replacing both names
+        // with symlinks, and on modern kernels that conversion fails with
+        // ENOENT, so tar reported "can't link 'usr/bin/perl5.38.2' ->
+        // 'usr/bin/perl'" for every hardlink entry and left .l2s.* junk
+        // behind. The rootfs lives on /data (ext4), where real hardlinks
+        // work, so proot is only needed to run the extractor here.
+        sh.append("\"$LINKER\" \"").append(prootBin).append("\" /system/bin/tar -xf \"")
           .append(tarball).append("\" -C \"").append(rootfsDir).append("\"");
         String shScript = sh.toString();
 
