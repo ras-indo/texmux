@@ -1027,11 +1027,21 @@ public class WifiAPI {
                 out.name("requested_state").value(enable ? "enabled" : "disabled");
 
                 // Path that always works, privileged or not: open the system
-                // tethering screen so the user can flip it by hand.
+                // tethering screen so the user can flip it by hand.  The action
+                // constant itself is not in the SDK stubs, so the string is used
+                // directly, with the wireless settings screen as a fallback.
                 if (intent.getBooleanExtra("open_settings", false)) {
-                    Intent settings = new Intent(android.provider.Settings.ACTION_TETHER_SETTINGS);
+                    Intent settings = new Intent("android.settings.TETHER_SETTINGS");
                     settings.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    context.startActivity(settings);
+                    try {
+                        context.startActivity(settings);
+                        out.name("settings_action").value("android.settings.TETHER_SETTINGS");
+                    } catch (android.content.ActivityNotFoundException e) {
+                        Intent fallback = new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS);
+                        fallback.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(fallback);
+                        out.name("settings_action").value("android.settings.WIRELESS_SETTINGS");
+                    }
                     out.name("opened_settings").value(true);
                     out.endObject();
                     return;
