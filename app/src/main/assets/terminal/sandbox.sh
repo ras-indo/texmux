@@ -2,10 +2,6 @@
 # sandbox.sh — Enter PRoot container (re:Terminal compatible)
 # No PREFIX directory — everything is under files/ directly.
 FILES_DIR="/data/data/com.termux/files"
-# Bump this whenever sandbox.sh changes: it is printed as the first line of
-# files/tmp/preflight.log, so a pasted log always identifies the script that
-# produced it (an old APK once kept getting debugged against a newer diagnosis).
-SANDBOX_BUILD="2026-10-20-diag2"
 ROOTFS_DIR="${FILES_DIR}/ROOTFS"
 APPS_BIN="${FILES_DIR}/apps/bin"
 TMP_DIR="${FILES_DIR}/tmp"
@@ -16,26 +12,11 @@ if [ ! -f "$LINKER" ]; then
   LINKER="/system/bin/linker"
 fi
 
-# ── Android shell fallback ───────────────────────────────────────────
-# Kalau proot gagal start (unknown option / binary rusak / rootfs tak
-# lengkap), JANGAN matiin session — drop ke shell Android host yang
-# sudah disiapkan di apps/bin/android, atau mksh host sebagai cadangan.
-android_fallback() {
-  /system/bin/echo ""
-  /system/bin/echo "=== PRoot launch failed — dropping to Android host shell ==="
-  /system/bin/echo "=== (fix the container, then run: /data/data/com.termux/files/apps/bin/sandbox) ==="
-  if [ -x "$APPS_BIN/android" ]; then
-    exec "$APPS_BIN/android"
-  fi
-  # Cadangan terakhir: mksh host langsung
-  exec /system/bin/sh -i
-}
-
 # ── Proot binary ────────────────────────────────────────────────────
 PROOT="$APPS_BIN/proot"
 if [ ! -f "$PROOT" ]; then
   /system/bin/echo "FATAL: proot not found at $PROOT"
-  android_fallback
+  exit 1
 fi
 
 # ── PROOT_LOADER — resolve once, cache result ──────────────────────
@@ -112,13 +93,9 @@ export PROOT_L2S_DIR="$L2S_DIR"
 # single well-known file that always exists in an extracted rootfs.
 # This avoids forking TWO subprocesses on every session start.
 if [ ! -f "$ROOTFS_DIR/etc/passwd" ]; then
-  # ROOTFS_DIR itself may be missing on first run.
-  # Extraction runs WITHOUT --link2symlink: real hardlinks work on /data
-  # (ext4), while the link2symlink conversion fails with ENOENT and leaves
-  # .l2s.* junk behind, so every hardlink entry (perl, uncompress, ...)
-  # would be lost.
+  # ROOTFS_DIR itself may be missing on first run
   /system/bin/mkdir -p "$ROOTFS_DIR"
-  $LINKER "$PROOT" /system/bin/tar -xf "$FILES_DIR/rootfs.tar.gz" -C "$ROOTFS_DIR"
+  $LINKER "$PROOT" --link2symlink /system/bin/tar -xf "$FILES_DIR/rootfs.tar.gz" -C "$ROOTFS_DIR"
 fi
 
 # ── Temp dir inside rootfs ──────────────────────────────────────────
@@ -191,41 +168,14 @@ fi
 
 ARGS="$ARGS -b $ROOTFS_DIR/tmp:/dev/shm"
 ARGS="$ARGS -b /sys"
-ARGS_BASE="$ARGS"
 ARGS="$ARGS -r $ROOTFS_DIR"
 ARGS="$ARGS -0"
-# NO --link2symlink by default. The link2symlink extension rewrites every
-# hardlink into a .l2s.<name>NNNN store plus two symlinks, and that conversion
-# fails with ENOENT on modern kernels (verified against upstream proot too), so
-# dpkg/apt/perl hardlinks break and .l2s.* junk piles up in the rootfs. The
-# rootfs is on ext4 (/data), where real hardlinks work; the ladder below still
-# retries WITH the extension if the plain configuration cannot start.
-# NB: --kill-on-exit sudah dipasang di awal ARGS. JANGAN tambah "-L" di sini:
-# proot tidak punya opsi itu (tabel CLI cuma --kill-on-exit), dan proot langsung
-# exit "unknown option '-L'" sehingga pre-flight selalu gagal.
+ARGS="$ARGS --link2symlink"
+ARGS="$ARGS --sysvipc"
+ARGS="$ARGS -L"
 
 # ── Launch ──────────────────────────────────────────────────────────
 export PATH=/system/bin:/system/xbin:/bin:/sbin:/usr/bin:/usr/sbin
-
-# ── glibc rseq must stay OFF inside Android ─────────────────────────
-# Android's app seccomp policy (inherited by every forked tracee) traps
-# syscall 293 (rseq) with SIGSYS, and glibc >= 2.35 registers rseq at
-# startup, so every guest binary dies instantly:
-#   proot info: ptrace acceleration (seccomp mode 2) enabled
-#   proot info: vpid 1: terminated with signal 31
-# (= SIGSYS -> proot's last_exit_status stays -1 -> exit 255, no output).
-# PROOT_NO_SECCOMP does NOT help: that only disables proot's own filter,
-# not Android's. The fix is to stop glibc from issuing the syscall; the
-# tunable is parsed by the guest's ld.so (glibc 2.35+), and ignored by
-# non-glibc rootfs (Alpine/musl).
-if [ -z "${GLIBC_TUNABLES-}" ]; then
-  export GLIBC_TUNABLES="glibc.pthread.rseq=0"
-else
-  case "$GLIBC_TUNABLES" in
-    *rseq*) : ;;
-    *) export GLIBC_TUNABLES="$GLIBC_TUNABLES:glibc.pthread.rseq=0" ;;
-  esac
-fi
 
 INIT_EXEC="$APPS_BIN/init"
 if [ ! -r "$INIT_EXEC" ]; then
@@ -234,99 +184,7 @@ fi
 
 if [ ! -r "$INIT_EXEC" ]; then
   /system/bin/echo "ERROR: Could not find init or init.sh in $APPS_BIN"
-  android_fallback
+  exit 1
 fi
 
-# ── Pre-flight: validate proot + args + rootfs sebelum commit ──────
-# Output pre-flight JANGAN dibuang. Pesan "unknown option" / "terminated with
-# signal N" hanya muncul di stderr, dan tanpa itu kegagalan 255 (proot return
-# -1 karena tracee mati kena signal) terlihat seperti "rootfs problem".
-# Probe menulis ke FILE, bukan $(...): kalau stdout-nya pipe, /proc/self/fd/1
-# tidak bisa di-resolve dan proot mencetak warning binding yang menyesatkan.
-PREFLIGHT_LOG="${TMP_DIR}/preflight.log"
-PROBE_OUT="${TMP_DIR}/.probe.out"
-# APK version is written by TermuxInstaller.deployShellScripts() on every app
-# start; printing it here makes a pasted log self-attributing (which APK, which
-# script) instead of "the fix didn't work" against a stale install.
-APK_VER=$(/system/bin/cat "$FILES_DIR/.apk_version" 2>/dev/null | /system/bin/head -1)
-/system/bin/echo "sandbox.sh build=$SANDBOX_BUILD  apk=${APK_VER:-<none>}  (GLIBC_TUNABLES=${GLIBC_TUNABLES-<unset>})" > "$PREFLIGHT_LOG"
-$LINKER "$PROOT" --version >> "$PREFLIGHT_LOG" 2>&1
-
-# probe <label> <noseccomp|""> <argstring> [target...]
-probe() {
-  _label="$1"; _env="$2"; _p_args="$3"; shift 3
-  [ "$#" -eq 0 ] && set -- /bin/true
-  : > "$PROBE_OUT"
-  if [ "$_env" = "noseccomp" ]; then
-    PROOT_NO_SECCOMP=1 $LINKER "$PROOT" $_p_args "$@" >> "$PROBE_OUT" 2>&1
-  else
-    $LINKER "$PROOT" $_p_args "$@" >> "$PROBE_OUT" 2>&1
-  fi
-  _rc=$?
-  /system/bin/echo "--- $_label (exit $_rc): $_p_args $*" >> "$PREFLIGHT_LOG"
-  /system/bin/cat "$PROBE_OUT" >> "$PREFLIGHT_LOG" 2>/dev/null
-  return $_rc
-}
-
-# Diagnostic: verbose run names the signal that killed the tracee. A silent
-# exit 255 means WIFSIGNALED (proot only records WIFEXITED), so this line is
-# what turns "args or rootfs problem" into a real cause.
-probe "verbose full (-v 1)" "" "$ARGS -v 1" >/dev/null 2>&1
-
-LAUNCH_ARGS="$ARGS"
-LAUNCH_ENV=""
-LAUNCH_MODE="full"
-
-if probe "full" "" "$ARGS"; then
-  :
-elif probe "full + PROOT_NO_SECCOMP=1" noseccomp "$ARGS"; then
-  LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="full/seccomp-off"
-elif probe "full + --link2symlink" "" "$ARGS --link2symlink"; then
-  LAUNCH_ARGS="$ARGS --link2symlink"; LAUNCH_MODE="full/link2symlink"
-elif probe "no --root-id" "" "$ARGS_BASE -r $ROOTFS_DIR"; then
-  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR"; LAUNCH_MODE="no-root-id"
-elif probe "no --root-id + PROOT_NO_SECCOMP=1" noseccomp "$ARGS_BASE -r $ROOTFS_DIR"; then
-  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR"
-  LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="no-root-id/seccomp-off"
-elif probe "minimal (-r only)" "" "-r $ROOTFS_DIR"; then
-  LAUNCH_ARGS="-r $ROOTFS_DIR"; LAUNCH_MODE="minimal"
-elif probe "minimal + PROOT_NO_SECCOMP=1" noseccomp "-r $ROOTFS_DIR"; then
-  LAUNCH_ARGS="-r $ROOTFS_DIR"
-  LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="minimal/seccomp-off"
-else
-  # Every rung failed. Capture one -v 9 run and probe this app's seccomp policy
-  # so the report names the real cause instead of "exit 255 / rootfs problem".
-  /system/bin/echo "--- verbose (-v 9) tail ---" >> "$PREFLIGHT_LOG"
-  $LINKER "$PROOT" $ARGS -v 9 /bin/true 2>&1 | /system/bin/tail -30 >> "$PREFLIGHT_LOG"
-
-  /system/bin/echo ""
-  /system/bin/echo "=== DIAGNOSIS ==============================================="
-  /system/bin/head -1 "$PREFLIGHT_LOG"
-  /system/bin/echo "-- rung result --"
-  /system/bin/grep -o "^--- .* (exit [0-9]*)" "$PREFLIGHT_LOG"
-  /system/bin/echo "-- signals seen by proot --"
-  /system/bin/grep -m4 "terminated with signal" "$PREFLIGHT_LOG"
-  /system/bin/echo "-- syscalls trapped by this app's seccomp policy --"
-  if [ -x "$APPS_BIN/sysprobe" ]; then
-    timeout 30 "$APPS_BIN/sysprobe" 2>&1 | /system/bin/grep -E "TRAPPED|sysprobe:"
-  else
-    /system/bin/echo "(sysprobe not deployed)"
-  fi
-  /system/bin/echo "-- guest loader trace (LD_DEBUG=all, last 12) --"
-  LD_DEBUG=all $LINKER "$PROOT" -r "$ROOTFS_DIR" /bin/true 2>&1 | /system/bin/tail -12
-  /system/bin/echo "-- last proot syscalls --"
-  /system/bin/grep -E "sysenter|sysexit" "$PREFLIGHT_LOG" | /system/bin/tail -8
-  /system/bin/echo "=== END DIAGNOSIS ==========================================="
-  /system/bin/echo "full log: $PREFLIGHT_LOG"
-  android_fallback
-fi
-
-/system/bin/echo "proot pre-flight: OK ($LAUNCH_MODE)"
-/system/bin/echo "--- " >> "$PREFLIGHT_LOG"
-
-if [ -n "$LAUNCH_ENV" ]; then
-  export PROOT_NO_SECCOMP=1
-  /system/bin/echo "proot: PROOT_NO_SECCOMP=1 (seccomp fast-path disabled)"
-fi
-
-exec $LINKER "$PROOT" $LAUNCH_ARGS /bin/sh "$INIT_EXEC" "$@"
+exec $LINKER "$PROOT" $ARGS /bin/sh "$INIT_EXEC" "$@"

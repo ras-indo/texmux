@@ -32,7 +32,6 @@ import com.termux.shared.termux.TermuxUtils;
 
 import java.io.BufferedInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -122,11 +121,6 @@ final class TermuxInstaller {
 
         // Check if essential artifacts already exist
         if (checkEssentialArtifacts()) {
-            try {
-                refreshProotBinaryIfNeeded(activity);
-            } catch (Exception e) {
-                Logger.logWarn(LOG_TAG, "refreshProotBinaryIfNeeded failed: " + e.getMessage());
-            }
             try {
                 deployMissingBinaries(activity);
             } catch (Exception e) {
@@ -520,21 +514,6 @@ final class TermuxInstaller {
         extractAsset(activity, "terminal/termux-api", new File(appsBin, "termux-api"), true);
 
         extractAsset(activity, "android-shell/android", new File(appsBin, "android"), true);
-        // Static aarch64 helper: reports which syscalls Android's app seccomp
-        // policy traps with SIGSYS (the reason guest binaries die silently).
-        extractAsset(activity, "android-shell/sysprobe", new File(appsBin, "sysprobe"), true);
-
-        // Record which APK build deployed these scripts. sandbox.sh echoes this
-        // into files/tmp/preflight.log, so a pasted log proves whether the
-        // device is actually running the build that was just installed
-        // (silently-failed installs used to look like "the fix didn't work").
-        try {
-            java.nio.file.Files.write(
-                java.nio.file.Paths.get(TERMUX_FILES_DIR_PATH, ".apk_version"),
-                (com.termux.BuildConfig.VERSION_NAME + "\n").getBytes(StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            Logger.logWarn(LOG_TAG, "could not write .apk_version: " + e.getMessage());
-        }
 
         Logger.logInfo(LOG_TAG, "Deployed shell scripts to " + APPS_BIN + "/");
     }
@@ -581,105 +560,6 @@ final class TermuxInstaller {
    // termux-am-socket   → apps/com.termux/bin/termux-am-socket  (static, for AM socket inside proot)
    // termux-am          → apps/com.termux/bin/termux-am         (wrapper script, calls termux-am-socket)
     //   libproot-loader.so → via jniLibs, auto-extracted by Android to nativeLibraryDir
-    /**
-     * Version stamp of the proot binary shipped in this APK's assets.
-     * Keep in sync with PROOT_VERSION in termux-proot/Makefile: the bootstrap is
-     * skipped once the container exists, so this stamp is what makes an upgraded
-     * APK actually replace apps/bin/proot instead of silently running the old one.
-     */
-    private static final String PROOT_BINARY_VERSION = "5.5.0-android-pcache";
-
-    /** Last @max chars of @text, for putting extractor output into an error message. */
-    private static String tail(String text, int max) {
-        if (text == null) return "";
-        String t = text.trim();
-        if (t.isEmpty()) return "<no output>";
-        return t.length() <= max ? t : "..." + t.substring(t.length() - max);
-    }
-
-    /**
-     * Pull the lines that look like extractor errors out of the captured
-     * output, so a failure report shows *why* tar failed instead of just
-     * the tail of the (mostly harmless) file listing.
-     */
-    private static String errorLines(String output) {
-        if (output == null) return "<no output>";
-        StringBuilder sb = new StringBuilder();
-        for (String line : output.split("\n")) {
-            String t = line.trim();
-            if (t.isEmpty()) continue;
-            if (t.startsWith("tar:") || t.startsWith("proot")
-                || t.contains("Operation not permitted")
-                || t.contains("Permission denied")
-                || t.contains("No space left")
-                || t.contains("Read-only file system")
-                || t.contains("cannot ")
-                || t.contains("Cannot ")) {
-                sb.append(t).append('\n');
-                if (sb.length() > 4000) break;
-            }
-        }
-        return sb.length() == 0 ? "<no error lines matched>" : sb.toString();
-    }
-
-    private static String freeSpaceAt(String path) {
-        try {
-            StatFs stat = new StatFs(path);
-            return (stat.getAvailableBytes() / (1024L * 1024L)) + " MB free";
-        } catch (Exception e) {
-            return "unknown free space";
-        }
-    }
-
-    /** Overwrite apps/bin/proot when the deployed copy is not the one this APK ships. */
-    private static void refreshProotBinaryIfNeeded(Activity activity) {
-        File appsBin = new File(TERMUX_FILES_DIR_PATH, APPS_BIN);
-        File dst = new File(appsBin, "proot");
-        File stamp = new File(appsBin, ".proot_version");
-
-        String current = "";
-        if (stamp.isFile()) {
-            try (FileInputStream in = new FileInputStream(stamp)) {
-                byte[] buf = new byte[128];
-                int read = in.read(buf);
-                if (read > 0) current = new String(buf, 0, read, StandardCharsets.UTF_8).trim();
-            } catch (Exception e) {
-                current = "";
-            }
-        }
-
-        if (PROOT_BINARY_VERSION.equals(current) && dst.isFile()) return;
-
-        try {
-            appsBin.mkdirs();
-            File tmp = new File(appsBin, "proot.tmp");
-            try (InputStream in = activity.getAssets().open("proot/proot");
-                 FileOutputStream out = new FileOutputStream(tmp)) {
-                byte[] buffer = new byte[8192];
-                int read;
-                while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
-            }
-            tmp.setExecutable(true, false);
-            if (!tmp.renameTo(dst)) {
-                try (InputStream in = activity.getAssets().open("proot/proot");
-                     FileOutputStream out = new FileOutputStream(dst)) {
-                    byte[] buffer = new byte[8192];
-                    int read;
-                    while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
-                }
-                dst.setExecutable(true, false);
-                tmp.delete();
-            }
-            try (FileOutputStream out = new FileOutputStream(stamp)) {
-                out.write((PROOT_BINARY_VERSION + "\n").getBytes(StandardCharsets.UTF_8));
-            }
-            Logger.logInfo(LOG_TAG, "proot refreshed: " + (current.isEmpty() ? "<none>" : current)
-                + " -> " + PROOT_BINARY_VERSION + " (" + dst.length() + " bytes)");
-        } catch (Exception e) {
-            Logger.logWarn(LOG_TAG, "refreshProotBinaryIfNeeded failed: " + e.getMessage());
-        }
-    }
-
     private static void deployProotBinaries(Activity activity) throws Exception {
         File appsBin = new File(TERMUX_FILES_DIR_PATH, APPS_BIN);
         appsBin.mkdirs();
@@ -695,10 +575,7 @@ final class TermuxInstaller {
                 }
             }
             dst.setExecutable(true, false);
-            Logger.logInfo(LOG_TAG, "Deployed proot to " + dst.getAbsolutePath() + " (" + dst.length() + " bytes)");
-            try (FileOutputStream out = new FileOutputStream(new File(appsBin, ".proot_version"))) {
-                out.write((PROOT_BINARY_VERSION + "\n").getBytes(StandardCharsets.UTF_8));
-            }
+            Logger.logInfo(LOG_TAG, "Deployed proot to " + dst.getAbsolutePath());
         } catch (java.io.FileNotFoundException e) {
             Logger.logWarn(LOG_TAG, "proot binary not found in assets/proot/, skipping");
         }
@@ -954,28 +831,12 @@ final class TermuxInstaller {
         Logger.logInfo(LOG_TAG, "Extracting rootfs to " + rootfsDir);
         log.accept("  Extracting rootfs (this may take a while)...");
 
-        // Build the extraction command piece by piece. The shell string is
-        // assembled with a StringBuilder because the proot invocation needs
-        // BOTH flavours of quoting: single quotes around the exported paths
-        // and double quotes around the "$LINKER" expansion.
-        StringBuilder sh = new StringBuilder();
-        sh.append("LINKER=/system/bin/linker64; ");
-        sh.append("[ -f \"$LINKER\" ] || LINKER=/system/bin/linker; ");
-        sh.append("export PROOT_TMP_DIR='").append(prootTmp).append("'; ");
-        sh.append("export PROOT_L2S_DIR='").append(l2sDir).append("'; ");
-        if (prootLoader != null) {
-            sh.append("export PROOT_LOADER='").append(prootLoader).append("'; ");
-        }
-        // NO --link2symlink here. The extension tried to fake hardlinks by
-        // renaming the payload to .l2s.<name>NNNN and replacing both names
-        // with symlinks, and on modern kernels that conversion fails with
-        // ENOENT, so tar reported "can't link 'usr/bin/perl5.38.2' ->
-        // 'usr/bin/perl'" for every hardlink entry and left .l2s.* junk
-        // behind. The rootfs lives on /data (ext4), where real hardlinks
-        // work, so proot is only needed to run the extractor here.
-        sh.append("\"$LINKER\" \"").append(prootBin).append("\" /system/bin/tar -xf \"")
-          .append(tarball).append("\" -C \"").append(rootfsDir).append("\"");
-        String shScript = sh.toString();
+        String shScript = "LINKER=/system/bin/linker64; " +
+            "[ -f \"$LINKER\" ] || LINKER=/system/bin/linker; " +
+            "export PROOT_TMP_DIR='" + prootTmp + "'; " +
+            "export PROOT_L2S_DIR='" + l2sDir + "'; " +
+            "\"$LINKER\" \"" + prootBin + "\" --link2symlink /system/bin/tar " +
+            "-xvf \"" + tarball + "\" -C \"" + rootfsDir + "\"";
 
         ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c", shScript);
         pb.redirectErrorStream(true);
@@ -1016,9 +877,7 @@ final class TermuxInstaller {
             // Clean up for potential retry
             marker.delete();
             deleteDirectoryRecursive(new File(l2sDir));
-            throw new Exception(ERRNO_EXTRACTION_TIMEOUT.getError(msg).getMinimalErrorString()
-                + "\n\n" + freeSpaceAt(TERMUX_FILES_DIR_PATH)
-                + "\n--- extractor output (tail) ---\n" + tail(output.toString(), 3000));
+            throw new Exception(ERRNO_EXTRACTION_TIMEOUT.getError(msg).getMinimalErrorString());
         }
 
         int exitCode = process.exitValue();
@@ -1030,27 +889,13 @@ final class TermuxInstaller {
         } catch (Exception ignored) {}
 
         if (exitCode != 0) {
-            String errs = errorLines(output.toString());
-            if (verifyRootfs(rootfsDir)) {
-                /* tar exits non-zero for entries it cannot create as an
-                 * unprivileged app on Android (device nodes, ownership,
-                 * some xattrs), while the rootfs itself is perfectly usable.
-                 * Only a missing /etc/passwd or /bin/sh is fatal.  */
-                Logger.logWarn(LOG_TAG, "extraction exited " + exitCode
-                    + " but the rootfs verified; continuing. Errors:\n" + errs);
-                log.accept("  WARN: tar reported errors, rootfs looks complete");
-            } else {
-                String msg = "Rootfs extraction failed (exit " + exitCode + ").";
-                Logger.logError(LOG_TAG, msg + "\n" + errs);
-                log.accept("  ERROR: Extraction failed (exit " + exitCode + ")");
-                // Clean up for clean retry
-                marker.delete();
-                deleteDirectoryRecursive(new File(l2sDir));
-                throw new Exception(ERRNO_EXTRACTION_FAILED.getError(msg).getMinimalErrorString()
-                    + "\n\nexit=" + exitCode + " | " + freeSpaceAt(TERMUX_FILES_DIR_PATH)
-                    + "\n--- extractor errors ---\n" + tail(errs, 3000)
-                    + "\n--- extractor output (tail) ---\n" + tail(output.toString(), 1500));
-            }
+            String msg = "Rootfs extraction failed (exit " + exitCode + ").\nOutput:\n" + output;
+            Logger.logError(LOG_TAG, msg);
+            log.accept("  ERROR: Extraction failed (exit " + exitCode + ")");
+            // Clean up for clean retry
+            marker.delete();
+            deleteDirectoryRecursive(new File(l2sDir));
+            throw new Exception(ERRNO_EXTRACTION_FAILED.getError(msg).getMinimalErrorString());
         }
 
         if (!verifyRootfs(rootfsDir)) {

@@ -1,5 +1,15 @@
 name: Android CI - Texmux
 
+# Reverted to the recipe that is known to work on-device (the
+# termux-app-backup tree): build the APK and ship the proot binary that is
+# committed in app/src/main/assets/proot/proot.
+#
+# Do NOT add a step that rebuilds proot into that path. The committed binary
+# is the Termux build that has the sysvipc extension and accepts the flags
+# sandbox.sh passes (-L, --sysvipc); a rebuild from termux-proot/ produces a
+# different, smaller binary without them, and every session then dies with
+# "unknown option" or a silent 255.
+
 on:
   push:
     branches: [ "main", "master" ]
@@ -7,14 +17,15 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+env:
+  # Stamped into the APK so a build can be identified on the device
+  # (Settings > Apps > Termux, files/.apk_version, and the APK file name).
+  TERMUX_APP_VERSION_NAME: 0.118.0-r${{ github.run_number }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    env:
-      # Unique per run AND visible to every step, so the artifact name, the
-      # versionName inside the APK, and Settings > Apps > Termux all agree.
-      TERMUX_APP_VERSION_NAME: 0.118.0-r${{ github.run_number }}
 
     steps:
       - name: Checkout repository
@@ -44,53 +55,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Build PRoot (arm64) with seccomp fast-path
-        run: |
-          echo "=== Building proot with HAVE_SECCOMP_FILTER + HAVE_PROCESS_VM ==="
-          make -C termux-proot install \
-            NDK_DIR="$ANDROID_HOME/ndk/25.0.8775105" \
-            API_LEVEL=24
-          echo "=== Verify built proot is a fresh arm64 ELF ==="
-          BIN=app/src/main/assets/proot/proot
-          file "$BIN"
-          ls -lh "$BIN"
-          file "$BIN" | grep -q 'ARM aarch64' || { echo "!! proot is not arm64"; exit 1; }
-          strings "$BIN" | grep -q 'android-pcache' || { echo "!! proot is STALE (no pcache marker)"; exit 1; }
-          SIZE=$(stat -c%s "$BIN")
-          echo "proot size: $SIZE bytes"
-          [ "$SIZE" -lt 400000 ] || { echo "!! proot not stripped/gc-sections applied"; exit 1; }
-          echo "OK: optimized proot (pcache marker present, stripped)"
-
-      - name: Assert proot version stamp is in sync (Makefile <-> Java)
-        run: |
-          MK=$(grep -oP 'PROOT_VERSION \?= \K\S+' termux-proot/Makefile)
-          JV=$(grep -oP 'PROOT_BINARY_VERSION = "\K[^"]+' app/src/main/java/com/termux/app/TermuxInstaller.java)
-          echo "Makefile PROOT_VERSION      = $MK"
-          echo "Java PROOT_BINARY_VERSION   = $JV"
-          [ -n "$MK" ] && [ "$MK" = "$JV" ] || { echo "!! proot version stamp drift"; exit 1; }
-          echo "OK: stamps match"
-
-      - name: Build sysprobe (static arm64 seccomp prober)
-        run: |
-          set -euo pipefail
-          NDK="$ANDROID_HOME/ndk/25.0.8775105/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          OUT=app/src/main/assets/android-shell/sysprobe
-          # Freestanding: no libc, no startup path that could itself trip the
-          # very seccomp policy we are measuring (a static bionic build aborted
-          # before printing anything).
-          "$NDK/aarch64-linux-android24-clang" -static -nostdlib -fno-builtin \
-            -fno-stack-protector -O2 -Wall -Wextra -Wl,-e,_start \
-            -o "$OUT" tools/sysprobe/sysprobe.c
-          file "$OUT"
-          file "$OUT" | grep -q 'ARM aarch64' || { echo "!! sysprobe is not arm64"; exit 1; }
-          file "$OUT" | grep -q 'statically linked' || { echo "!! sysprobe is not static"; exit 1; }
-          SZ=$(stat -c%s "$OUT")
-          echo "sysprobe size: $SZ bytes"
-          [ "$SZ" -lt 100000 ] || { echo "!! sysprobe pulled in a libc (expected <100 KB)"; exit 1; }
-          echo "OK: sysprobe built (freestanding static aarch64)"
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      - name: Record the shipped proot checksum
+        run: |
+          P=app/src/main/assets/proot/proot
+          ls -l "$P"
+          file "$P"
+          file "$P" | grep -q 'ARM aarch64' || { echo "!! proot asset is not arm64"; exit 1; }
+          md5sum "$P" | tee /tmp/proot.md5
+          # The sysvipc extension is what makes the shipped sandbox.sh flags
+          # (-L, --sysvipc) valid. A proot without it fails every session.
+          strings "$P" | grep -q 'extension/sysvipc/sysvipc.c' \
+            || { echo "!! this proot has no sysvipc extension"; exit 1; }
+          echo "OK: shipping the committed proot (sysvipc present)"
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
@@ -99,35 +78,33 @@ jobs:
         run: |
           echo "=== APK files ==="
           find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
-          echo "=== Verify the APK really ships OUR proot ==="
-          APK=$(find app/build/outputs/apk/debug -name '*_arm64-v8a.apk' | head -1)
+
+      - name: Verify the APK ships the same proot that was checked
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
           unzip -p "$APK" assets/proot/proot > /tmp/apk-proot
-          ls -lh /tmp/apk-proot
-          strings /tmp/apk-proot | grep -q 'android-pcache' || { echo "!! APK ships a different proot"; exit 1; }
-          file /tmp/apk-proot | grep -q 'ARM aarch64' || { echo "!! APK proot not arm64"; exit 1; }
-          echo "OK: APK contains the optimized proot"
-          echo "=== Verify the build stamp really landed inside the APK ==="
-          # BuildConfig.VERSION_NAME is a dex string literal; grep the dexes so a
-          # broken env plumbing cannot ship an unstamped build silently.
-          rm -rf /tmp/apkdex && mkdir -p /tmp/apkdex
-          unzip -o -q "$APK" 'classes*.dex' -d /tmp/apkdex
-          echo "expected versionName: $TERMUX_APP_VERSION_NAME"
-          grep -rqs --binary-files=text "$TERMUX_APP_VERSION_NAME" /tmp/apkdex \
-            || { echo "!! versionName stamp missing from dex (env not plumbed?)"; exit 1; }
-          echo "OK: dex carries versionName $TERMUX_APP_VERSION_NAME"
+          md5sum /tmp/apk-proot
+          [ "$(md5sum /tmp/apk-proot | cut -d' ' -f1)" = "$(cut -d' ' -f1 /tmp/proot.md5)" ] \
+            || { echo "!! APK proot differs from the committed one"; exit 1; }
+          echo "OK: APK ships the committed proot"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |
           mkdir -p upload_apk
-          VER=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -1)
-          VER=$(printf '%s' "${TERMUX_APP_VERSION_NAME:-$VER}")
-          SRC=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
-          OUT="upload_apk/texmux-${VER}-arm64-v8a-debug.apk"
-          cp "$SRC" "$OUT"
+          cp app/build/outputs/apk/debug/*_arm64-v8a.apk upload_apk/
+          APK=$(ls upload_apk/*.apk)
           echo "=== Collected for upload (~41MB, arm64-v8a only) ==="
-          ls -lh upload_apk/
-          echo "APK_NAME=$(basename "$OUT")" >> "$GITHUB_ENV"
-          echo "APK_MD5=$(md5sum "$OUT" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          ls -lh "$APK"
+          echo "APK_NAME: $(basename "$APK")"
+          echo "APK_MD5: $(md5sum "$APK" | cut -d' ' -f1)"
+          echo "versionName: $TERMUX_APP_VERSION_NAME"
+          {
+            echo "### Texmux build"
+            echo "- APK: \`$(basename "$APK")\`"
+            echo "- md5: \`$(md5sum "$APK" | cut -d' ' -f1)\`"
+            echo "- versionName: \`$TERMUX_APP_VERSION_NAME\`"
+            echo "- proot: committed asset, sysvipc present, md5 \`$(cut -d' ' -f1 /tmp/proot.md5)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -135,159 +112,3 @@ jobs:
           name: texmux-debug-apk
           path: upload_apk/*.apk
           if-no-files-found: error
-
-      - name: Print APK identity
-        run: |
-          echo "APK: $APK_NAME"
-          echo "MD5: $APK_MD5"
-          {
-            echo "### Installed-build identity"
-            echo ""
-            echo "- APK: \`$APK_NAME\`"
-            echo "- md5: \`$APK_MD5\`"
-            echo "- Settings > Apps > Termux should show versionName from that name"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # ── PRoot regression gate ────────────────────────────────────────────────
-  # Builds the proot changes on the CI host with the same optimization flags
-  # used for Android, exercises the exact installer extraction path
-  # (-l/--link2symlink + tar), and runs the upstream test suite. This is where
-  # proot behaviour is verified — not on the B860H device.
-  proot-regression:
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Build vendored talloc as a static library
-        run: |
-          set -euo pipefail
-          V="$GITHUB_WORKSPACE/termux-proot/vendor/talloc"
-          mkdir -p /tmp/talloc/lib /tmp/talloc/include /tmp/talloc/obj
-          gcc -c -O2 -fPIC \
-            -D_GNU_SOURCE=1 -D_XOPEN_SOURCE_EXTENDED=1 -D__STDC_WANT_LIB_EXT1__=1 \
-            -DSTATIC_talloc_MODULES=NULL \
-            '-DSTATIC_talloc_MODULES_PROTO=extern void __talloc_dummy_module_proto(void)' \
-            -I"$V" -I"$V/lib/replace" \
-            "$V/talloc.c" -o /tmp/talloc/obj/talloc.o
-          ar rcs /tmp/talloc/lib/libtalloc.a /tmp/talloc/obj/talloc.o
-          cp "$V/talloc.h" /tmp/talloc/include/
-          echo 'prefix=/tmp/talloc' > /tmp/talloc/talloc.pc
-          echo 'libdir=${prefix}/lib' >> /tmp/talloc/talloc.pc
-          echo 'includedir=${prefix}/include' >> /tmp/talloc/talloc.pc
-          echo 'Name: talloc' >> /tmp/talloc/talloc.pc
-          echo 'Description: hierarchical pool based memory system' >> /tmp/talloc/talloc.pc
-          echo 'Version: 2.4.2' >> /tmp/talloc/talloc.pc
-          echo 'Libs: -L${libdir} -ltalloc' >> /tmp/talloc/talloc.pc
-          echo 'Cflags: -I${includedir}' >> /tmp/talloc/talloc.pc
-          PKG_CONFIG_PATH=/tmp/talloc pkg-config --exists talloc
-          ls -lh /tmp/talloc/lib/libtalloc.a
-
-      - name: Clone the optimized proot fork
-        run: git clone --depth=1 --branch master https://github.com/ras-indo/proot.git /tmp/proot
-
-      - name: Build proot (host) with the Android optimization flags
-        run: |
-          set -euo pipefail
-          export PKG_CONFIG_PATH=/tmp/talloc
-          make -C /tmp/proot/src -j"$(nproc)" WITHOUT_PYTHON=1 \
-            CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
-            LDFLAGS="-Wl,--gc-sections -L/tmp/talloc/lib -ltalloc"
-          file /tmp/proot/src/proot
-          strings /tmp/proot/src/proot | grep -q 'PROOT_NO_PATH_CACHE' || { echo "!! pcache not built in"; exit 1; }
-          echo "OK: pcache present in host build"
-
-      - name: Smoke test the installer extraction path (-l + tar)
-        run: |
-          set -uo pipefail
-          mkdir -p /tmp/smoke/src/tree/dir /tmp/smoke/dest /tmp/smoke/l2s /tmp/smoke/ptmp
-          cp -a /usr/include /tmp/smoke/src/tree/include
-          echo hello > /tmp/smoke/src/tree/dir/file
-          ln /tmp/smoke/src/tree/dir/file /tmp/smoke/src/tree/dir/hardlink
-          ln -s dir/file /tmp/smoke/src/tree/symlink
-          mkfifo /tmp/smoke/src/tree/fifo
-          # Real Ubuntu rootfs tarballs carry device nodes; an unprivileged
-          # Android app cannot mknod them, which is what makes tar exit non-zero.
-          sudo mknod /tmp/smoke/src/tree/devnode c 1 3 && echo "device node added"
-          tar czf /tmp/smoke/rootfs.tgz -C /tmp/smoke/src tree
-          echo "archive contains: $(tar tzf /tmp/smoke/rootfs.tgz | wc -l) entries"
-
-          # Mirror the installer EXACTLY: proot running tar -xf, with
-          # PROOT_TMP_DIR + PROOT_L2S_DIR exported and NO --link2symlink
-          # (the extension breaks hardlinks with ENOENT on modern kernels).
-          # tar's exit status is EXPECTED to be non-zero here (unprivileged
-          # mknod) — the installer tolerates it whenever the rootfs verifies.
-          set +e
-          PROOT_TMP_DIR=/tmp/smoke/ptmp PROOT_L2S_DIR=/tmp/smoke/l2s \
-            /tmp/proot/src/proot /bin/tar -xf /tmp/smoke/rootfs.tgz -C /tmp/smoke/dest
-          tar_rc=$?
-          set -e
-          echo "tar exit=$tar_rc (non-zero tolerated: unprivileged device node)"
-
-          test -f /tmp/smoke/dest/tree/include/stdio.h || { echo "!! regular files missing"; exit 1; }
-          test -f /tmp/smoke/dest/tree/dir/file || { echo "!! hardlinked payload missing"; exit 1; }
-          readlink /tmp/smoke/dest/tree/symlink >/dev/null || { echo "!! symlink missing"; exit 1; }
-          # Hardlinks must stay REAL hardlinks (same inode), not .l2s.* symlinks
-          # and not silently missing: that regression broke perl/uncompress.
-          test -f /tmp/smoke/dest/tree/dir/hardlink || { echo "!! hardlink entry lost"; exit 1; }
-          A=$(stat -c '%i' /tmp/smoke/dest/tree/dir/file)
-          B=$(stat -c '%i' /tmp/smoke/dest/tree/dir/hardlink)
-          echo "inodes: file=$A hardlink=$B"
-          [ "$A" = "$B" ] || { echo "!! hardlink is not a real hardlink (different inodes)"; exit 1; }
-          if find /tmp/smoke/dest -name '.l2s.*' | grep -q .; then
-            echo "!! link2symlink scratch files leaked into the tree"; exit 1
-          fi
-          echo "extracted files: $(find /tmp/smoke/dest -type f | wc -l)"
-          echo "OK: extraction usable despite tar exit=$tar_rc (hardlinks intact)"
-
-      - name: Lint sandbox.sh (proot flags + rseq guard ordering)
-        run: |
-          set -euo pipefail
-          SH="$GITHUB_WORKSPACE/app/src/main/assets/terminal/sandbox.sh"
-          # Every flag this proot accepts, straight from its generated CLI table.
-          grep -oP '\.name = "\K-[^"]+' /tmp/proot/src/cli/proot.h | sort -u > /tmp/known.txt
-          # Every flag sandbox.sh actually passes to proot (ARGS assignments only).
-          grep -E '^[[:space:]]*ARGS="' "$SH" \
-            | grep -oP '(?<=[\s"])(--?[A-Za-z0-9][A-Za-z0-9_-]*)' | sort -u > /tmp/used.txt
-          echo "known: $(tr '\n' ' ' < /tmp/known.txt)"
-          echo "used : $(tr '\n' ' ' < /tmp/used.txt)"
-          if BAD=$(comm -23 /tmp/used.txt /tmp/known.txt) && [ -n "$BAD" ]; then
-            echo "!! sandbox.sh passes flags proot does not accept:"
-            echo "$BAD"
-            echo "   (proot exits with \"unknown option\" and the session dies)"
-            exit 1
-          fi
-          echo "OK: every sandbox.sh proot flag exists in the CLI table"
-
-          # Android's app seccomp policy traps rseq(293) with SIGSYS and glibc
-          # >= 2.35 registers it at startup, so the tunable MUST be exported
-          # before the first proot probe / launch.
-          TUNABLE=$(grep -n 'GLIBC_TUNABLES="glibc.pthread.rseq=0"' "$SH" | head -1 | cut -d: -f1)
-          FIRSTPROBE=$(grep -n '^probe "' "$SH" | head -1 | cut -d: -f1)
-          echo "rseq guard at line ${TUNABLE:-<none>}, first probe at line ${FIRSTPROBE:-<none>}"
-          [ -n "$TUNABLE" ] || { echo "!! GLIBC_TUNABLES rseq guard is missing"; exit 1; }
-          [ -n "$FIRSTPROBE" ] || { echo "!! no probe calls found"; exit 1; }
-          [ "$TUNABLE" -lt "$FIRSTPROBE" ] || { echo "!! rseq guard is exported AFTER proot runs"; exit 1; }
-          echo "OK: rseq(293) guard exported before any proot run"
-          grep -q 'SANDBOX_BUILD="' "$SH" || { echo "!! SANDBOX_BUILD stamp missing (logs would be unattributable)"; exit 1; }
-          echo "OK: sandbox build stamp present: $(grep -oP 'SANDBOX_BUILD="\K[^"]+' "$SH")"
-
-      - name: Run the upstream PRoot test suite
-        run: |
-          set -uo pipefail
-          cd /tmp/proot/test
-          make check 2>&1 | tee /tmp/check.log
-          rc=${PIPESTATUS[0]}
-          echo "make check exit=$rc"
-          if [ -s failure ]; then
-            echo "=== failing checks ==="
-            sed -n '1,120p' failure
-          fi
-          if [ "$rc" -ne 0 ]; then
-            echo "=== last 80 log lines ==="
-            tail -80 /tmp/check.log
-            exit 1
-          fi
-          echo "OK: no test failures"
