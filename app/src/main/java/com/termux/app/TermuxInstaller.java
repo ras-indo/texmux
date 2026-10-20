@@ -521,6 +521,18 @@ final class TermuxInstaller {
 
         extractAsset(activity, "android-shell/android", new File(appsBin, "android"), true);
 
+        // Record which APK build deployed these scripts. sandbox.sh echoes this
+        // into files/tmp/preflight.log, so a pasted log proves whether the
+        // device is actually running the build that was just installed
+        // (silently-failed installs used to look like "the fix didn't work").
+        try {
+            java.nio.file.Files.write(
+                java.nio.file.Paths.get(TERMUX_FILES_DIR_PATH, ".apk_version"),
+                (com.termux.BuildConfig.VERSION_NAME + "\n").getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            Logger.logWarn(LOG_TAG, "could not write .apk_version: " + e.getMessage());
+        }
+
         Logger.logInfo(LOG_TAG, "Deployed shell scripts to " + APPS_BIN + "/");
     }
 

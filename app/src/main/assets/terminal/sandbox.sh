@@ -5,7 +5,7 @@ FILES_DIR="/data/data/com.termux/files"
 # Bump this whenever sandbox.sh changes: it is printed as the first line of
 # files/tmp/preflight.log, so a pasted log always identifies the script that
 # produced it (an old APK once kept getting debugged against a newer diagnosis).
-SANDBOX_BUILD="2026-10-20-rseq-guard"
+SANDBOX_BUILD="2026-10-20-rseq3"
 ROOTFS_DIR="${FILES_DIR}/ROOTFS"
 APPS_BIN="${FILES_DIR}/apps/bin"
 TMP_DIR="${FILES_DIR}/tmp"
@@ -245,7 +245,11 @@ fi
 # tidak bisa di-resolve dan proot mencetak warning binding yang menyesatkan.
 PREFLIGHT_LOG="${TMP_DIR}/preflight.log"
 PROBE_OUT="${TMP_DIR}/.probe.out"
-/system/bin/echo "sandbox.sh build=$SANDBOX_BUILD  (GLIBC_TUNABLES=${GLIBC_TUNABLES-<unset>})" > "$PREFLIGHT_LOG"
+# APK version is written by TermuxInstaller.deployShellScripts() on every app
+# start; printing it here makes a pasted log self-attributing (which APK, which
+# script) instead of "the fix didn't work" against a stale install.
+APK_VER=$(/system/bin/cat "$FILES_DIR/.apk_version" 2>/dev/null | /system/bin/head -1)
+/system/bin/echo "sandbox.sh build=$SANDBOX_BUILD  apk=${APK_VER:-<none>}  (GLIBC_TUNABLES=${GLIBC_TUNABLES-<unset>})" > "$PREFLIGHT_LOG"
 $LINKER "$PROOT" --version >> "$PREFLIGHT_LOG" 2>&1
 
 # probe <label> <noseccomp|""> <argstring> [target...]
