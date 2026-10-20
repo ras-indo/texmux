@@ -183,6 +183,7 @@ fi
 
 ARGS="$ARGS -b $ROOTFS_DIR/tmp:/dev/shm"
 ARGS="$ARGS -b /sys"
+ARGS_BASE="$ARGS"
 ARGS="$ARGS -r $ROOTFS_DIR"
 ARGS="$ARGS -0"
 ARGS="$ARGS --link2symlink"
@@ -204,20 +205,70 @@ if [ ! -r "$INIT_EXEC" ]; then
 fi
 
 # ── Pre-flight: validate proot + args + rootfs sebelum commit ──────
-# Output pre-flight JANGAN dibuang: kalau proot nolak sebuah opsi, pesan
-# "unknown option" hanya muncul di stderr — tanpa ini kegagalan terlihat
-# seperti "rootfs problem" padahal flag-nya yang salah.
+# Output pre-flight JANGAN dibuang. Pesan "unknown option" / "terminated with
+# signal N" hanya muncul di stderr, dan tanpa itu kegagalan 255 (proot return
+# -1 karena tracee mati kena signal) terlihat seperti "rootfs problem".
+# Probe menulis ke FILE, bukan $(...): kalau stdout-nya pipe, /proc/self/fd/1
+# tidak bisa di-resolve dan proot mencetak warning binding yang menyesatkan.
 PREFLIGHT_LOG="${TMP_DIR}/preflight.log"
-PREFLIGHT_OUT=$($LINKER "$PROOT" $ARGS /bin/true 2>&1)
-PREFLIGHT_RC=$?
-if [ "$PREFLIGHT_RC" -ne 0 ]; then
-  /system/bin/echo "$LINKER $PROOT $ARGS /bin/true" > "$PREFLIGHT_LOG"
-  /system/bin/echo "exit=$PREFLIGHT_RC" >> "$PREFLIGHT_LOG"
-  /system/bin/echo "$PREFLIGHT_OUT" >> "$PREFLIGHT_LOG"
-  /system/bin/echo "Pre-flight failed (exit $PREFLIGHT_RC): $LINKER $PROOT"
-  /system/bin/echo "$PREFLIGHT_OUT"
-  /system/bin/echo "(detail: $PREFLIGHT_LOG)"
+PROBE_OUT="${TMP_DIR}/.probe.out"
+: > "$PREFLIGHT_LOG"
+$LINKER "$PROOT" --version >> "$PREFLIGHT_LOG" 2>&1
+
+# probe <label> <noseccomp|""> <argstring> [target...]
+probe() {
+  _label="$1"; _env="$2"; _p_args="$3"; shift 3
+  [ "$#" -eq 0 ] && set -- /bin/true
+  : > "$PROBE_OUT"
+  if [ "$_env" = "noseccomp" ]; then
+    PROOT_NO_SECCOMP=1 $LINKER "$PROOT" $_p_args "$@" >> "$PROBE_OUT" 2>&1
+  else
+    $LINKER "$PROOT" $_p_args "$@" >> "$PROBE_OUT" 2>&1
+  fi
+  _rc=$?
+  /system/bin/echo "--- $_label (exit $_rc): $_p_args $*" >> "$PREFLIGHT_LOG"
+  /system/bin/cat "$PROBE_OUT" >> "$PREFLIGHT_LOG" 2>/dev/null
+  return $_rc
+}
+
+# Diagnostic: verbose run names the signal that killed the tracee. A silent
+# exit 255 means WIFSIGNALED (proot only records WIFEXITED), so this line is
+# what turns "args or rootfs problem" into a real cause.
+probe "verbose full (-v 1)" "" "$ARGS -v 1" >/dev/null 2>&1
+
+LAUNCH_ARGS="$ARGS"
+LAUNCH_ENV=""
+LAUNCH_MODE="full"
+
+if probe "full" "" "$ARGS"; then
+  :
+elif probe "full + PROOT_NO_SECCOMP=1" noseccomp "$ARGS"; then
+  LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="full/seccomp-off"
+elif probe "no --root-id" "" "$ARGS_BASE -r $ROOTFS_DIR --link2symlink"; then
+  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR --link2symlink"; LAUNCH_MODE="no-root-id"
+elif probe "no --root-id + PROOT_NO_SECCOMP=1" noseccomp "$ARGS_BASE -r $ROOTFS_DIR --link2symlink"; then
+  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR --link2symlink"
+  LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="no-root-id/seccomp-off"
+elif probe "no --link2symlink" "" "$ARGS_BASE -r $ROOTFS_DIR -0"; then
+  LAUNCH_ARGS="$ARGS_BASE -r $ROOTFS_DIR -0"; LAUNCH_MODE="no-link2symlink"
+elif probe "minimal (-r only)" "" "-r $ROOTFS_DIR"; then
+  LAUNCH_ARGS="-r $ROOTFS_DIR"; LAUNCH_MODE="minimal"
+elif probe "minimal + PROOT_NO_SECCOMP=1" noseccomp "-r $ROOTFS_DIR"; then
+  LAUNCH_ARGS="-r $ROOTFS_DIR"
+  LAUNCH_ENV="PROOT_NO_SECCOMP=1"; LAUNCH_MODE="minimal/seccomp-off"
+else
+  /system/bin/echo "Pre-flight failed: no proot configuration reached the rootfs."
+  /system/bin/echo "--- last 40 lines of $PREFLIGHT_LOG ---"
+  /system/bin/tail -40 "$PREFLIGHT_LOG"
   android_fallback
 fi
 
-exec $LINKER "$PROOT" $ARGS /bin/sh "$INIT_EXEC" "$@"
+/system/bin/echo "proot pre-flight: OK ($LAUNCH_MODE)"
+/system/bin/echo "--- " >> "$PREFLIGHT_LOG"
+
+if [ -n "$LAUNCH_ENV" ]; then
+  export PROOT_NO_SECCOMP=1
+  /system/bin/echo "proot: PROOT_NO_SECCOMP=1 (seccomp fast-path disabled)"
+fi
+
+exec $LINKER "$PROOT" $LAUNCH_ARGS /bin/sh "$INIT_EXEC" "$@"
