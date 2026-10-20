@@ -11,6 +11,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      # Unique per run AND visible to every step, so the artifact name, the
+      # versionName inside the APK, and Settings > Apps > Termux all agree.
+      TERMUX_APP_VERSION_NAME: 0.118.0-r${{ github.run_number }}
 
     steps:
       - name: Checkout repository
@@ -70,11 +74,6 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APK
-        env:
-          # Unique per run, so the installed build is identifiable on the phone:
-          # Settings > Apps > Termux shows this versionName, and the app writes
-          # it to files/.apk_version which sandbox.sh echoes into preflight.log.
-          TERMUX_APP_VERSION_NAME: 0.118.0-r${{ github.run_number }}
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Verify APK output
@@ -88,6 +87,15 @@ jobs:
           strings /tmp/apk-proot | grep -q 'android-pcache' || { echo "!! APK ships a different proot"; exit 1; }
           file /tmp/apk-proot | grep -q 'ARM aarch64' || { echo "!! APK proot not arm64"; exit 1; }
           echo "OK: APK contains the optimized proot"
+          echo "=== Verify the build stamp really landed inside the APK ==="
+          # BuildConfig.VERSION_NAME is a dex string literal; grep the dexes so a
+          # broken env plumbing cannot ship an unstamped build silently.
+          rm -rf /tmp/apkdex && mkdir -p /tmp/apkdex
+          unzip -o -q "$APK" 'classes*.dex' -d /tmp/apkdex
+          echo "expected versionName: $TERMUX_APP_VERSION_NAME"
+          grep -rqs --binary-files=text "$TERMUX_APP_VERSION_NAME" /tmp/apkdex \
+            || { echo "!! versionName stamp missing from dex (env not plumbed?)"; exit 1; }
+          echo "OK: dex carries versionName $TERMUX_APP_VERSION_NAME"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |
