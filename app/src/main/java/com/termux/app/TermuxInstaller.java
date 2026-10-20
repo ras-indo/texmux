@@ -940,13 +940,12 @@ final class TermuxInstaller {
         log.accept("  Extracting rootfs (this may take a while)...");
 
         String shScript = "LINKER=/system/bin/linker64; " +
-            "[ -f \"$LINKER\" ] || LINKER=/system/bin/linker; " +
+            "[ -f "$LINKER" ] || LINKER=/system/bin/linker; " +
             "export PROOT_TMP_DIR='" + prootTmp + "'; " +
             "export PROOT_L2S_DIR='" + l2sDir + "'; " +
-            "\"$LINKER\" \"" + prootBin + "\" --link2symlink /system/bin/tar " +
-            "-xvf \"" + tarball + "\" -C \"" + rootfsDir + "\"";
-
-        ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c", shScript);
+            "export PROOT_LOADER='" + prootLoader + "'; " +
+            """ + "$LINKER" + "" "" + prootBin + "" -l /system/bin/tar " +
+            "-xf "" + tarball + "" -C "" + rootfsDir + "";        ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-c", shScript);
         pb.redirectErrorStream(true);
         pb.environment().put("PROOT_TMP_DIR", prootTmp);
         pb.environment().put("PROOT_L2S_DIR", l2sDir);

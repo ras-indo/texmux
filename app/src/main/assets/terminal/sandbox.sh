@@ -110,7 +110,7 @@ export PROOT_L2S_DIR="$L2S_DIR"
 if [ ! -f "$ROOTFS_DIR/etc/passwd" ]; then
   # ROOTFS_DIR itself may be missing on first run
   /system/bin/mkdir -p "$ROOTFS_DIR"
-  $LINKER "$PROOT" --link2symlink /system/bin/tar -xf "$FILES_DIR/rootfs.tar.gz" -C "$ROOTFS_DIR"
+  $LINKER "$PROOT" -l /system/bin/tar -xf "$FILES_DIR/rootfs.tar.gz" -C "$ROOTFS_DIR"
 fi
 
 # ── Temp dir inside rootfs ──────────────────────────────────────────
