@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.text.TextUtils;
 import android.util.JsonWriter;
 
+import com.termux.api.apis.PermissionAPI;
 import com.termux.api.util.ResultReturner;
 import com.termux.shared.android.PermissionUtils;
 import com.termux.shared.logger.Logger;
@@ -36,16 +37,54 @@ public class TermuxApiPermissionActivity extends Activity {
      * open the relevant system-settings page instead.
      */
     public static void returnPermissionError(Context context, Intent intent, String... permissions) {
+        final String[] requested = permissions;
         ResultReturner.returnData(context, intent, new ResultReturner.ResultJsonWriter() {
             @Override
             public void writeJson(JsonWriter out) throws Exception {
                 String errorMessage = "Please grant the following permission"
-                        + (permissions.length > 1 ? "s" : "")
+                        + (requested.length > 1 ? "s" : "")
                         + " to use this command: "
-                        + TextUtils.join(" ,", permissions);
-                out.beginObject().name("error").value(errorMessage).endObject();
+                        + TextUtils.join(" ,", requested);
+                out.beginObject();
+                out.name("error").value(errorMessage);
+                out.name("prompt_opened").value(!keysFor(requested).isEmpty());
+                out.name("hint").value("Izinkan lewat layar yang muncul, lalu jalankan ulang perintahnya.");
+                out.name("needs_permission").beginArray();
+                for (String permission : requested) out.value(permission);
+                out.endArray();
+                out.endObject();
             }
         });
+        openPrompt(context, keysFor(permissions), null);
+    }
+
+    /** Maps manifest permission names to the prompt's catalog keys. */
+    private static ArrayList<String> keysFor(String... permissions) {
+        ArrayList<String> keys = new ArrayList<>();
+        for (PermissionAPI.Entry entry : PermissionAPI.catalog()) {
+            for (String permission : permissions) {
+                if (entry.permission.equals(permission) && !keys.contains(entry.key)) keys.add(entry.key);
+            }
+        }
+        return keys;
+    }
+
+    /**
+     * Opens the visible prompt.  Extras are deliberately NOT copied: the caller has
+     * already answered with an error JSON, so the prompt must not write a second
+     * response to the same client request.
+     */
+    private static void openPrompt(Context context, ArrayList<String> keys, String reason) {
+        if (keys.isEmpty()) return;
+        Intent prompt = new Intent(context, PermissionPromptActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putStringArrayListExtra(PermissionPromptActivity.EXTRA_KEYS, keys)
+                .putExtra(PermissionPromptActivity.EXTRA_REASON, reason);
+        try {
+            context.startActivity(prompt);
+        } catch (Exception ignored) {
+            // Nothing else to do: the JSON already tells the user what is missing.
+        }
     }
 
     public static boolean checkAndRequestPermissions(Context context, Intent intent, String... permissions) {
@@ -66,15 +105,22 @@ public class TermuxApiPermissionActivity extends Activity {
                             + (permissionsToRequest.size() > 1 ? "s" : "")
                             + " to use this command: "
                             + TextUtils.join(" ,", permissionsToRequest);
-                    out.beginObject().name("error").value(errorMessage).endObject();
+                    out.beginObject();
+                    out.name("error").value(errorMessage);
+                    out.name("prompt_opened").value(true);
+                    out.name("hint").value("Izinkan lewat layar yang muncul, lalu jalankan ulang perintahnya.");
+                    out.name("needs_permission").beginArray();
+                    for (String permission : permissionsToRequest) out.value(permission);
+                    out.endArray();
+                    out.endObject();
                 }
             });
 
-            Intent startIntent = new Intent(context, TermuxApiPermissionActivity.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .putStringArrayListExtra(TermuxApiPermissionActivity.PERMISSIONS_EXTRA, permissionsToRequest);
-            ResultReturner.copyIntentExtras(intent, startIntent);
-            context.startActivity(startIntent);
+            // Visible prompt instead of the old Theme.NoDisplay activity: it shows
+            // what is being asked for, triggers the system dialog, and deep-links
+            // the settings page once the dialog has been permanently dismissed.
+            openPrompt(context, keysFor(permissionsToRequest.toArray(new String[0])),
+                "Izin ini dibutuhkan oleh perintah yang baru saja dijalankan.");
             return false;
         }
     }

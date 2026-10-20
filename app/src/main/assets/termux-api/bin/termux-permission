@@ -1,0 +1,149 @@
+#!/bin/sh
+#
+# NAME
+#     termux-permission — Show and request the permissions Termux:API needs
+#
+# SYNOPSIS
+#     termux-permission status
+#     termux-permission request [--permissions <key[,key]>] [--reason <text>]
+#
+# DESCRIPTION
+#     Android has three flavours of permission and only one has a popup:
+#
+#         runtime     the standard Allow/Deny dialog
+#         settings    "special app access" — no popup exists at all, only a
+#                     dedicated settings page
+#         privileged  signature|privileged — cannot be granted at runtime
+#
+#     "status" reports every permission this app can need, whether it is
+#     currently granted, and how it would be granted.
+#
+#     "request" opens a prompt inside the app that:
+#       - triggers the system dialog immediately for runtime permissions,
+#       - deep-links the exact settings page for special access,
+#       - explains (and copies the whitelist XML for) privileged permissions,
+#       - hands back which permissions you granted when you close it.
+#
+#     Other commands use the same prompt: when a command fails because a
+#     permission is missing, the system dialog appears and the JSON error says
+#     "prompt_opened": true. Grant, then run the command again.
+#
+# OPTIONS
+#     --permissions <keys>  Comma separated keys to request, e.g.
+#                           bluetooth_scan,bluetooth_connect. Default: every
+#                           missing permission.
+#     --reason <text>       Extra sentence shown at the top of the prompt.
+#     -h, --help            Display this help message and exit.
+#
+# OUTPUT (status)
+#     {
+#       "permissions": [ { "key", "permission", "label", "kind", "granted",
+#                          "how_to" } ],
+#       "missing": [ "..." ],
+#       "missing_grantable": [ "..." ],
+#       "missing_privileged": [ "..." ],
+#       "all_granted": true|false
+#     }
+#
+# OUTPUT (request)
+#     { "granted": [ "..." ], "missing": [ "..." ],
+#       "missing_privileged": [ "..." ], "all_granted": true|false }
+#
+# EXAMPLES
+#     # What is still missing?
+#     termux-permission status | jq '.missing'
+#
+#     # Ask for the two Bluetooth permissions only
+#     termux-permission request --permissions bluetooth_scan,bluetooth_connect
+#
+#     # Ask for everything that is still missing
+#     termux-permission request
+#
+#     # Why does hotspot-enable keep failing?
+#     termux-permission status | jq '.missing_privileged'
+#
+set -e -u
+
+SCRIPTNAME=termux-permission
+
+show_usage () {
+    cat <<EOF
+Usage: $SCRIPTNAME <status|request> [options]
+
+Show which permissions Termux:API holds, or ask for the missing ones through an
+in-app prompt (no need to dig through the system settings app).
+
+  status     list every permission with granted state and how it is granted
+  request    open the prompt; triggers the system dialog for runtime
+             permissions and deep-links the settings page for special access
+
+Options for request:
+  --permissions <keys>   comma separated, e.g. bluetooth_scan,bluetooth_connect
+                         (default: every missing permission)
+  --reason <text>        extra sentence shown at the top of the prompt
+
+Kinds:
+  runtime     standard Allow/Deny dialog
+  settings    special app access, opened directly on the right page
+  privileged  cannot be granted at runtime (needs priv-app install + root)
+
+Examples:
+  $SCRIPTNAME status
+  $SCRIPTNAME status | jq '.missing_grantable'
+  $SCRIPTNAME request
+  $SCRIPTNAME request --permissions bluetooth_connect --reason "buat pairing"
+EOF
+    exit 0
+}
+
+call_api () {
+    local API_METHOD="$1"
+    shift
+    local result
+    if ! result="$(termux-api Permission "$@")"; then
+        local errmsg="Failed to execute the termux-api command. Is Termux:API installed?"
+        if [ -n "${result:-}" ]; then errmsg="$errmsg\n$result"; fi
+        echo -e "$errmsg" >&2
+        exit 1
+    fi
+    echo "$result"
+}
+
+status_cmd() {
+    call_api status --es subcommand status
+}
+
+request_cmd() {
+    local permissions="" reason=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_usage ;;
+            --permissions) permissions="${2:-}"; shift 2 ;;
+            --reason)      reason="${2:-}"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
+    if [ -n "$permissions" ]; then
+        call_api request --es subcommand request --es permissions "$permissions" ${reason:+--es reason "$reason"}
+    else
+        call_api request --es subcommand request ${reason:+--es reason "$reason"}
+    fi
+}
+
+if [ $# -eq 0 ]; then
+    show_usage
+fi
+
+CMD="$1"
+shift
+
+case "$CMD" in
+    -h|--help) show_usage ;;
+    status)    status_cmd ;;
+    request)   request_cmd "$@" ;;
+    *)
+        echo "Unknown command: $CMD" >&2
+        show_usage
+        ;;
+esac

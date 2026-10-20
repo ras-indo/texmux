@@ -154,10 +154,11 @@ jobs:
           APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
           rm -rf /tmp/apk-x && mkdir -p /tmp/apk-x
           unzip -oq "$APK" -d /tmp/apk-x 'classes*.dex' 'assets/termux-api/bin/termux-wifi' \
-                     'assets/termux-api/bin/termux-bluetooth'
+                     'assets/termux-api/bin/termux-bluetooth' 'assets/termux-api/bin/termux-permission'
           for token in hotspot-status hotspot-stop hotspot-enable hotspot-disable hotspot-clients \
                        system_channel rssi_percent le_supported ip_addresses \
-                       gatt-rssi bonding_started unpair_started; do
+                       gatt-rssi bonding_started unpair_started \
+                       missing_privileged privapp-permissions; do
             grep -aq -- "$token" /tmp/apk-x/classes*.dex \
               || { echo "!! dex is missing the '$token' addition"; exit 1; }
           done
@@ -181,7 +182,11 @@ jobs:
             grep -qF -- "$sub" /tmp/apk-x/assets/termux-api/bin/termux-bluetooth \
               || { echo "!! termux-bluetooth is missing '$sub'"; exit 1; }
           done
-          echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi present"
+          for sub in "status" "request" "--permissions"; do
+            grep -q -- "$sub" /tmp/apk-x/assets/termux-api/bin/termux-permission \
+              || { echo "!! termux-permission is missing '$sub'"; exit 1; }
+          done
+          echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, in-app permission prompt present"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |

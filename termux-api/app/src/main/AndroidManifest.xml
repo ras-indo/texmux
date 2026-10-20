@@ -113,6 +113,15 @@
             android:excludeFromRecents="true"
             android:exported="false" />
 
+        <!-- Visible in-app permission prompt: shows what is missing, triggers the
+             system dialog for runtime permissions, deep-links special-access pages
+             and explains privileged permissions that no dialog can grant. -->
+        <activity android:name=".activities.PermissionPromptActivity"
+            android:theme="@android:style/Theme.Material.Light.Dialog.NoActionBar"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:exported="false" />
+
         <activity android:name=".apis.DialogAPI$DialogActivity"
             android:theme="@style/DialogTheme"
             android:noHistory="true"

@@ -1091,6 +1091,7 @@ public class WifiAPI {
                         + "<permission name=\"android.permission.NETWORK_SETTINGS\"/>"
                         + "</privapp-permissions></permissions>");
                     out.name("settings_fallback").value("termux-wifi hotspot-enable --open-settings");
+                    out.name("prompt_command").value("termux-permission request --permissions tether_privileged");
                 } catch (NoSuchMethodException e) {
                     out.name("accepted").value(false);
                     out.name("error_type").value("NoSuchMethodException");

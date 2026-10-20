@@ -21,6 +21,7 @@ import com.termux.api.apis.DialogAPI;
 import com.termux.api.apis.DownloadAPI;
 import com.termux.api.apis.FingerprintAPI;
 import com.termux.api.apis.InfraredAPI;
+import com.termux.api.apis.PermissionAPI;
 import com.termux.api.apis.JobSchedulerAPI;
 import com.termux.api.apis.KeystoreAPI;
 import com.termux.api.apis.LocationAPI;
@@ -88,6 +89,9 @@ public final class DirectDispatcher {
         }
 
         switch (apiMethod) {
+            case "Permission":
+                PermissionAPI.onReceive(context, intent);
+                break;
             case "AudioInfo":
                 AudioAPI.onReceive(handlerContext, context, intent);
                 break;
