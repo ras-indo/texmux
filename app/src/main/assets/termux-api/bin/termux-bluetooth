@@ -203,6 +203,11 @@ GATT Client:
   $SCRIPTNAME gatt-read      --address <mac> --service <uuid> --char <uuid>
   $SCRIPTNAME gatt-write     --address <mac> --service <uuid> --char <uuid> --value <hex>
   $SCRIPTNAME gatt-notify    --address <mac> --service <uuid> --char <uuid>
+  $SCRIPTNAME rssi           --address <mac>        RSSI of a short-lived connection
+
+Pairing & battery:
+  $SCRIPTNAME bond    --address <mac> [--action pair|unpair|cancel]
+  $SCRIPTNAME battery --address <mac>               Battery level (0x2A19) + RSSI
 
 GATT Server:
   $SCRIPTNAME gatt-server {start|stop|add-service}
@@ -912,6 +917,105 @@ profiles_cmd() {
     call_api --es command profiles --es address "$address"
 }
 
+# ─── Bond / battery / rssi ────────────────────────────────────────────────
+bond_cmd() {
+    local address="" action="pair"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                cat <<EOF
+Usage: $SCRIPTNAME bond --address <mac> [--action pair|unpair|cancel]
+
+Pair (bond) dengan device, atau lepas pairing-nya.
+
+  --action pair     mulai pairing (default)
+  --action unpair   hapus bonding
+  --action cancel   batalkan proses pairing yang sedang berjalan
+
+Output JSON:
+  status      bonding_started | unpair_started | cancel_started | failed
+  bond_state  BOND_NONE | BOND_BONDING | BOND_BONDED (keadaan saat perintah jalan)
+  api_note    alasan bila gagal (mis. removeBond() tidak tersedia)
+
+Catatan:
+  - Pairing bisa memunculkan dialog PIN/passkey di device; perintah ini tidak
+    menunggu sampai selesai — panggil ulang untuk melihat bond_state terbaru.
+  - unpair/cancel memakai API hidden (removeBond/cancelBondProcess); pada build
+    yang tidak mengeksposnya hasilnya "failed" beserta api_note.
+
+Contoh:
+  $SCRIPTNAME bond --address AA:BB:CC:DD:EE:FF
+  $SCRIPTNAME bond --address AA:BB:CC:DD:EE:FF --action unpair
+EOF
+                exit 0 ;;
+            --address) address="$2"; shift 2 ;;
+            --action)  action="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Usage: $SCRIPTNAME bond --address <mac> [--action pair|unpair|cancel]" >&2; exit 1; }
+    call_api --es command bond --es address "$address" --es action "$action"
+}
+
+battery_cmd() {
+    local address=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                cat <<EOF
+Usage: $SCRIPTNAME battery --address <mac>
+
+Membaca level baterai device lewat GATT Battery Service (0x180F) karakteristik
+Battery Level (0x2A19), lalu RSSI — koneksi dibuka sebentar dan langsung ditutup.
+
+Cocok untuk earbuds, mouse, keyboard, band yang meng-expose battery service.
+
+Output JSON:
+  address        MAC device
+  name           nama device (bila terbaca)
+  battery_level  0-100
+  rssi           kekuatan sinyal dBm
+  API_ERROR      alasan bila device tidak punya battery service / gagal baca
+  status_note    catatan bila timeout (device di luar jangkauan / sibuk)
+
+Contoh:
+  $SCRIPTNAME battery --address AA:BB:CC:DD:EE:FF
+  $SCRIPTNAME battery --address AA:BB:CC:DD:EE:FF | jq '.battery_level'
+EOF
+                exit 0 ;;
+            --address) address="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Usage: $SCRIPTNAME battery --address <mac>" >&2; exit 1; }
+    call_api --es command battery --es address "$address"
+}
+
+rssi_cmd() {
+    local address=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                cat <<EOF
+Usage: $SCRIPTNAME rssi --address <mac>
+
+Membaca RSSI (kekuatan sinyal, dBm) lewat koneksi GATT singkat.
+Semakin mendekati 0 semakin kuat (-40 kuat, -90 lemah).
+
+Output JSON: { "address": ..., "name": ..., "rssi": -63 }
+
+Contoh:
+  $SCRIPTNAME rssi --address AA:BB:CC:DD:EE:FF
+EOF
+                exit 0 ;;
+            --address) address="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [ -z "$address" ] && { echo "Usage: $SCRIPTNAME rssi --address <mac>" >&2; exit 1; }
+    call_api --es command gatt-rssi --es address "$address"
+}
+
 # ─── Main dispatch ────────────────────────────────────────────────────────
 case "$CMD" in
     adapter)       adapter_cmd "$@" ;;
@@ -922,6 +1026,9 @@ case "$CMD" in
     gatt-read)     gatt_read "$@" ;;
     gatt-write)    gatt_write "$@" ;;
     gatt-notify)   gatt_notify "$@" ;;
+    rssi)          rssi_cmd "$@" ;;
+    bond)          bond_cmd "$@" ;;
+    battery)       battery_cmd "$@" ;;
     gatt-server)   gatt_server_cmd "$@" ;;
     rfcomm)        rfcomm_cmd "$@" ;;
     profiles)      profiles_cmd "$@" ;;

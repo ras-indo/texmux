@@ -430,6 +430,15 @@ public class BluetoothAPI {
                     case "gatt-notify":
                         handleGattNotify(intent);
                         break;
+                    case "gatt-rssi":
+                        handleGattRssi(intent);
+                        break;
+                    case "battery":
+                        handleBatteryLevel(intent);
+                        break;
+                    case "bond":
+                        handleBond(intent);
+                        break;
                     case "gatt-server":
                         handleGattServer(intent);
                         break;
@@ -1144,6 +1153,254 @@ public class BluetoothAPI {
         // ============================================================
         // GATT Client — Read Characteristic / Descriptor
         // ============================================================
+
+        // ── Bond / RSSI / battery probe ────────────────────────────────
+
+        /** Standard GATT Battery Service and Battery Level characteristic. */
+        private static final UUID BATTERY_SERVICE_UUID =
+            UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb");
+        private static final UUID BATTERY_LEVEL_UUID =
+            UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb");
+
+        /**
+         * Pair, unpair or cancel pairing.
+         *
+         * createBond() is public API; removeBond() and cancelBondProcess() are
+         * hidden, so they are invoked reflectively and reported as unavailable
+         * when a build does not expose them.
+         */
+        private void handleBond(Intent intent) {
+            BluetoothAdapter adapter = getBluetoothAdapter(this);
+            if (adapter == null) {
+                returnError(this, intent, "Bluetooth not supported");
+                return;
+            }
+            String address = intent.getStringExtra("address");
+            if (address == null || !BluetoothAdapter.checkBluetoothAddress(address)) {
+                returnError(this, intent, "Missing or invalid 'address' extra");
+                return;
+            }
+            String requested = intent.getStringExtra("action");
+            final String action = requested != null ? requested : "pair";
+
+            BluetoothDevice device = adapter.getRemoteDevice(address);
+            String status;
+            String note = null;
+
+            if ("unpair".equals(action) || "remove".equals(action)) {
+                boolean ok = Boolean.TRUE.equals(readProperty(device, "removeBond"));
+                status = ok ? "unpair_started" : "failed";
+                if (!ok) note = "removeBond() is unavailable or returned false";
+            } else if ("cancel".equals(action)) {
+                boolean ok = Boolean.TRUE.equals(readProperty(device, "cancelBondProcess"));
+                status = ok ? "cancel_started" : "failed";
+                if (!ok) note = "cancelBondProcess() is unavailable or returned false";
+            } else {
+                boolean ok = device.createBond();
+                status = ok ? "bonding_started" : "failed";
+                if (!ok) note = "createBond() returned false (already bonding, or permission denied)";
+            }
+
+            final String finalStatus = status;
+            final String finalNote = note;
+            final String bondState = bondStateToString(device.getBondState());
+            final String deviceName;
+            try {
+                deviceName = device.getName();
+            } catch (Exception e) {
+                returnError(this, intent, "Cannot read device name: " + e.getMessage());
+                return;
+            }
+
+            ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+                @Override
+                public void writeJson(JsonWriter out) throws Exception {
+                    out.beginObject();
+                    out.name("status").value(finalStatus);
+                    out.name("action").value(action);
+                    out.name("address").value(address);
+                    if (deviceName != null) out.name("name").value(deviceName);
+                    out.name("bond_state").value(bondState);
+                    if (finalNote != null) out.name("api_note").value(finalNote);
+                    out.endObject();
+                }
+            });
+        }
+
+        /** Battery level (0x2A19) plus RSSI of a short-lived connection. */
+        private void handleBatteryLevel(Intent intent) {
+            probeDevice(intent, true);
+        }
+
+        /** RSSI of a short-lived connection. */
+        private void handleGattRssi(Intent intent) {
+            probeDevice(intent, false);
+        }
+
+        /**
+         * Connect, optionally read the standard Battery Level characteristic, read
+         * the RSSI, then disconnect.
+         *
+         * This is deliberately self-contained instead of reusing gattClients: the
+         * user asks "how full are my earbuds / mouse" far more often than they
+         * keep a GATT session open, and the probe must not disturb one that is.
+         */
+        private void probeDevice(Intent intent, final boolean wantBattery) {
+            BluetoothAdapter adapter = getBluetoothAdapter(this);
+            if (adapter == null) {
+                returnError(this, intent, "Bluetooth not supported");
+                return;
+            }
+            String address = intent.getStringExtra("address");
+            if (address == null || !BluetoothAdapter.checkBluetoothAddress(address)) {
+                returnError(this, intent, "Missing or invalid 'address' extra");
+                return;
+            }
+
+            final BluetoothDevice device = adapter.getRemoteDevice(address);
+            final BluetoothGattContainer container = new BluetoothGattContainer(null);
+            final int[] level = {-1};
+            final int[] rssi = {Integer.MIN_VALUE};
+            final String[] error = {null};
+            final boolean[] finished = {false};
+            final boolean[] batteryValueSeen = {false};
+
+            BluetoothGattCallback callback = new BluetoothGattCallback() {
+                private void finish() {
+                    if (finished[0]) return;
+                    finished[0] = true;
+                    container.opSemaphore.release();
+                }
+
+                private void requestRssi() {
+                    if (container.gatt != null && !container.gatt.readRemoteRssi()) {
+                        if (error[0] == null) error[0] = "readRemoteRssi() returned false";
+                        finish();
+                    }
+                }
+
+                private void applyBatteryValue(byte[] value, int status) {
+                    if (batteryValueSeen[0]) return;
+                    batteryValueSeen[0] = true;
+                    if (status != BluetoothGatt.GATT_SUCCESS || value == null || value.length == 0) {
+                        if (error[0] == null) error[0] = "Battery read failed (status " + status + ")";
+                    } else {
+                        level[0] = value[0] & 0xFF;
+                    }
+                    requestRssi();
+                }
+
+                @Override
+                public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+                    container.connectionState = newState;
+                    if (newState == BluetoothGatt.STATE_CONNECTED) {
+                        if (!gatt.discoverServices()) {
+                            if (error[0] == null) error[0] = "discoverServices() returned false";
+                            finish();
+                        }
+                    } else if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                        if (error[0] == null && level[0] < 0 && rssi[0] == Integer.MIN_VALUE) {
+                            error[0] = "Disconnected before a result was read (status " + status + ")";
+                        }
+                        finish();
+                    }
+                }
+
+                @Override
+                public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+                    if (status != BluetoothGatt.GATT_SUCCESS) {
+                        if (error[0] == null) error[0] = "Service discovery failed (status " + status + ")";
+                        finish();
+                        return;
+                    }
+                    if (!wantBattery) {
+                        requestRssi();
+                        return;
+                    }
+                    BluetoothGattService service = gatt.getService(BATTERY_SERVICE_UUID);
+                    BluetoothGattCharacteristic characteristic =
+                        service != null ? service.getCharacteristic(BATTERY_LEVEL_UUID) : null;
+                    if (characteristic == null) {
+                        error[0] = "Device exposes no Battery Level characteristic (0x2A19)";
+                        finish();
+                        return;
+                    }
+                    if (!gatt.readCharacteristic(characteristic)) {
+                        error[0] = "readCharacteristic() returned false";
+                        finish();
+                    }
+                }
+
+                @Override
+                public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+                    applyBatteryValue(characteristic.getValue(), status);
+                }
+
+                @Override
+                public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic,
+                                                 byte[] value, int status) {
+                    // API 33+ delivers the value separately; the base class also
+                    // calls the deprecated overload, hence the seen-guard.
+                    applyBatteryValue(value, status);
+                }
+
+                @Override
+                public void onReadRemoteRssi(BluetoothGatt gatt, int value, int status) {
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        rssi[0] = value;
+                    } else if (error[0] == null) {
+                        error[0] = "RSSI read failed (status " + status + ")";
+                    }
+                    finish();
+                }
+            };
+
+            container.gatt = device.connectGatt(this, false, callback, BluetoothDevice.TRANSPORT_LE);
+            if (container.gatt == null) {
+                returnError(this, intent, "connectGatt() returned null");
+                return;
+            }
+
+            boolean completed;
+            try {
+                completed = container.opSemaphore.tryAcquire(GATT_OPERATION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                completed = false;
+            }
+
+            try {
+                container.gatt.disconnect();
+            } catch (Exception ignored) { }
+            try {
+                container.gatt.close();
+            } catch (Exception ignored) { }
+
+            final boolean timedOut = !completed;
+            final String deviceName;
+            try {
+                deviceName = device.getName();
+            } catch (Exception e) {
+                deviceName = null;
+            }
+
+            ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+                @Override
+                public void writeJson(JsonWriter out) throws Exception {
+                    out.beginObject();
+                    out.name("address").value(device.getAddress());
+                    if (deviceName != null) out.name("name").value(deviceName);
+                    if (level[0] >= 0) out.name("battery_level").value(level[0]);
+                    if (rssi[0] != Integer.MIN_VALUE) out.name("rssi").value(rssi[0]);
+                    if (error[0] != null) out.name("API_ERROR").value(error[0]);
+                    if (timedOut) {
+                        out.name("status_note").value(
+                            "No response within " + GATT_OPERATION_TIMEOUT_MS + " ms; the device may be out of range or busy");
+                    }
+                    out.endObject();
+                }
+            });
+        }
 
         @SuppressLint("MissingPermission")
         private void handleGattRead(Intent intent) {

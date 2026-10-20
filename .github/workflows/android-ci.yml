@@ -153,9 +153,11 @@ jobs:
           set -euo pipefail
           APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
           rm -rf /tmp/apk-x && mkdir -p /tmp/apk-x
-          unzip -oq "$APK" -d /tmp/apk-x 'classes*.dex' 'assets/termux-api/bin/termux-wifi'
+          unzip -oq "$APK" -d /tmp/apk-x 'classes*.dex' 'assets/termux-api/bin/termux-wifi' \
+                     'assets/termux-api/bin/termux-bluetooth'
           for token in hotspot-status hotspot-stop hotspot-enable hotspot-disable hotspot-clients \
-                       system_channel rssi_percent le_supported ip_addresses; do
+                       system_channel rssi_percent le_supported ip_addresses \
+                       gatt-rssi bonding_started unpair_started; do
             grep -aq -- "$token" /tmp/apk-x/classes*.dex \
               || { echo "!! dex is missing the '$token' addition"; exit 1; }
           done
@@ -172,7 +174,14 @@ jobs:
             grep -q -- "$opt" /tmp/apk-x/assets/termux-api/bin/termux-wifi \
               || { echo "!! termux-wifi is missing $opt"; exit 1; }
           done
-          echo "OK: hotspot status/stop, wifi scan filters and bluetooth details present"
+          # Battery Service UUID proves the new GATT probe survived R8/D8 shrinking.
+          grep -aq -- "00002a19-0000-1000-8000-00805f9b34fb" /tmp/apk-x/classes*.dex \
+            || { echo "!! dex lost the Battery Level UUID"; exit 1; }
+          for sub in "bond --address" "battery --address" "rssi --address"; do
+            grep -qF -- "$sub" /tmp/apk-x/assets/termux-api/bin/termux-bluetooth \
+              || { echo "!! termux-bluetooth is missing '$sub'"; exit 1; }
+          done
+          echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi present"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |
