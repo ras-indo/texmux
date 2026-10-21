@@ -3,6 +3,7 @@ package com.termux.api.activities;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.text.TextUtils;
 import android.util.JsonWriter;
 
@@ -14,27 +15,97 @@ import com.termux.shared.termux.TermuxConstants;
 
 import java.util.ArrayList;
 
+/**
+ * Grants permissions by handing the work to the system.
+ *
+ * This activity is declared with {@code Theme.NoDisplay} and never draws
+ * anything.  Runtime permissions are requested through
+ * {@link #requestPermissions(String[], int)}, so Android shows its own
+ * Allow/Deny dialog.  "Special app access" permissions have no dialog at all,
+ * so their dedicated settings page is opened instead.  Privileged permissions
+ * are never requested here - the JSON response explains that they need a
+ * priv-app whitelist.
+ *
+ * There is deliberately no UI of our own: anything drawn here would only
+ * duplicate what the platform already shows.
+ */
 public class TermuxApiPermissionActivity extends Activity {
 
     private static final String LOG_TAG = "TermuxApiPermissionActivity";
 
-    /**
-     * Intent extra containing the permissions to request.
-     */
+    private static final int REQUEST_CODE = 0;
+
+    /** Intent extra containing the runtime permissions to request. */
     public static final String PERMISSIONS_EXTRA = TermuxConstants.TERMUX_API_PACKAGE_NAME + ".permission_extra";
 
+    /** Intent extra containing a system settings action to open (special app access). */
+    public static final String SETTINGS_ACTION_EXTRA = TermuxConstants.TERMUX_API_PACKAGE_NAME + ".settings_action_extra";
+
     /**
-     * Check for and request permissions if necessary.
-     *
-     * @return if all permissions were already granted
+     * Enters the permission flow for the given manifest permission names: the
+     * system dialog when one exists, the matching settings page otherwise.
      */
+    public static void openSystemUi(Context context, String... permissions) {
+        ArrayList<String> runtime = new ArrayList<>();
+        String settingsAction = null;
+
+        for (String permission : permissions) {
+            PermissionAPI.Entry entry = PermissionAPI.findByPermission(permission);
+            if (entry != null && PermissionAPI.KIND_PRIVILEGED.equals(entry.kind)) continue;
+            if (entry != null && PermissionAPI.KIND_SETTINGS.equals(entry.kind)) {
+                if (settingsAction == null) settingsAction = entry.settingsAction;
+                continue;
+            }
+            runtime.add(permission);
+        }
+
+        // One thing at a time: the dialog first, the settings page on the next run.
+        if (!runtime.isEmpty()) {
+            requestRuntime(context, runtime.toArray(new String[0]));
+        } else if (settingsAction != null) {
+            openSettingsPage(context, settingsAction);
+        }
+    }
+
+    /** Asks Android to show its own permission dialog for these permissions. */
+    public static void requestRuntime(Context context, String... permissions) {
+        if (permissions == null || permissions.length == 0) return;
+
+        Intent request = new Intent(context, TermuxApiPermissionActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putStringArrayListExtra(PERMISSIONS_EXTRA, arrayList(permissions));
+
+        try {
+            context.startActivity(request);
+        } catch (Exception ignored) {
+            // The caller's JSON already says what is missing.
+        }
+    }
+
+    /** Opens the system page that owns a "special app access" permission. */
+    public static void openSettingsPage(Context context, String action) {
+        if (action == null) return;
+
+        Intent settings = new Intent(context, TermuxApiPermissionActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(SETTINGS_ACTION_EXTRA, action);
+
+        try {
+            context.startActivity(settings);
+        } catch (Exception ignored) {
+            // The caller's JSON already explains where the toggle lives.
+        }
+    }
+
+    private static ArrayList<String> arrayList(String[] values) {
+        ArrayList<String> list = new ArrayList<>(values.length);
+        for (String value : values) list.add(value);
+        return list;
+    }
+
     /**
-     * Return a permission-error JSON response for a special permission that
-     * cannot be requested via {@link Activity#requestPermissions(String[], int)}
-     * (e.g. {@link Manifest.permission#WRITE_SETTINGS}).  Unlike
-     * {@link #checkAndRequestPermissions(Context, Intent, String...)}, this does
-     * NOT launch a permission-request activity — the caller is expected to
-     * open the relevant system-settings page instead.
+     * Return a permission-error JSON response for permissions that have no
+     * runtime dialog, then enter the flow for whatever is still missing.
      */
     public static void returnPermissionError(Context context, Intent intent, String... permissions) {
         final String[] requested = permissions;
@@ -47,44 +118,14 @@ public class TermuxApiPermissionActivity extends Activity {
                         + TextUtils.join(" ,", requested);
                 out.beginObject();
                 out.name("error").value(errorMessage);
-                out.name("prompt_opened").value(!keysFor(requested).isEmpty());
-                out.name("hint").value("Izinkan lewat layar yang muncul, lalu jalankan ulang perintahnya.");
+                out.name("hint").value("Ikuti layar Android yang muncul, lalu jalankan ulang perintahnya.");
                 out.name("needs_permission").beginArray();
                 for (String permission : requested) out.value(permission);
                 out.endArray();
                 out.endObject();
             }
         });
-        openPrompt(context, keysFor(permissions), null);
-    }
-
-    /** Maps manifest permission names to the prompt's catalog keys. */
-    private static ArrayList<String> keysFor(String... permissions) {
-        ArrayList<String> keys = new ArrayList<>();
-        for (PermissionAPI.Entry entry : PermissionAPI.catalog()) {
-            for (String permission : permissions) {
-                if (entry.permission.equals(permission) && !keys.contains(entry.key)) keys.add(entry.key);
-            }
-        }
-        return keys;
-    }
-
-    /**
-     * Opens the visible prompt.  Extras are deliberately NOT copied: the caller has
-     * already answered with an error JSON, so the prompt must not write a second
-     * response to the same client request.
-     */
-    private static void openPrompt(Context context, ArrayList<String> keys, String reason) {
-        if (keys.isEmpty()) return;
-        Intent prompt = new Intent(context, PermissionPromptActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                .putStringArrayListExtra(PermissionPromptActivity.EXTRA_KEYS, keys)
-                .putExtra(PermissionPromptActivity.EXTRA_REASON, reason);
-        try {
-            context.startActivity(prompt);
-        } catch (Exception ignored) {
-            // Nothing else to do: the JSON already tells the user what is missing.
-        }
+        openSystemUi(context, permissions);
     }
 
     public static boolean checkAndRequestPermissions(Context context, Intent intent, String... permissions) {
@@ -107,8 +148,7 @@ public class TermuxApiPermissionActivity extends Activity {
                             + TextUtils.join(" ,", permissionsToRequest);
                     out.beginObject();
                     out.name("error").value(errorMessage);
-                    out.name("prompt_opened").value(true);
-                    out.name("hint").value("Izinkan lewat layar yang muncul, lalu jalankan ulang perintahnya.");
+                    out.name("hint").value("Ikuti layar Android yang muncul, lalu jalankan ulang perintahnya.");
                     out.name("needs_permission").beginArray();
                     for (String permission : permissionsToRequest) out.value(permission);
                     out.endArray();
@@ -116,11 +156,7 @@ public class TermuxApiPermissionActivity extends Activity {
                 }
             });
 
-            // Visible prompt instead of the old Theme.NoDisplay activity: it shows
-            // what is being asked for, triggers the system dialog, and deep-links
-            // the settings page once the dialog has been permanently dismissed.
-            openPrompt(context, keysFor(permissionsToRequest.toArray(new String[0])),
-                "Izin ini dibutuhkan oleh perintah yang baru saja dijalankan.");
+            openSystemUi(context, permissionsToRequest.toArray(new String[0]));
             return false;
         }
     }
@@ -136,11 +172,39 @@ public class TermuxApiPermissionActivity extends Activity {
     @Override
     protected void onResume() {
         Logger.logVerbose(LOG_TAG, "onResume");
-
         super.onResume();
-        ArrayList<String> permissionValues = getIntent().getStringArrayListExtra(PERMISSIONS_EXTRA);
-        PermissionUtils.requestPermissions(this, permissionValues.toArray(new String[0]), 0);
+
+        Intent intent = getIntent();
+
+        String settingsAction = intent.getStringExtra(SETTINGS_ACTION_EXTRA);
+        if (settingsAction != null) {
+            openSettingsPageNow(settingsAction);
+            finish();
+            return;
+        }
+
+        ArrayList<String> permissions = intent.getStringArrayListExtra(PERMISSIONS_EXTRA);
+        if (permissions != null && !permissions.isEmpty()) {
+            PermissionUtils.requestPermissions(this, permissions.toArray(new String[0]), REQUEST_CODE);
+        }
         finish();
+    }
+
+    /**
+     * Opens the settings page that owns a special permission.  Some actions
+     * need the package URI to land on this app's row, others reject it, so
+     * both forms are tried before giving up.
+     */
+    private void openSettingsPageNow(String action) {
+        try {
+            startActivity(new Intent(action, Uri.parse("package:" + getPackageName())));
+        } catch (Exception withPackageUri) {
+            try {
+                startActivity(new Intent(action));
+            } catch (Exception ignored) {
+                // The JSON response already names the page to open.
+            }
+        }
     }
 
 }

@@ -7,7 +7,7 @@ import android.os.Build;
 import android.provider.Settings;
 import android.util.JsonWriter;
 
-import com.termux.api.activities.PermissionPromptActivity;
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.shared.android.PermissionUtils;
 
@@ -154,6 +154,13 @@ public class PermissionAPI {
         return null;
     }
 
+    public static Entry findByPermission(String permission) {
+        for (Entry entry : catalog()) {
+            if (entry.permission.equals(permission)) return entry;
+        }
+        return null;
+    }
+
     public static boolean isGranted(Context context, Entry entry) {
         try {
             if (KIND_PRIVILEGED.equals(entry.kind)) {
@@ -248,12 +255,28 @@ public class PermissionAPI {
             return;
         }
 
-        Intent prompt = new Intent(context, PermissionPromptActivity.class)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            .putStringArrayListExtra(PermissionPromptActivity.EXTRA_KEYS, new ArrayList<>(requestedKeys))
-            .putExtra(PermissionPromptActivity.EXTRA_REASON, intent.getStringExtra("reason"));
-        ResultReturner.copyIntentExtras(intent, prompt);
-        context.startActivity(prompt);
+        // Hand the request to the system: Android's own dialog for runtime
+        // permissions, the matching settings page for special app access.
+        ArrayList<String> permissions = new ArrayList<>();
+        for (String key : requestedKeys) {
+            Entry entry = findByKey(key);
+            if (entry != null && !permissions.contains(entry.permission)) permissions.add(entry.permission);
+        }
+
+        if (permissions.isEmpty()) {
+            ResultReturner.returnData(context, intent, new ResultReturner.ResultJsonWriter() {
+                @Override
+                public void writeJson(JsonWriter out) throws Exception {
+                    out.beginObject();
+                    out.name("error").value("No known permission matched the request");
+                    out.endObject();
+                }
+            });
+            return;
+        }
+
+        TermuxApiPermissionActivity.checkAndRequestPermissions(
+            context, intent, permissions.toArray(new String[0]));
     }
 
     /** Writes a JSON array of strings under the given name. */
@@ -263,19 +286,4 @@ public class PermissionAPI {
         out.endArray();
     }
 
-    /**
-     * Used by the other API classes: when a command fails because a permission is
-     * missing, open the prompt so granting it is one tap, and describe what is
-     * missing in the JSON that the caller already receives.
-     */
-    public static void promptFor(Context context, String... keys) {
-        try {
-            Intent prompt = new Intent(context, PermissionPromptActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putStringArrayListExtra(PermissionPromptActivity.EXTRA_KEYS, new ArrayList<>(java.util.Arrays.asList(keys)));
-            context.startActivity(prompt);
-        } catch (Exception ignored) {
-            // The caller still gets the permission error in its JSON response.
-        }
-    }
 }
