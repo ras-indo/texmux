@@ -204,16 +204,18 @@ jobs:
             grep -q -- "$sub" /tmp/apk-x/assets/termux-api/bin/termux-permission \
               || { echo "!! termux-permission is missing '$sub'"; exit 1; }
           done
-          # The prompt activity must be declared, otherwise the in-app prompt
-          # never starts and the user only sees a bare error.
-          if [ -n "${AAPT:-}" ]; then
-            "$AAPT" dump xmltree "$APK" AndroidManifest.xml | grep -q PermissionPromptActivity \
-              || { echo "!! manifest does not declare PermissionPromptActivity"; exit 1; }
-          else
-            unzip -p "$APK" AndroidManifest.xml | strings -a -el | grep -q PermissionPromptActivity \
-              || { echo "!! manifest does not declare PermissionPromptActivity"; exit 1; }
+          # Permissions must be granted through Android's own dialog. The
+          # requester is a headless Theme.NoDisplay activity, and the hand-built
+          # prompt UI must stay gone - it hijacked the flow and could not tell
+          # "never asked" from "permanently denied".
+          grep -aq "TermuxApiPermissionActivity" /tmp/apk-x/classes*.dex \
+            || { echo "!! dex lost the headless permission requester"; exit 1; }
+          if grep -aq "PermissionPromptActivity" /tmp/apk-x/classes*.dex; then
+            echo "!! a custom permission UI is back in the APK"; exit 1
           fi
-          echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, in-app permission prompt present"
+          grep -q "Theme.NoDisplay" termux-api/app/src/main/AndroidManifest.xml \
+            || { echo "!! the permission requester is not headless"; exit 1; }
+          echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, headless system permission dialog"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |
