@@ -205,26 +205,38 @@ jobs:
               || { echo "!! termux-permission is missing '$sub'"; exit 1; }
           done
           # Permissions must be granted through Android's own dialog. The
-          # requester is a headless Theme.NoDisplay activity, and the hand-built
-          # prompt UI must stay gone - it hijacked the flow and could not tell
-          # "never asked" from "permanently denied".
+          # requester must stay translucent (a Theme.NoDisplay activity has to
+          # finish before onResume() returns, which cancels the very request it
+          # just made), must stay out of recents, and the hand-built prompt UI
+          # must stay gone - it hijacked the flow and could not tell "never
+          # asked" from "permanently denied".
           grep -aq "TermuxApiPermissionActivity" /tmp/apk-x/classes*.dex \
-            || { echo "!! dex lost the headless permission requester"; exit 1; }
+            || { echo "!! dex lost the permission requester"; exit 1; }
           if grep -aq "PermissionPromptActivity" /tmp/apk-x/classes*.dex; then
             echo "!! a custom permission UI is back in the APK"; exit 1
           fi
-          grep -q "Theme.NoDisplay" termux-api/app/src/main/AndroidManifest.xml \
-            || { echo "!! the permission requester is not headless"; exit 1; }
+          grep -q "Theme.Translucent.NoTitleBar" termux-api/app/src/main/AndroidManifest.xml \
+            || { echo "!! the permission requester is not translucent"; exit 1; }
+          if sed -n '/TermuxApiPermissionActivity/,/>/p' termux-api/app/src/main/AndroidManifest.xml | grep -q "noHistory"; then
+            echo "!! noHistory kills the requester while a dialog is open"; exit 1
+          fi
+          # The dialog answer must be acted on: without onRequestPermissionsResult
+          # the flow stops at "allow the permission" and never reaches the radio.
+          grep -q "onRequestPermissionsResult" \
+            termux-api/app/src/main/java/com/termux/api/activities/TermuxApiPermissionActivity.java \
+            || { echo "!! the permission result is never handled"; exit 1; }
           # Turning the adapter on is a separate system dialog. Without it a scan
           # can never run, no matter which permissions have been granted.
           grep -aq "android.bluetooth.adapter.action.REQUEST_ENABLE" /tmp/apk-x/classes*.dex \
             || { echo "!! the Bluetooth enable dialog is gone"; exit 1; }
+          grep -aq "android.settings.LOCATION_SOURCE_SETTINGS" /tmp/apk-x/classes*.dex \
+            || { echo "!! the location switch page is gone"; exit 1; }
           # Every handler that needs a dangerous permission must go through the
           # requester instead of dying with a SecurityException.
           gated=$(grep -la "checkAndRequestPermissions" termux-api/app/src/main/java/com/termux/api/apis/*.java | wc -l)
           [ "$gated" -ge 12 ] \
             || { echo "!! only $gated handlers gate permissions"; exit 1; }
-          echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, BT enable dialog, $gated gated handlers, headless system dialog"
+          echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, BT enable dialog, location switch page, $gated gated handlers, chained system dialogs"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |

@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -24,13 +25,21 @@ import java.util.ArrayList;
 /**
  * Grants permissions by handing the work to the system.
  *
- * This activity is declared with {@code Theme.NoDisplay} and never draws
- * anything.  Runtime permissions are requested through
+ * Runtime permissions are requested through
  * {@link #requestPermissions(String[], int)}, so Android shows its own
  * Allow/Deny dialog.  "Special app access" permissions have no dialog at all,
  * so their dedicated settings page is opened instead.  Privileged permissions
  * are never requested here - the JSON response explains that they need a
  * priv-app whitelist.
+ *
+ * The theme is translucent, not {@code Theme.NoDisplay}: a NoDisplay activity
+ * must finish before onResume() returns, which cancels the permission request
+ * before its dialog can be answered.  Nothing is drawn either way.
+ *
+ * After the dialog is answered the activity runs the follow-up action the
+ * caller queued - for example {@code BluetoothAdapter.ACTION_REQUEST_ENABLE} -
+ * so "allow the permission" and "switch the radio on" happen in one go instead
+ * of one command run each.
  *
  * There is deliberately no UI of our own: anything drawn here would only
  * duplicate what the platform already shows.
@@ -49,6 +58,12 @@ public class TermuxApiPermissionActivity extends Activity {
 
     /** Intent extra containing a system dialog to show, e.g. BluetoothAdapter.ACTION_REQUEST_ENABLE. */
     public static final String SYSTEM_ACTION_EXTRA = TermuxConstants.TERMUX_API_PACKAGE_NAME + ".system_action_extra";
+
+    /** Guards against onResume() being re-entered while the dialog is open. */
+    private boolean flowStarted;
+
+    /** Set once the follow-up action has been launched, so returning from it does nothing. */
+    private boolean flowFinished;
 
     /**
      * Whether a permission is actually usable right now.
@@ -110,41 +125,37 @@ public class TermuxApiPermissionActivity extends Activity {
             runtime.add(permission);
         }
 
-        // One thing at a time: the dialog first, the settings page on the next run.
-        if (!runtime.isEmpty()) {
-            requestRuntime(context, runtime.toArray(new String[0]));
-        } else if (settingsAction != null) {
-            openSettingsPage(context, settingsAction);
-        }
+        startFlow(context, runtime, settingsAction, null);
     }
 
     /** Asks Android to show its own permission dialog for these permissions. */
     public static void requestRuntime(Context context, String... permissions) {
-        if (permissions == null || permissions.length == 0) return;
+        startFlow(context, arrayList(permissions), null, null);
+    }
 
+    /** Opens the system page that owns a "special app access" permission. */
+    public static void openSettingsPage(Context context, String action) {
+        startFlow(context, new ArrayList<String>(), action, null);
+    }
+
+    /**
+     * Launches this activity with everything the flow needs: the permissions to
+     * ask for, and the action to run once they are granted.
+     */
+    private static void startFlow(Context context, ArrayList<String> permissions,
+                                  String settingsAction, String systemAction) {
         Intent request = new Intent(context, TermuxApiPermissionActivity.class)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            .putStringArrayListExtra(PERMISSIONS_EXTRA, arrayList(permissions));
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+        if (permissions != null && !permissions.isEmpty())
+            request.putStringArrayListExtra(PERMISSIONS_EXTRA, permissions);
+        if (settingsAction != null) request.putExtra(SETTINGS_ACTION_EXTRA, settingsAction);
+        if (systemAction != null) request.putExtra(SYSTEM_ACTION_EXTRA, systemAction);
 
         try {
             context.startActivity(request);
         } catch (Exception ignored) {
             // The caller's JSON already says what is missing.
-        }
-    }
-
-    /** Opens the system page that owns a "special app access" permission. */
-    public static void openSettingsPage(Context context, String action) {
-        if (action == null) return;
-
-        Intent settings = new Intent(context, TermuxApiPermissionActivity.class)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            .putExtra(SETTINGS_ACTION_EXTRA, action);
-
-        try {
-            context.startActivity(settings);
-        } catch (Exception ignored) {
-            // The caller's JSON already explains where the toggle lives.
         }
     }
 
@@ -163,17 +174,7 @@ public class TermuxApiPermissionActivity extends Activity {
         ResultReturner.returnData(context, intent, new ResultReturner.ResultJsonWriter() {
             @Override
             public void writeJson(JsonWriter out) throws Exception {
-                String errorMessage = "Please grant the following permission"
-                        + (requested.length > 1 ? "s" : "")
-                        + " to use this command: "
-                        + TextUtils.join(" ,", requested);
-                out.beginObject();
-                out.name("error").value(errorMessage);
-                out.name("hint").value("Ikuti layar Android yang muncul, lalu jalankan ulang perintahnya.");
-                out.name("needs_permission").beginArray();
-                for (String permission : requested) out.value(permission);
-                out.endArray();
-                out.endObject();
+                writePermissionError(out, requested, null);
             }
         });
         openSystemUi(context, permissions);
@@ -189,27 +190,42 @@ public class TermuxApiPermissionActivity extends Activity {
 
         if (permissionsToRequest.isEmpty()) {
             return true;
-        } else {
-            ResultReturner.returnData(context, intent, new ResultReturner.ResultJsonWriter() {
-                @Override
-                public void writeJson(JsonWriter out) throws Exception {
-                    String errorMessage = "Please grant the following permission"
-                            + (permissionsToRequest.size() > 1 ? "s" : "")
-                            + " to use this command: "
-                            + TextUtils.join(" ,", permissionsToRequest);
-                    out.beginObject();
-                    out.name("error").value(errorMessage);
-                    out.name("hint").value("Ikuti layar Android yang muncul, lalu jalankan ulang perintahnya.");
-                    out.name("needs_permission").beginArray();
-                    for (String permission : permissionsToRequest) out.value(permission);
-                    out.endArray();
-                    out.endObject();
-                }
-            });
-
-            openSystemUi(context, permissionsToRequest.toArray(new String[0]));
-            return false;
         }
+
+        // A hardware dialog queued by the caller (turn Bluetooth on, open the
+        // location switch) runs right after the permission dialog is answered,
+        // so the user is not sent back to the shell between the two.
+        final String systemAction = intent == null ? null : intent.getStringExtra(SYSTEM_ACTION_EXTRA);
+        final String settingsAction = intent == null ? null : intent.getStringExtra(SETTINGS_ACTION_EXTRA);
+
+        ResultReturner.returnData(context, intent, new ResultReturner.ResultJsonWriter() {
+            @Override
+            public void writeJson(JsonWriter out) throws Exception {
+                writePermissionError(out, permissionsToRequest.toArray(new String[0]), systemAction);
+            }
+        });
+
+        startFlow(context, permissionsToRequest, settingsAction, systemAction);
+        return false;
+    }
+
+    private static void writePermissionError(JsonWriter out, String[] permissions,
+                                             String followUpAction) throws Exception {
+        String errorMessage = "Please grant the following permission"
+                + (permissions.length > 1 ? "s" : "")
+                + " to use this command: "
+                + TextUtils.join(" ,", permissions);
+        String hint = followUpAction == null
+                ? "Ikuti layar Android yang muncul, lalu jalankan ulang perintahnya."
+                : "Setujui dialog izin, lalu dialog berikutnya untuk menyalakan perangkatnya, lalu jalankan ulang perintahnya.";
+
+        out.beginObject();
+        out.name("error").value(errorMessage);
+        out.name("hint").value(hint);
+        out.name("needs_permission").beginArray();
+        for (String permission : permissions) out.value(permission);
+        out.endArray();
+        out.endObject();
     }
 
     @Override
@@ -218,6 +234,8 @@ public class TermuxApiPermissionActivity extends Activity {
 
         super.onNewIntent(intent);
         setIntent(intent);
+        flowStarted = false;
+        flowFinished = false;
     }
 
     @Override
@@ -225,30 +243,67 @@ public class TermuxApiPermissionActivity extends Activity {
         Logger.logVerbose(LOG_TAG, "onResume");
         super.onResume();
 
-        Intent intent = getIntent();
+        // Coming back from the dialog we just opened: nothing left to do.
+        if (flowFinished || flowStarted) return;
+        flowStarted = true;
 
-        String systemAction = intent.getStringExtra(SYSTEM_ACTION_EXTRA);
+        Intent intent = getIntent();
+        ArrayList<String> requested = intent.getStringArrayListExtra(PERMISSIONS_EXTRA);
+        ArrayList<String> missing = new ArrayList<>();
+        if (requested != null) {
+            for (String permission : requested) {
+                if (!isGranted(this, permission)) missing.add(permission);
+            }
+        }
+
+        if (missing.isEmpty()) {
+            runFollowUpAction();
+        } else {
+            PermissionUtils.requestPermissions(this, missing.toArray(new String[0]), REQUEST_CODE);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode != REQUEST_CODE) return;
+
+        flowStarted = false;
+        boolean allGranted = grantResults.length > 0;
+        for (int result : grantResults) {
+            if (result != PackageManager.PERMISSION_GRANTED) allGranted = false;
+        }
+
+        // Granted: keep going into the hardware dialog the caller queued.
+        // Denied: stop, the JSON response already told the user what is missing.
+        if (allGranted) runFollowUpAction();
+        else finish();
+    }
+
+    /** Runs the system dialog / settings page the caller asked for, then exits. */
+    private void runFollowUpAction() {
+        if (flowFinished) return;
+        flowFinished = true;
+
+        String systemAction = getIntent().getStringExtra(SYSTEM_ACTION_EXTRA);
         if (systemAction != null) {
+            finish();
             try {
                 startActivity(new Intent(systemAction));
             } catch (Exception ignored) {
                 // The JSON response already tells the user what to switch on.
             }
-            finish();
             return;
         }
 
-        String settingsAction = intent.getStringExtra(SETTINGS_ACTION_EXTRA);
+        String settingsAction = getIntent().getStringExtra(SETTINGS_ACTION_EXTRA);
         if (settingsAction != null) {
-            openSettingsPageNow(settingsAction);
             finish();
+            openSettingsPageNow(settingsAction);
             return;
         }
 
-        ArrayList<String> permissions = intent.getStringArrayListExtra(PERMISSIONS_EXTRA);
-        if (permissions != null && !permissions.isEmpty()) {
-            PermissionUtils.requestPermissions(this, permissions.toArray(new String[0]), REQUEST_CODE);
-        }
         finish();
     }
 

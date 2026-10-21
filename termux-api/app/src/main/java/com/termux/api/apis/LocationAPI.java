@@ -34,6 +34,11 @@ public class LocationAPI {
     public static void onReceive(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
 
+        // Queue the location switch page so it opens right after the permission
+        // dialog is answered, instead of on a separate command run.
+        intent.putExtra(TermuxApiPermissionActivity.SYSTEM_ACTION_EXTRA,
+                Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+
         if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
                 Manifest.permission.ACCESS_FINE_LOCATION)) return;
 
