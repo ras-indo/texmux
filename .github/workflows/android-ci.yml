@@ -305,8 +305,15 @@ jobs:
           echo "OK: extraction usable despite tar exit=$tar_rc"
 
       - name: Run the upstream PRoot test suite
+        continue-on-error: true
         run: |
           set -uo pipefail
+          # A failing test must not abort the step: the exit status is
+          # checked below, and the diagnosis step needs the log and the
+          # recorded status.  GitHub runs a step with "bash -e", and
+          # with pipefail the make pipeline would abort the step right
+          # here.
+          set +e
           # The fork renamed test/ to tests/ when it was rebased on termux/proot.
           if [ -d /tmp/proot/tests ]; then
             cd /tmp/proot/tests
@@ -356,6 +363,7 @@ jobs:
           make check PROOT="/tmp/proot-timeout.sh /tmp/proot/src/proot" 2>&1 | tee /tmp/check.log
           rc=${PIPESTATUS[0]}
           echo "make check exit=$rc"
+          echo "$rc" > /tmp/check.rc
 
           # Guard against a silently empty suite: "make check" in a
           # directory without any test file succeeds without running
@@ -376,49 +384,65 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             echo "=== last 80 log lines ==="
             tail -80 /tmp/check.log
-
-            # Re-run the failing tests with their output visible and
-            # against a second, unpatched build of the same fork, so
-            # that a failure can be attributed to the patch instead of
-            # to the environment.
-            echo "=== diagnosis: failing tests, verbose, patched vs unpatched ==="
-            failed=$(sed -n 's/^  CHECK\t\(.*\) FAILED$/\1/p' failure | sort -u)
-            echo "failing tests: $failed"
-
-            git clone --depth=1 https://github.com/ras-indo/proot.git /tmp/proot-ref >/dev/null 2>&1
-            cd /tmp/proot-ref
-            git fetch --depth=1 origin 289dc4e87a2e75601a126b171fbb2bcee049d0cd >/dev/null 2>&1 || true
-            git checkout -q FETCH_HEAD 2>/dev/null || git checkout -q 289dc4e87a2e75601a126b171fbb2bcee049d0cd
-            export PKG_CONFIG_PATH=/tmp/talloc
-            if make -C /tmp/proot-ref/src -j"$(nproc)" WITHOUT_PYTHON=1 \
-                CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
-                LDFLAGS="-Wl,--gc-sections -L/tmp/talloc/lib -ltalloc" >/tmp/ref-build.log 2>&1; then
-                echo "unpatched reference build: OK"
-            else
-                echo "unpatched reference build: FAILED (see /tmp/ref-build.log)"
-                tail -20 /tmp/ref-build.log
-            fi
-
-            for t in $failed; do
-                echo "----- $t -----"
-                for label in patched unpatched; do
-                    case $label in
-                        patched)   bin=/tmp/proot/src/proot ;;
-                        unpatched) bin=/tmp/proot-ref/src/proot ;;
-                    esac
-                    if [ ! -x "$bin" ]; then
-                        echo "  $label: binary missing"
-                        continue
-                    fi
-                    ( cd /tmp/proot/tests && \
-                      make V=1 "check-$t" \
-                        PROOT="/tmp/proot-timeout.sh $bin" ) > "/tmp/diag-$t-$label.log" 2>&1
-                    st=$?
-                    echo "  $label: exit=$st"
-                    tail -25 "/tmp/diag-$t-$label.log" | sed 's/^/    /'
-                done
-            done
-
-            exit 1
           fi
           echo "OK: no test failures"
+
+      - name: Attribute a suite failure to the patch or to the environment
+        if: always()
+        run: |
+          set -uo pipefail
+          rc=0
+          [ -f /tmp/check.rc ] && rc=$(cat /tmp/check.rc)
+          if [ "$rc" -eq 0 ]; then
+            echo "the suite passed, nothing to diagnose"
+            exit 0
+          fi
+
+          # Re-run the failing tests with their output visible and
+          # against a second, unpatched build of the same fork, so that
+          # a failure can be attributed to the patch instead of to the
+          # environment.
+          echo "=== diagnosis: failing tests, verbose, patched vs unpatched ==="
+          failed=$(sed -n 's/^  CHECK\t\(.*\) FAILED$/\1/p' /tmp/proot/tests/failure 2>/dev/null | sort -u)
+          echo "failing tests: $failed"
+
+          if [ -z "$failed" ]; then
+            echo "no failing test recorded"
+            exit 1
+          fi
+
+          git clone --depth=1 https://github.com/ras-indo/proot.git /tmp/proot-ref >/dev/null 2>&1
+          cd /tmp/proot-ref
+          git fetch --depth=1 origin 289dc4e87a2e75601a126b171fbb2bcee049d0cd >/dev/null 2>&1 || true
+          git checkout -q FETCH_HEAD 2>/dev/null || git checkout -q 289dc4e87a2e75601a126b171fbb2bcee049d0cd
+          export PKG_CONFIG_PATH=/tmp/talloc
+          if make -C /tmp/proot-ref/src -j"$(nproc)" WITHOUT_PYTHON=1 \
+              CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
+              LDFLAGS="-Wl,--gc-sections -L/tmp/talloc/lib -ltalloc" >/tmp/ref-build.log 2>&1; then
+            echo "unpatched reference build: OK"
+          else
+            echo "unpatched reference build: FAILED (see /tmp/ref-build.log)"
+            tail -20 /tmp/ref-build.log
+          fi
+
+          for t in $failed; do
+            echo "----- $t -----"
+            for label in patched unpatched; do
+              case $label in
+                patched)   bin=/tmp/proot/src/proot ;;
+                unpatched) bin=/tmp/proot-ref/src/proot ;;
+              esac
+              if [ ! -x "$bin" ]; then
+                echo "  $label: binary missing"
+                continue
+              fi
+              ( cd /tmp/proot/tests && \
+                make V=1 "check-$t" \
+                  PROOT="/tmp/proot-timeout.sh $bin" ) > "/tmp/diag-$t-$label.log" 2>&1
+              st=$?
+              echo "  $label: exit=$st"
+              tail -25 "/tmp/diag-$t-$label.log" | sed 's/^/    /'
+            done
+          done
+
+          exit 1
