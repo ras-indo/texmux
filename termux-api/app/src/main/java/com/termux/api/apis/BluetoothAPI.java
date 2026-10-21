@@ -180,7 +180,15 @@ public class BluetoothAPI {
         serviceIntent.setAction(intent.getAction());
         Bundle extras = intent.getExtras();
         if (extras != null) serviceIntent.putExtras(extras);
-        context.startService(serviceIntent);
+        try {
+            context.startService(serviceIntent);
+        } catch (Exception e) {
+            // Background service starts are refused on O+ while the app is in
+            // the background; without this the caller waited the full 30 s and
+            // got "Handler did not produce a response" instead of the reason.
+            Logger.logStackTraceWithMessage(LOG_TAG, "startService failed", e);
+            returnError(apiReceiver, intent, "Bluetooth service could not start: " + e.getMessage());
+        }
     }
 
     /**
@@ -834,7 +842,17 @@ public class BluetoothAPI {
                 activeScanWriter.setLimit(intent.getIntExtra("limit", BleScanWriter.DEFAULT_LIMIT));
                 activeScanWriter.start();
 
-                scanner.startScan(filters, settings, activeScanCallback);
+                try {
+                    scanner.startScan(filters, settings, activeScanCallback);
+                } catch (Exception e) {
+                    activeScanCallback = null;
+                    if (activeScanWriter != null) {
+                        activeScanWriter.interrupt();
+                        activeScanWriter = null;
+                    }
+                    returnError(this, intent, "BLE scan could not start: " + e.getMessage());
+                    return;
+                }
 
                 ResultReturner.returnData(this, intent, out -> {
                     out.append("{\"status\":\"scan_started\",\"streaming\":true}\n");
@@ -864,7 +882,16 @@ public class BluetoothAPI {
                     }
                 };
 
-                scanner.startScan(filters, settings, callback);
+                try {
+                    scanner.startScan(filters, settings, callback);
+                } catch (Exception e) {
+                    // A SecurityException here (permission revoked while the
+                    // dialog was up, BLE disabled by the system) used to bubble
+                    // into the generic handler and answer with an opaque
+                    // "Internal error"; say what actually went wrong.
+                    returnError(this, intent, "BLE scan could not start: " + e.getMessage());
+                    return;
+                }
 
                 // Wait for timeout or external stop condition
                 // The CLI sends --duration; older callers sent timeout. Accept

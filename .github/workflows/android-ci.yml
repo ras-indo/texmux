@@ -274,6 +274,22 @@ jobs:
           grep -q 'addTriggerContentUri' \
             termux-api/app/src/main/java/com/termux/api/apis/JobSchedulerAPI.java \
             || { echo "!! content trigger jobs are silently ignored"; exit 1; }
+          # A streaming command (location, sensors, microphone, speech, tts) puts its
+          # own socket_output in the request: the client is listening there and never
+          # reads the request connection. Overwriting that address left both sides
+          # waiting - the client printed "streaming connection never arrived" after 30 s.
+          grep -q 'clientStreams' termux-api/app/src/main/java/com/termux/api/SocketListener.java \
+            || { echo "!! streaming replies are still redirected to a private socket"; exit 1; }
+          grep -q 'if (!clientStreams) {' termux-api/app/src/main/java/com/termux/api/SocketListener.java \
+            || { echo "!! the fallback socket is injected even for streaming requests"; exit 1; }
+          # A BLE scan that cannot start (security exception, adapter turned off under
+          # us) must say so; it used to end in a 30 s "no response" instead.
+          grep -q 'BLE scan could not start' \
+            termux-api/app/src/main/java/com/termux/api/apis/BluetoothAPI.java \
+            || { echo "!! a failing BLE scan answers with silence"; exit 1; }
+          grep -q 'Bluetooth service could not start' \
+            termux-api/app/src/main/java/com/termux/api/apis/BluetoothAPI.java \
+            || { echo "!! a refused startService hangs the caller for 30 s"; exit 1; }
           # Every handler that needs a dangerous permission must go through the
           # requester instead of dying with a SecurityException.
           gated=$(grep -la "checkAndRequestPermissions" termux-api/app/src/main/java/com/termux/api/apis/*.java | wc -l)

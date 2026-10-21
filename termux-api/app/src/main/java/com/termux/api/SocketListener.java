@@ -218,24 +218,47 @@ public class SocketListener {
             request.populateIntent(intent);
 
             OutputStream conOut = con.getOutputStream();
-            ResultReturner.setDirectResponseStream(conOut);
+
+            // Streaming APIs (Sensor, Location, MicRecorder, SpeechToText,
+            // TextToSpeech, NotificationList) put their own socket_output in the
+            // request: the client is already listening on that address and it
+            // never reads this connection. Overwriting it - which the fallback
+            // injection below used to do unconditionally - pointed the handler
+            // at a socket the client knows nothing about, so the client sat
+            // there until its 30 s timeout and printed "no response within 30 s
+            // (streaming connection never arrived)" while the handler happily
+            // wrote into our private server.
+            final String clientOutputAddr = intent.getStringExtra("socket_output");
+            final boolean clientStreams = clientOutputAddr != null && !clientOutputAddr.isEmpty();
+
+            if (clientStreams) {
+                Logger.logDebug(LOG_TAG, "Streaming request: keeping client socket_output");
+            } else {
+                ResultReturner.setDirectResponseStream(conOut);
+            }
 
             // Handlers like UsbAPI use startService() — async. By the time
             // the Service runs, the per-thread directResponseStream is gone.
-            // Inject socket addresses so the Service can back-connect.
-            String fbOutputAddr = UUID.randomUUID().toString();
-            String fbInputAddr  = UUID.randomUUID().toString();
-            intent.putExtra("socket_output", fbOutputAddr);
-            intent.putExtra("socket_input",  fbInputAddr);
+            // Inject socket addresses so the Service can back-connect. Only for
+            // non-streaming requests: a streaming client owns both addresses.
+            String fbOutputAddr = null;
+            String fbInputAddr  = null;
 
             LocalServerSocket fbOutputServer = null;
             LocalServerSocket fbInputServer  = null;
-            try {
-                fbOutputServer = new LocalServerSocket(fbOutputAddr);
-                fbInputServer  = new LocalServerSocket(fbInputAddr);
-            } catch (IOException e) {
-                Logger.logStackTraceWithMessage(LOG_TAG,
-                    "Failed to create fallback sockets for async handler", e);
+            if (!clientStreams) {
+                fbOutputAddr = UUID.randomUUID().toString();
+                fbInputAddr  = UUID.randomUUID().toString();
+                intent.putExtra("socket_output", fbOutputAddr);
+                intent.putExtra("socket_input",  fbInputAddr);
+
+                try {
+                    fbOutputServer = new LocalServerSocket(fbOutputAddr);
+                    fbInputServer  = new LocalServerSocket(fbInputAddr);
+                } catch (IOException e) {
+                    Logger.logStackTraceWithMessage(LOG_TAG,
+                        "Failed to create fallback sockets for async handler", e);
+                }
             }
 
             JSONObject root = new JSONObject(cmdline);
@@ -253,7 +276,7 @@ public class SocketListener {
             try {
                 DirectDispatcher.dispatch(directReceiver, app.getApplicationContext(), intent);
 
-                if (!responded.get() && fbOutputServer != null) {
+                if (!clientStreams && !responded.get() && fbOutputServer != null) {
                     if (awaitAsyncResponse(fbOutputServer, fbInputServer,
                                            conOut, request.correlationId)) {
                         responded.set(true);
@@ -272,7 +295,9 @@ public class SocketListener {
                     try { fbInputServer.close(); } catch (IOException ignored) {}
                 }
 
-                if (!responded.get()) {
+                // Streaming requests never expect an answer on this connection:
+                // their data goes to the socket_output the client owns.
+                if (!clientStreams && !responded.get()) {
                     String errJson = "{\"correlationId\":\""
                         + escapeJson(request.correlationId)
                         + "\",\"success\":false,\"error\":\"Handler did not produce a response\"}\n";
