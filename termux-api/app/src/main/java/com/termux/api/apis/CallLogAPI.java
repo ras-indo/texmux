@@ -1,5 +1,6 @@
 package com.termux.api.apis;
 
+import android.Manifest;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -7,6 +8,7 @@ import android.database.Cursor;
 import android.provider.CallLog;
 import android.util.JsonWriter;
 
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.shared.logger.Logger;
 
@@ -25,6 +27,9 @@ public class CallLogAPI {
 
     public static void onReceive(final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.READ_CALL_LOG)) return;
 
         final int offset = intent.getIntExtra("offset", 0);
         final int limit = intent.getIntExtra("limit", 50);

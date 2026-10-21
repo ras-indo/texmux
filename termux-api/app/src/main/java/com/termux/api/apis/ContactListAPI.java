@@ -1,5 +1,6 @@
 package com.termux.api.apis;
 
+import android.Manifest;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -11,6 +12,7 @@ import android.util.JsonWriter;
 import android.util.SparseArray;
 
 import com.termux.api.TermuxApiReceiver;
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.api.util.ResultReturner.ResultJsonWriter;
 import com.termux.shared.logger.Logger;
@@ -21,6 +23,9 @@ public class ContactListAPI {
 
     public static void onReceive(TermuxApiReceiver apiReceiver, final Context context, Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.READ_CONTACTS)) return;
 
         ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
             @Override

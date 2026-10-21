@@ -1,5 +1,6 @@
 package com.termux.api.apis;
 
+import android.Manifest;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -12,6 +13,7 @@ import android.util.ArrayMap;
 import android.util.SparseArray;
 import android.util.SparseIntArray;
 
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.shared.logger.Logger;
 
@@ -39,6 +41,9 @@ public class MicRecorderAPI {
      */
     public static void onReceive(final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.RECORD_AUDIO)) return;
 
         Intent recorderService = new Intent(context, MicRecorderService.class);
         recorderService.setAction(intent.getAction());

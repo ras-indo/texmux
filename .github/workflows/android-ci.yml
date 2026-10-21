@@ -215,7 +215,16 @@ jobs:
           fi
           grep -q "Theme.NoDisplay" termux-api/app/src/main/AndroidManifest.xml \
             || { echo "!! the permission requester is not headless"; exit 1; }
-          echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, headless system permission dialog"
+          # Turning the adapter on is a separate system dialog. Without it a scan
+          # can never run, no matter which permissions have been granted.
+          grep -aq "android.bluetooth.adapter.action.REQUEST_ENABLE" /tmp/apk-x/classes*.dex \
+            || { echo "!! the Bluetooth enable dialog is gone"; exit 1; }
+          # Every handler that needs a dangerous permission must go through the
+          # requester instead of dying with a SecurityException.
+          gated=$(grep -la "checkAndRequestPermissions" termux-api/app/src/main/java/com/termux/api/apis/*.java | wc -l)
+          [ "$gated" -ge 12 ] \
+            || { echo "!! only $gated handlers gate permissions"; exit 1; }
+          echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, BT enable dialog, $gated gated handlers, headless system dialog"
 
       - name: Collect only the APK needed (arm64-v8a)
         run: |

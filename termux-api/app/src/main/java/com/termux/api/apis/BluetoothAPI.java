@@ -149,6 +149,25 @@ public class BluetoothAPI {
             }
         }
 
+        // Android owns the "turn on Bluetooth?" dialog. When the adapter is off,
+        // ask the system for that dialog instead of failing with a bare error -
+        // granting BLUETOOTH_SCAN/CONNECT alone can never make a scan work.
+        BluetoothAdapter adapter = getBluetoothAdapter(context);
+        if (adapter != null && !adapter.isEnabled()) {
+            String adapterAction = intent.getStringExtra("action");
+            boolean reportOnly = "adapter".equals(command)
+                    && (adapterAction == null || "info".equals(adapterAction));
+            if (!reportOnly) {
+                ResultReturner.returnData(apiReceiver, intent, out -> {
+                    out.append("{\"error\":\"Bluetooth is off\",\"enabled\":false,")
+                        .append("\"hint\":\"Setujui dialog Android untuk menyalakan Bluetooth, lalu jalankan ulang perintahnya.\"}\n");
+                });
+                TermuxApiPermissionActivity.requestSystemAction(
+                        context, BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                return;
+            }
+        }
+
         // Delegate to service for background work
         Intent serviceIntent = new Intent(context, BluetoothService.class);
         serviceIntent.setAction(intent.getAction());

@@ -1,11 +1,13 @@
 package com.termux.api.apis;
 
+import android.Manifest;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.provider.Settings;
 
 import com.termux.api.TermuxApiReceiver;
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.shared.logger.Logger;
 
@@ -15,6 +17,9 @@ public class BrightnessAPI {
 
     public static void onReceive(final TermuxApiReceiver receiver, final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.WRITE_SETTINGS)) return;
 
         final ContentResolver contentResolver = context.getContentResolver();
         if (intent.hasExtra("auto")) {

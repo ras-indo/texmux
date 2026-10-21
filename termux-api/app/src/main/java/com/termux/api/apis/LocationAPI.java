@@ -10,11 +10,13 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.JsonWriter;
 
 import androidx.annotation.RequiresPermission;
 
 import com.termux.api.TermuxApiReceiver;
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.api.util.ResultReturner.ResultJsonWriter;
 import com.termux.shared.logger.Logger;
@@ -31,6 +33,34 @@ public class LocationAPI {
 
     public static void onReceive(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.ACCESS_FINE_LOCATION)) return;
+
+        // The permission alone is not enough: with the location toggle off every
+        // provider answers null. There is no dialog for that switch, so open the
+        // system page that owns it.
+        LocationManager locationManager =
+                (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+        if (locationManager != null) {
+            boolean locationOff = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? !locationManager.isLocationEnabled()
+                    : !locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+            if (locationOff) {
+                ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+                    @Override
+                    public void writeJson(JsonWriter out) throws Exception {
+                        out.beginObject()
+                                .name("error").value("Location services are off")
+                                .name("hint").value("Nyalakan Location di layar yang muncul, lalu jalankan ulang perintahnya.")
+                                .endObject();
+                    }
+                });
+                TermuxApiPermissionActivity.requestSystemAction(
+                        context, Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+                return;
+            }
+        }
 
         ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
             @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)

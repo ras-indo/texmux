@@ -1,5 +1,6 @@
 package com.termux.api.apis;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.hardware.Camera;
@@ -9,6 +10,7 @@ import android.hardware.camera2.CameraManager;
 import android.widget.Toast;
 
 import com.termux.api.TermuxApiReceiver;
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.shared.logger.Logger;
 
@@ -19,6 +21,9 @@ public class TorchAPI {
 
     public static void onReceive(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.CAMERA)) return;
 
         boolean enabled = intent.getBooleanExtra("enabled", false);
 

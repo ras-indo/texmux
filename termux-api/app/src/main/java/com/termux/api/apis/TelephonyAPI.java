@@ -21,6 +21,7 @@ import android.util.JsonWriter;
 import androidx.annotation.RequiresPermission;
 
 import com.termux.api.TermuxApiReceiver;
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.shared.logger.Logger;
 
@@ -53,6 +54,9 @@ public class TelephonyAPI {
 
     public static void onReceiveTelephonyCellInfo(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceiveTelephonyCellInfo");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.READ_PHONE_STATE)) return;
 
         ResultReturner.returnData(apiReceiver, intent, new ResultReturner.ResultJsonWriter() {
             @Override
@@ -187,6 +191,9 @@ public class TelephonyAPI {
 
     public static void onReceiveTelephonyDeviceInfo(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceiveTelephonyDeviceInfo");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.READ_PHONE_STATE)) return;
 
         ResultReturner.returnData(apiReceiver, intent, new ResultReturner.ResultJsonWriter() {
             @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
@@ -398,6 +405,9 @@ public class TelephonyAPI {
 
     public static void onReceiveTelephonyCall(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceiveTelephonyCall");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.CALL_PHONE)) return;
 
         String numberExtra = intent.getStringExtra("number");
         if (numberExtra == null) {

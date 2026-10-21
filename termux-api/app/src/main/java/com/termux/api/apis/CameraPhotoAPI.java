@@ -1,5 +1,6 @@
 package com.termux.api.apis;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.ImageFormat;
@@ -21,6 +22,7 @@ import android.view.Surface;
 import android.view.WindowManager;
 
 import com.termux.api.TermuxApiReceiver;
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.shared.errors.Error;
 import com.termux.shared.file.FileUtils;
@@ -44,6 +46,9 @@ public class CameraPhotoAPI {
 
     public static void onReceive(TermuxApiReceiver apiReceiver, final Context context, Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.CAMERA)) return;
 
         final String filePath = intent.getStringExtra("file");
         final String cameraId = Objects.toString(intent.getStringExtra("camera"), "0");

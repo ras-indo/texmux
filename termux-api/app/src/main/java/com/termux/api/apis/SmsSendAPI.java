@@ -10,6 +10,7 @@ import android.telephony.SubscriptionInfo;
 import androidx.annotation.RequiresPermission;
 
 import com.termux.api.TermuxApiReceiver;
+import com.termux.api.activities.TermuxApiPermissionActivity;
 import com.termux.api.util.ResultReturner;
 import com.termux.shared.logger.Logger;
 
@@ -22,6 +23,9 @@ public class SmsSendAPI {
 
     public static void onReceive(TermuxApiReceiver apiReceiver, Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
+
+        if (!TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
+                Manifest.permission.SEND_SMS)) return;
 
         ResultReturner.returnData(apiReceiver, intent, new ResultReturner.WithStringInput() {
             @RequiresPermission(allOf = { Manifest.permission.READ_PHONE_STATE, Manifest.permission.SEND_SMS })

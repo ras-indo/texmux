@@ -1,9 +1,15 @@
 package com.termux.api.activities;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.JsonWriter;
 
@@ -40,6 +46,51 @@ public class TermuxApiPermissionActivity extends Activity {
 
     /** Intent extra containing a system settings action to open (special app access). */
     public static final String SETTINGS_ACTION_EXTRA = TermuxConstants.TERMUX_API_PACKAGE_NAME + ".settings_action_extra";
+
+    /** Intent extra containing a system dialog to show, e.g. BluetoothAdapter.ACTION_REQUEST_ENABLE. */
+    public static final String SYSTEM_ACTION_EXTRA = TermuxConstants.TERMUX_API_PACKAGE_NAME + ".system_action_extra";
+
+    /**
+     * Whether a permission is actually usable right now.
+     *
+     * {@link PermissionUtils#checkPermission} only covers runtime permissions.
+     * "Special app access" permissions are app-ops with their own accessors, so
+     * asking checkSelfPermission about them always answers "denied" and would
+     * make a working feature look broken.
+     */
+    public static boolean isGranted(Context context, String permission) {
+        if (Manifest.permission.WRITE_SETTINGS.equals(permission))
+            return Settings.System.canWrite(context);
+        if (Manifest.permission.SYSTEM_ALERT_WINDOW.equals(permission))
+            return Settings.canDrawOverlays(context);
+        if (Manifest.permission.MANAGE_EXTERNAL_STORAGE.equals(permission))
+            return Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager();
+        if (Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.equals(permission)) {
+            PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            return power != null && power.isIgnoringBatteryOptimizations(context.getPackageName());
+        }
+        if ("android.permission.ACCESS_NOTIFICATION_POLICY".equals(permission)) {
+            NotificationManager notifications =
+                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            return notifications != null && notifications.isNotificationPolicyAccessGranted();
+        }
+        return PermissionUtils.checkPermission(context, permission);
+    }
+
+    /** Shows a system dialog such as "turn on Bluetooth?" - no UI of our own. */
+    public static void requestSystemAction(Context context, String action) {
+        if (action == null) return;
+
+        Intent request = new Intent(context, TermuxApiPermissionActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(SYSTEM_ACTION_EXTRA, action);
+
+        try {
+            context.startActivity(request);
+        } catch (Exception ignored) {
+            // The caller's JSON already explains what to switch on.
+        }
+    }
 
     /**
      * Enters the permission flow for the given manifest permission names: the
@@ -131,7 +182,7 @@ public class TermuxApiPermissionActivity extends Activity {
     public static boolean checkAndRequestPermissions(Context context, Intent intent, String... permissions) {
         final ArrayList<String> permissionsToRequest = new ArrayList<>();
         for (String permission : permissions) {
-            if (!PermissionUtils.checkPermission(context, permission)) {
+            if (!isGranted(context, permission)) {
                 permissionsToRequest.add(permission);
             }
         }
@@ -175,6 +226,17 @@ public class TermuxApiPermissionActivity extends Activity {
         super.onResume();
 
         Intent intent = getIntent();
+
+        String systemAction = intent.getStringExtra(SYSTEM_ACTION_EXTRA);
+        if (systemAction != null) {
+            try {
+                startActivity(new Intent(systemAction));
+            } catch (Exception ignored) {
+                // The JSON response already tells the user what to switch on.
+            }
+            finish();
+            return;
+        }
 
         String settingsAction = intent.getStringExtra(SETTINGS_ACTION_EXTRA);
         if (settingsAction != null) {
