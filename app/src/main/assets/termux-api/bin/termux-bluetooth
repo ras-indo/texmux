@@ -35,11 +35,16 @@
 #     Menemukan device Bluetooth klasik di sekitar.
 #
 #     discovery start
-#         Memulai discovery (classic Bluetooth inquiry).
-#         Device ditemukan akan dikembalikan sebagai JSON array.
+#         Memulai discovery (classic Bluetooth inquiry) dan langsung balik
+#         {"status":"discovery_started"}. Hasil ditemukan lewat broadcast,
+#         TIDAK dikembalikan sebagai array — pakai `scan` kalau butuh daftar.
 #
 #     discovery cancel
 #         Membatalkan proses discovery yang sedang berjalan.
+#
+#     scan [--duration ms]
+#         Nama pendek untuk `le-scan start`: scan BLE selama durasi tertentu
+#         (default 5000 ms, maksimum 60000) lalu balik daftar device.
 #
 # LE SCAN COMMANDS
 #     BLE (Bluetooth Low Energy) scanning.
@@ -193,6 +198,7 @@ Adapter:
 
 Discovery:
   $SCRIPTNAME discovery {start|cancel}
+  $SCRIPTNAME scan [--duration ms]        daftar device BLE (le-scan start)
 
 LE Scan:
   $SCRIPTNAME le-scan {status|start|stop} [--duration ms]
@@ -1020,6 +1026,7 @@ EOF
 case "$CMD" in
     adapter)       adapter_cmd "$@" ;;
     discovery)     discovery_cmd "$@" ;;
+    scan)          le_scan_cmd start "$@" ;;
     le-scan)       le_scan_cmd "$@" ;;
     gatt-connect)  gatt_connect "$@" ;;
     gatt-discover) gatt_discover "$@" ;;

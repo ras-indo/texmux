@@ -867,7 +867,12 @@ public class BluetoothAPI {
                 scanner.startScan(filters, settings, callback);
 
                 // Wait for timeout or external stop condition
-                int timeout = intent.getIntExtra("timeout", 5000);
+                // The CLI sends --duration; older callers sent timeout. Accept
+                // both, or the documented option is silently ignored.
+                int timeout = intent.getIntExtra("duration",
+                        intent.getIntExtra("timeout", 5000));
+                if (timeout < 100) timeout = 100;
+                if (timeout > 60000) timeout = 60000;
                 try {
                     synchronized (lock) {
                         lock.wait(timeout);

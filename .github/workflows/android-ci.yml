@@ -243,6 +243,16 @@ jobs:
           fi
           sh -n app/src/main/assets/termux-api/bin/termux-permission \
             || { echo "!! termux-permission does not parse"; exit 1; }
+          bash -n app/src/main/assets/termux-api/bin/termux-bluetooth \
+            || { echo "!! termux-bluetooth does not parse"; exit 1; }
+          # `scan` is the familiar name from upstream and the one people type;
+          # it must exist and must reach the blocking LE scan, not the
+          # fire-and-forget classic discovery.
+          grep -q '^    scan)          le_scan_cmd start' app/src/main/assets/termux-api/bin/termux-bluetooth \
+            || { echo "!! termux-bluetooth scan is gone"; exit 1; }
+          # --duration must actually be read, or the option is silently ignored.
+          grep -q 'getIntExtra("duration"' termux-api/app/src/main/java/com/termux/api/apis/BluetoothAPI.java \
+            || { echo "!! --duration is not read by the LE scan"; exit 1; }
           # "request" must answer even when nothing is missing, or the client
           # waits on a socket that is never written.
           grep -q "knownKey" termux-api/app/src/main/java/com/termux/api/apis/PermissionAPI.java \
