@@ -290,6 +290,16 @@ jobs:
           grep -q 'Bluetooth service could not start' \
             termux-api/app/src/main/java/com/termux/api/apis/BluetoothAPI.java \
             || { echo "!! a refused startService hangs the caller for 30 s"; exit 1; }
+          # setWifiEnabled() answers false on Android 10+ for apps without the
+          # privilege; returning nothing made `termux-wifi-enable` look like it worked.
+          grep -q 'Exiting mute made the CLI look broken' \
+            termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
+            || { echo "!! termux-wifi-enable can still exit silently"; exit 1; }
+          # With Wi-Fi off getScanResults() is empty; reporting [] looks like
+          # "no networks around" instead of "the radio is off".
+          grep -q 'Wi-Fi is off - turn it on and retry' \
+            termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
+            || { echo "!! wifi scans with the radio off are reported as empty"; exit 1; }
           # Every handler that needs a dangerous permission must go through the
           # requester instead of dying with a SecurityException.
           gated=$(grep -la "checkAndRequestPermissions" termux-api/app/src/main/java/com/termux/api/apis/*.java | wc -l)

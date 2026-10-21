@@ -497,6 +497,16 @@ public class WifiAPI {
             @Override
             public void writeJson(JsonWriter out) throws Exception {
                 WifiManager manager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                if (manager == null) {
+                    out.beginObject().name("API_ERROR").value("WifiManager unavailable").endObject();
+                    return;
+                }
+                if (!manager.isWifiEnabled()) {
+                    // With Wi-Fi off getScanResults() returns an empty list, which used
+                    // to look like "no networks around" instead of "the radio is off".
+                    out.beginObject().name("API_ERROR").value("Wi-Fi is off - turn it on and retry").endObject();
+                    return;
+                }
                 List<ScanResult> scans = manager.getScanResults();
                 if (scans != null) {
                     scans = filterScans(intent, scans);
@@ -573,9 +583,30 @@ public class WifiAPI {
         Logger.logDebug(LOG_TAG, "onReceiveWifiEnable");
 
         ResultReturner.returnData(apiReceiver, intent, out -> {
-            WifiManager manager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-            boolean state = intent.getBooleanExtra("enabled", false);
-            manager.setWifiEnabled(state);
+            WifiManager manager = (WifiManager) context.getApplicationContext()
+                .getSystemService(Context.WIFI_SERVICE);
+            boolean wanted = intent.getBooleanExtra("enabled", false);
+            if (manager == null) {
+                out.append("{\"API_ERROR\":\"WifiManager unavailable\"}\n");
+                return;
+            }
+            boolean applied;
+            try {
+                applied = manager.setWifiEnabled(wanted);
+            } catch (SecurityException e) {
+                String msg = e.getMessage() == null ? "permission denied" : e.getMessage();
+                out.append("{\"API_ERROR\":\"Android refused to change Wi-Fi state: ")
+                   .append(msg).append("\"}\n");
+                return;
+            }
+            if (!applied) {
+                // Android 10+ answers false for apps without the privilege, and the
+                // switch simply does nothing. Exiting mute made the CLI look broken.
+                out.append("{\"API_ERROR\":\"Android refused to change Wi-Fi state "
+                    + "(setWifiEnabled returned false)\"}\n");
+                return;
+            }
+            out.append("{\"enabled\":").append(wanted ? "true" : "false").append("}\n");
         });
     }
 
