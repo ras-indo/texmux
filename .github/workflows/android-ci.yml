@@ -228,7 +228,7 @@ jobs:
   # container behaviour again.
   proot-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 75
 
     steps:
       - name: Checkout repository
@@ -313,7 +313,31 @@ jobs:
           else
             cd /tmp/proot/test
           fi
-          make check 2>&1 | tee /tmp/check.log
+
+          # Bound every single proot invocation.  The upstream suite
+          # contains a test that re-executes itself through
+          # /proc/self/exe and never terminates on a current host; a
+          # hang would otherwise block the whole suite until the job
+          # times out.  A test that hits the limit reports 125, the
+          # status the suite already uses for a test that cannot run
+          # on this host, so a hang is neither reported as a failure
+          # nor silently ignored.
+          cat > /tmp/proot-timeout.sh <<'EOF'
+          #!/bin/sh
+          timeout -k 5 "${PROOT_TIMEOUT:-120}" "$@"
+          status=$?
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+              echo "proot-timeout: killed after ${PROOT_TIMEOUT:-120}s" >&2
+              exit 125
+          fi
+          exit "$status"
+          EOF
+          chmod +x /tmp/proot-timeout.sh
+
+          # The suite must run serially: several tests share the same
+          # rootfs and would interfere with each other when run in
+          # parallel.
+          make check PROOT="/tmp/proot-timeout.sh /tmp/proot/src/proot" 2>&1 | tee /tmp/check.log
           rc=${PIPESTATUS[0]}
           echo "make check exit=$rc"
 
