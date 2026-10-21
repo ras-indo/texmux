@@ -451,10 +451,24 @@ jobs:
             exit 1
           fi
 
-          git clone --depth=1 https://github.com/ras-indo/proot.git /tmp/proot-ref >/dev/null 2>&1
+          # The reference build is the parent of the pinned commit, i.e.
+          # the code before the patch under test.  It is derived from
+          # the pin instead of being written down separately, so
+          # bumping PROOT_REF cannot leave a stale reference behind.
+          rm -rf /tmp/proot-ref
+          git init -q /tmp/proot-ref
           cd /tmp/proot-ref
-          git fetch --depth=1 origin 289dc4e87a2e75601a126b171fbb2bcee049d0cd >/dev/null 2>&1 || true
-          git checkout -q FETCH_HEAD 2>/dev/null || git checkout -q 289dc4e87a2e75601a126b171fbb2bcee049d0cd
+          git remote add origin "$PROOT_REPO"
+          # Depth 2 so that the parent of the pinned commit is present.
+          git fetch -q --depth=2 origin "$PROOT_REF"
+          git checkout -q FETCH_HEAD
+          ref_parent=$(git rev-parse HEAD^ 2>/dev/null || echo "")
+          if [ -z "$ref_parent" ]; then
+            echo "!! could not determine the parent of $PROOT_REF"
+            exit 1
+          fi
+          echo "reference commit: $ref_parent"
+          git checkout -q "$ref_parent"
           export PKG_CONFIG_PATH=/tmp/talloc
           if make -C /tmp/proot-ref/src -j"$(nproc)" WITHOUT_PYTHON=1 \
               CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
