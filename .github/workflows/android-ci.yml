@@ -221,3 +221,121 @@ jobs:
           name: texmux-debug-apk
           path: upload_apk/*.apk
           if-no-files-found: error
+
+  # Regression gate for the PRoot fork that ships inside the APK.  It was
+  # dropped when the vendored tree lacked the sysvipc extension; the fork is
+  # built from ras-indo/proot now, so the upstream test suite can guard the
+  # container behaviour again.
+  proot-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build vendored talloc as a static library
+        run: |
+          set -euo pipefail
+          V="$GITHUB_WORKSPACE/termux-proot/vendor/talloc"
+          mkdir -p /tmp/talloc/lib /tmp/talloc/include /tmp/talloc/obj
+          gcc -c -O2 -fPIC \
+            -D_GNU_SOURCE=1 -D_XOPEN_SOURCE_EXTENDED=1 -D__STDC_WANT_LIB_EXT1__=1 \
+            -DSTATIC_talloc_MODULES=NULL \
+            '-DSTATIC_talloc_MODULES_PROTO=extern void __talloc_dummy_module_proto(void)' \
+            -I"$V" -I"$V/lib/replace" \
+            "$V/talloc.c" -o /tmp/talloc/obj/talloc.o
+          ar rcs /tmp/talloc/lib/libtalloc.a /tmp/talloc/obj/talloc.o
+          cp "$V/talloc.h" /tmp/talloc/include/
+          echo 'prefix=/tmp/talloc' > /tmp/talloc/talloc.pc
+          echo 'libdir=${prefix}/lib' >> /tmp/talloc/talloc.pc
+          echo 'includedir=${prefix}/include' >> /tmp/talloc/talloc.pc
+          echo 'Name: talloc' >> /tmp/talloc/talloc.pc
+          echo 'Description: hierarchical pool based memory system' >> /tmp/talloc/talloc.pc
+          echo 'Version: 2.4.2' >> /tmp/talloc/talloc.pc
+          echo 'Libs: -L${libdir} -ltalloc' >> /tmp/talloc/talloc.pc
+          echo 'Cflags: -I${includedir}' >> /tmp/talloc/talloc.pc
+          PKG_CONFIG_PATH=/tmp/talloc pkg-config --exists talloc
+          ls -lh /tmp/talloc/lib/libtalloc.a
+
+      - name: Clone the optimized proot fork
+        run: git clone --depth=1 --branch master https://github.com/ras-indo/proot.git /tmp/proot
+
+      - name: Build proot (host) with the Android optimization flags
+        run: |
+          set -euo pipefail
+          export PKG_CONFIG_PATH=/tmp/talloc
+          make -C /tmp/proot/src -j"$(nproc)" WITHOUT_PYTHON=1 \
+            CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
+            LDFLAGS="-Wl,--gc-sections -L/tmp/talloc/lib -ltalloc"
+          file /tmp/proot/src/proot
+          strings /tmp/proot/src/proot | grep -q 'PROOT_NO_PATH_CACHE' || { echo "!! pcache not built in"; exit 1; }
+          echo "OK: pcache present in host build"
+
+      - name: Smoke test the installer extraction path (-l + tar)
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/smoke/src/tree/dir /tmp/smoke/dest /tmp/smoke/l2s /tmp/smoke/ptmp
+          cp -a /usr/include /tmp/smoke/src/tree/include
+          echo hello > /tmp/smoke/src/tree/dir/file
+          ln /tmp/smoke/src/tree/dir/file /tmp/smoke/src/tree/dir/hardlink
+          ln -s dir/file /tmp/smoke/src/tree/symlink
+          mkfifo /tmp/smoke/src/tree/fifo
+          # Real Ubuntu rootfs tarballs carry device nodes; an unprivileged
+          # Android app cannot mknod them, which is what makes tar exit non-zero.
+          sudo mknod /tmp/smoke/src/tree/devnode c 1 3 && echo "device node added"
+          tar czf /tmp/smoke/rootfs.tgz -C /tmp/smoke/src tree
+          echo "archive contains: $(tar tzf /tmp/smoke/rootfs.tgz | wc -l) entries"
+
+          # Mirror the installer EXACTLY: proot -l (= --link2symlink), tar -xf,
+          # PROOT_TMP_DIR + PROOT_L2S_DIR exported. tar's exit status is
+          # EXPECTED to be non-zero here (unprivileged mknod) — the installer
+          # tolerates it whenever the rootfs verifies, so this step must too.
+          set +e
+          PROOT_TMP_DIR=/tmp/smoke/ptmp PROOT_L2S_DIR=/tmp/smoke/l2s \
+            /tmp/proot/src/proot -l /bin/tar -xf /tmp/smoke/rootfs.tgz -C /tmp/smoke/dest
+          tar_rc=$?
+          set -e
+          echo "tar exit=$tar_rc (non-zero tolerated: unprivileged device node)"
+
+          test -f /tmp/smoke/dest/tree/include/stdio.h || { echo "!! regular files missing"; exit 1; }
+          test -f /tmp/smoke/dest/tree/dir/file || { echo "!! hardlinked payload missing"; exit 1; }
+          readlink /tmp/smoke/dest/tree/symlink >/dev/null || { echo "!! symlink missing"; exit 1; }
+          echo "extracted files: $(find /tmp/smoke/dest -type f | wc -l)"
+          echo "OK: extraction usable despite tar exit=$tar_rc"
+
+      - name: Run the upstream PRoot test suite
+        run: |
+          set -uo pipefail
+          # The fork renamed test/ to tests/ when it was rebased on termux/proot.
+          if [ -d /tmp/proot/tests ]; then
+            cd /tmp/proot/tests
+          else
+            cd /tmp/proot/test
+          fi
+          make check 2>&1 | tee /tmp/check.log
+          rc=${PIPESTATUS[0]}
+          echo "make check exit=$rc"
+
+          # Guard against a silently empty suite: "make check" in a
+          # directory without any test file succeeds without running
+          # anything, which once made this job report a green run that
+          # actually tested nothing.
+          checks=$(grep -c '^\s*CHECK\s' /tmp/check.log || true)
+          echo "checks executed: $checks"
+          if [ "${checks:-0}" -lt 50 ]; then
+            echo "!! only ${checks:-0} checks ran -- the suite did not really execute"
+            tail -40 /tmp/check.log
+            exit 1
+          fi
+
+          if [ -s failure ]; then
+            echo "=== failing checks ==="
+            sed -n '1,120p' failure
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "=== last 80 log lines ==="
+            tail -80 /tmp/check.log
+            exit 1
+          fi
+          echo "OK: no test failures"
