@@ -18,21 +18,25 @@
 #     "status" reports every permission this app can need, whether it is
 #     currently granted, and how it would be granted.
 #
-#     "request" opens a prompt inside the app that:
-#       - triggers the system dialog immediately for runtime permissions,
-#       - deep-links the exact settings page for special access,
-#       - explains (and copies the whitelist XML for) privileged permissions,
-#       - hands back which permissions you granted when you close it.
+#     "request" asks Android itself for what is missing:
+#       - runtime permissions go through the system Allow/Deny dialog,
+#       - special access deep-links the exact settings page,
+#       - privileged permissions are reported as impossible at runtime.
+#     There is no prompt of our own: the platform dialog is the interface.
+#     The request returns immediately - answer the dialog, then run the
+#     command again.
 #
-#     Other commands use the same prompt: when a command fails because a
-#     permission is missing, the system dialog appears and the JSON error says
-#     "prompt_opened": true. Grant, then run the command again.
+#     Commands that need a permission use the same path: they answer with a
+#     JSON error listing "needs_permission" and Android shows its dialog.
+#     Commands that need a radio switched on queue that dialog too, so one run
+#     can show the permission dialog and then "turn on Bluetooth?".
 #
 # OPTIONS
 #     --permissions <keys>  Comma separated keys to request, e.g.
 #                           bluetooth_scan,bluetooth_connect. Default: every
 #                           missing permission.
-#     --reason <text>       Extra sentence shown at the top of the prompt.
+#     --reason <text>       Accepted for compatibility; there is no in-app
+#                           prompt left that could display it.
 #     -h, --help            Display this help message and exit.
 #
 # OUTPUT (status)
@@ -46,8 +50,11 @@
 #     }
 #
 # OUTPUT (request)
-#     { "granted": [ "..." ], "missing": [ "..." ],
-#       "missing_privileged": [ "..." ], "all_granted": true|false }
+#     Everything already granted:
+#       { "all_granted": true, "message": "..." }
+#     Something missing (the system dialog is shown at the same time):
+#       { "error": "Please grant ...", "hint": "...",
+#         "needs_permission": [ "android.permission.CAMERA" ] }
 #
 # EXAMPLES
 #     # What is still missing?
@@ -70,17 +77,17 @@ show_usage () {
     cat <<EOF
 Usage: $SCRIPTNAME <status|request> [options]
 
-Show which permissions Termux:API holds, or ask for the missing ones through an
-in-app prompt (no need to dig through the system settings app).
+Show which permissions Termux:API holds, or ask for the missing ones through
+Android's own dialog (no need to dig through the system settings app).
 
   status     list every permission with granted state and how it is granted
-  request    open the prompt; triggers the system dialog for runtime
-             permissions and deep-links the settings page for special access
+  request    show the system dialog for runtime permissions and open the
+             settings page for special access; then run the command again
 
 Options for request:
   --permissions <keys>   comma separated, e.g. bluetooth_scan,bluetooth_connect
                          (default: every missing permission)
-  --reason <text>        extra sentence shown at the top of the prompt
+  --reason <text>        accepted for compatibility, not displayed
 
 Kinds:
   runtime     standard Allow/Deny dialog

@@ -236,6 +236,17 @@ jobs:
           gated=$(grep -la "checkAndRequestPermissions" termux-api/app/src/main/java/com/termux/api/apis/*.java | wc -l)
           [ "$gated" -ge 12 ] \
             || { echo "!! only $gated handlers gate permissions"; exit 1; }
+          # No prompt of our own, not even in the docs: the platform dialog is
+          # the entire interface.
+          if grep -qi "in-app prompt" app/src/main/assets/termux-api/bin/termux-permission; then
+            echo "!! the CLI still advertises an in-app prompt"; exit 1
+          fi
+          sh -n app/src/main/assets/termux-api/bin/termux-permission \
+            || { echo "!! termux-permission does not parse"; exit 1; }
+          # "request" must answer even when nothing is missing, or the client
+          # waits on a socket that is never written.
+          grep -q "knownKey" termux-api/app/src/main/java/com/termux/api/apis/PermissionAPI.java \
+            || { echo "!! permission request can return without answering"; exit 1; }
           echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, BT enable dialog, location switch page, $gated gated handlers, chained system dialogs"
 
       - name: Collect only the APK needed (arm64-v8a)

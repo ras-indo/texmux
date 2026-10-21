@@ -16,8 +16,8 @@ import java.util.List;
 
 /**
  * The "permission" API method: reports which permissions Termux:API holds and
- * asks for the missing ones through an in-app prompt, so the user never has to
- * hunt through the system settings app.
+ * asks for the missing ones through Android's own dialog, so the user never has
+ * to hunt through the system settings app.
  *
  * Three kinds of permission exist and they are not interchangeable:
  *
@@ -223,9 +223,10 @@ public class PermissionAPI {
     }
 
     /**
-     * Opens the in-app prompt for the missing permissions.  The prompt answers the
-     * pending client request itself once the user is done, so this handler does not
-     * return a response.
+     * Asks Android for whatever is missing.  Runtime permissions go through the
+     * system dialog, special access through its settings page; this handler
+     * answers at once instead of waiting for the user, because the dialog
+     * belongs to the platform, not to us.
      */
     private static void request(Context context, Intent intent) {
         List<Entry> entries = catalog();
@@ -255,26 +256,41 @@ public class PermissionAPI {
             return;
         }
 
-        // Hand the request to the system: Android's own dialog for runtime
-        // permissions, the matching settings page for special app access.
+        // Only genuinely missing permissions are handed over: asking for one
+        // that is already granted used to write no response at all, which left
+        // the client waiting until its socket timed out.
         ArrayList<String> permissions = new ArrayList<>();
+        boolean anyKnown = false;
         for (String key : requestedKeys) {
             Entry entry = findByKey(key);
-            if (entry != null && !permissions.contains(entry.permission)) permissions.add(entry.permission);
+            if (entry == null) continue;
+            anyKnown = true;
+            if (!isGranted(context, entry) && !permissions.contains(entry.permission))
+                permissions.add(entry.permission);
         }
+
+        final boolean knownKey = anyKnown;
 
         if (permissions.isEmpty()) {
             ResultReturner.returnData(context, intent, new ResultReturner.ResultJsonWriter() {
                 @Override
                 public void writeJson(JsonWriter out) throws Exception {
                     out.beginObject();
-                    out.name("error").value("No known permission matched the request");
+                    if (knownKey) {
+                        out.name("all_granted").value(true);
+                        out.name("message").value("Every permission this command needs is already granted");
+                    } else {
+                        out.name("error").value("No known permission matched the request");
+                    }
                     out.endObject();
                 }
             });
             return;
         }
 
+        // Hand the request to the system: Android's own dialog for runtime
+        // permissions, the matching settings page for special app access.  This
+        // writes the needs_permission response itself.
         TermuxApiPermissionActivity.checkAndRequestPermissions(
             context, intent, permissions.toArray(new String[0]));
     }
