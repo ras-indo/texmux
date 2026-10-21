@@ -26,6 +26,14 @@ env:
   # (Settings > Apps > Termux and the APK file name).
   TERMUX_APP_VERSION_NAME: 0.118.0-r${{ github.run_number }}
 
+  # The PRoot commit that is built into the APK and the commit that the
+  # regression job tests.  Both jobs read this one value, so the code
+  # that is tested is always the code that is shipped; with a branch
+  # tip, a push between the two clones would make the gate protect
+  # nothing.  Bump it in one place when the fork changes.
+  PROOT_REPO: https://github.com/ras-indo/proot.git
+  PROOT_REF: 9a06c4baecb2957dc5968f2085c597d582fb8086
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -66,7 +74,9 @@ jobs:
         run: |
           make -C termux-proot install \
             NDK_DIR="$ANDROID_HOME/ndk/25.0.8775105" \
-            API_LEVEL=24
+            API_LEVEL=24 \
+            PROOT_REPO="$PROOT_REPO" \
+            PROOT_REF="$PROOT_REF"
           BIN=app/src/main/assets/proot/proot
           file "$BIN"
           ls -lh "$BIN"
@@ -85,10 +95,18 @@ jobs:
           strings "$BIN" | grep -q 'PROOT_NO_PATH_CACHE' \
             || { echo "!! path cache not built in"; exit 1; }
 
+          # The source tree that was built must be the pinned one, or
+          # the APK would ship a binary that the regression job never
+          # tested.
+          GOT=$(cd termux-proot/build/proot-src && git rev-parse HEAD)
+          echo "proot source: $GOT"
+          [ "$GOT" = "$PROOT_REF" ] \
+            || { echo "!! built $GOT but the pin is $PROOT_REF"; exit 1; }
+
           echo "proot size: $SIZE bytes"
           [ "$SIZE" -lt 1200000 ] || { echo "!! proot is unexpectedly large"; exit 1; }
           md5sum "$BIN" | tee /tmp/proot.md5
-          echo "OK: proot built (sysvipc + -L + pcache present)"
+          echo "OK: proot built (sysvipc + -L + pcache present) from $GOT"
 
       - name: Verify the fallback binary is still in place
         run: |
@@ -258,8 +276,21 @@ jobs:
           PKG_CONFIG_PATH=/tmp/talloc pkg-config --exists talloc
           ls -lh /tmp/talloc/lib/libtalloc.a
 
-      - name: Clone the optimized proot fork
-        run: git clone --depth=1 --branch master https://github.com/ras-indo/proot.git /tmp/proot
+      - name: Clone the pinned proot fork
+        run: |
+          set -euo pipefail
+          git init -q /tmp/proot
+          cd /tmp/proot
+          git remote add origin "$PROOT_REPO"
+          git fetch -q --depth=1 origin "$PROOT_REF"
+          git checkout -q FETCH_HEAD
+          got=$(git rev-parse HEAD)
+          echo "proot checkout: $got"
+          if [ "$got" != "$PROOT_REF" ]; then
+            echo "!! expected $PROOT_REF, got $got"
+            exit 1
+          fi
+          echo "OK: proot is pinned to $PROOT_REF"
 
       - name: Build proot (host) with the Android optimization flags
         run: |

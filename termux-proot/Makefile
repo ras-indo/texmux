@@ -48,6 +48,17 @@ BUILD_DIR ?= $(abspath build)
 PROOT_SRC_DIR := $(BUILD_DIR)/proot-src
 TALLOC_SRC_DIR := $(abspath vendor/talloc)
 
+# Which PRoot commit to build.
+#
+# Pinning matters: the APK ships whatever this builds, while the
+# regression job tests whatever it clones.  If the two clone the branch
+# tip independently, a push to the fork between the two clones makes
+# the tested code and the shipped code different, and the gate then
+# protects nothing.  PROOT_REF is a commit id, so the same value
+# selects the same tree in both jobs.
+PROOT_REPO ?= https://github.com/ras-indo/proot.git
+PROOT_REF  ?= 9a06c4baecb2957dc5968f2085c597d582fb8086
+
 # ------------------------------------------------------------------
 # Toolchain paths (derived from NDK_DIR)
 # ------------------------------------------------------------------
@@ -181,10 +192,15 @@ proot: proot-arm64
 # ------------------------------------------------------------------
 
 download-proot:
-	@echo "==> Downloading PRoot source"
+	@echo "==> Downloading PRoot source ($(PROOT_REF))"
 	@rm -rf $(PROOT_SRC_DIR)
 	@mkdir -p $(BUILD_DIR)
-	git clone --depth=1 --branch master https://github.com/ras-indo/proot.git $(PROOT_SRC_DIR)
+	@rm -rf $(PROOT_SRC_DIR)
+	git init -q $(PROOT_SRC_DIR)
+	cd $(PROOT_SRC_DIR) && git remote add origin $(PROOT_REPO)
+	cd $(PROOT_SRC_DIR) && git fetch -q --depth=1 origin $(PROOT_REF)
+	cd $(PROOT_SRC_DIR) && git checkout -q FETCH_HEAD
+	@echo "==> PRoot checkout: $$(cd $(PROOT_SRC_DIR) && git rev-parse HEAD)"
 
 TALLOC_VERSION := 2.4.2
 
