@@ -403,7 +403,13 @@ jobs:
           # a failure can be attributed to the patch instead of to the
           # environment.
           echo "=== diagnosis: failing tests, verbose, patched vs unpatched ==="
-          failed=$(sed -n 's/^  CHECK\t\(.*\) FAILED$/\1/p' /tmp/proot/tests/failure 2>/dev/null | sort -u)
+          # The suite's "failure" file is only a marker that some test
+          # failed; the per-test results are in the log.  The suite
+          # prints "  CHECK<TAB><name> FAILED", so do not assume the
+          # line starts with the keyword.
+          failed=$(grep -E 'CHECK[[:space:]]+.*FAILED$' /tmp/check.log \
+                   | sed -E 's/.*CHECK[[:space:]]+//; s/[[:space:]]+FAILED$//' \
+                   | sort -u)
           echo "failing tests: $failed"
 
           if [ -z "$failed" ]; then
