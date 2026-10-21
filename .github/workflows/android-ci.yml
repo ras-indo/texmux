@@ -391,6 +391,9 @@ jobs:
         if: always()
         run: |
           set -uo pipefail
+          # This step is diagnostic: it must report what it found even
+          # when one of the commands below fails.
+          set +e
           rc=0
           [ -f /tmp/check.rc ] && rc=$(cat /tmp/check.rc)
           if [ "$rc" -eq 0 ]; then
@@ -433,6 +436,17 @@ jobs:
 
           for t in $failed; do
             echo "----- $t -----"
+            # The make targets carry the file extension: check-%.sh for
+            # a shell test, check-%.c for a compiled one.  The name
+            # reported by the suite already starts with "test-".
+            case $t in
+              *.sh|*.c) target=$t ;;
+              *)        target=$(ls /tmp/proot/tests/"$t".* 2>/dev/null | head -1 | xargs -r basename) ;;
+            esac
+            if [ -z "$target" ]; then
+              echo "  no test file found for $t"
+              continue
+            fi
             for label in patched unpatched; do
               case $label in
                 patched)   bin=/tmp/proot/src/proot ;;
@@ -442,8 +456,9 @@ jobs:
                 echo "  $label: binary missing"
                 continue
               fi
+              set +e
               ( cd /tmp/proot/tests && \
-                make V=1 "check-$t" \
+                make -k V=1 "check-$target" \
                   PROOT="/tmp/proot-timeout.sh $bin" ) > "/tmp/diag-$t-$label.log" 2>&1
               st=$?
               echo "  $label: exit=$st"
