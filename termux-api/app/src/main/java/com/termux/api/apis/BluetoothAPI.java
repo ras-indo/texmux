@@ -17,6 +17,10 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
+import android.bluetooth.le.AdvertiseCallback;
+import android.bluetooth.le.AdvertiseData;
+import android.bluetooth.le.AdvertiseSettings;
+import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
@@ -54,6 +58,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -81,6 +86,10 @@ public class BluetoothAPI {
      * Singleton GATT server instance.
      */
     private static BluetoothGattServer gattServerInstance = null;
+    private static BluetoothLeAdvertiser advertiserInstance = null;
+    private static AdvertiseCallback activeAdvertiseCallback = null;
+    private static String advertiseName = null;
+    private static String advertiseServiceUuid = null;
 
     /**
      * Active BLE scanner callback reference (for stop).
@@ -199,6 +208,7 @@ public class BluetoothAPI {
             case "le-scan":
                 return !PermissionUtils.checkPermission(context, Manifest.permission.BLUETOOTH_SCAN);
             case "gatt-server":
+            case "advertise":
                 return !PermissionUtils.checkPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE);
             default:
                 return !PermissionUtils.checkPermission(context, Manifest.permission.BLUETOOTH_CONNECT);
@@ -505,6 +515,9 @@ public class BluetoothAPI {
                         break;
                     case "gatt-server":
                         handleGattServer(intent);
+                        break;
+                    case "advertise":
+                        handleAdvertise(intent);
                         break;
                     case "rfcomm":
                         handleRfcomm(intent);
@@ -1814,6 +1827,231 @@ public class BluetoothAPI {
                 out.append("{\"status\":\"notification_" + (enable ? "enabled" : "disabled") +
                         "\",\"uuid\":\"" + escapeJson(characteristicUuid) + "\"}\n");
             });
+        }
+
+        // ============================================================
+        // BLE advertising
+        // ============================================================
+
+        /**
+         * Advertise over BLE, which is the half of the GATT story the client was
+         * missing: openGattServer() makes the device attachable but invisible
+         * unless it also advertises, so a peer scanning the air saw nothing.
+         */
+        @SuppressLint("MissingPermission")
+        private void handleAdvertise(Intent intent) {
+            BluetoothAdapter adapter = getBluetoothAdapter(this);
+            if (adapter == null) {
+                returnError(this, intent, "Bluetooth not supported");
+                return;
+            }
+            if (!adapter.isEnabled()) {
+                returnError(this, intent, "Bluetooth is off - turn it on and retry");
+                return;
+            }
+
+            String action = intent.getStringExtra("action");
+            if (action == null) action = "status";
+
+            switch (action) {
+                case "status": {
+                    ResultReturner.returnData(this, intent, out -> {
+                        out.beginObject();
+                        out.name("supported").value(adapter.isMultipleAdvertisementSupported());
+                        out.name("advertising").value(activeAdvertiseCallback != null);
+                        if (advertiseName != null) out.name("name").value(advertiseName);
+                        if (advertiseServiceUuid != null) out.name("service_uuid").value(advertiseServiceUuid);
+                        out.endObject();
+                    });
+                    return;
+                }
+                case "stop": {
+                    if (advertiserInstance == null || activeAdvertiseCallback == null) {
+                        returnError(this, intent, "Not advertising");
+                        return;
+                    }
+                    try {
+                        advertiserInstance.stopAdvertising(activeAdvertiseCallback);
+                    } catch (Exception e) {
+                        // The adapter can disappear mid-flight; the advertiser is
+                        // gone either way, so drop the reference and say so.
+                        Logger.logWarn(LOG_TAG, "stopAdvertising failed: " + e.getMessage());
+                    }
+                    activeAdvertiseCallback = null;
+                    advertiserInstance = null;
+                    advertiseName = null;
+                    advertiseServiceUuid = null;
+                    ResultReturner.returnData(this, intent, out -> {
+                        out.beginObject().name("advertising").value(false).endObject();
+                    });
+                    return;
+                }
+                case "start":
+                    break;
+                default:
+                    returnError(this, intent, "Unknown advertise action: " + action);
+                    return;
+            }
+
+            if (!adapter.isMultipleAdvertisementSupported()) {
+                returnError(this, intent,
+                    "This device cannot advertise over BLE (isMultipleAdvertisementSupported() is false)");
+                return;
+            }
+            if (activeAdvertiseCallback != null) {
+                returnError(this, intent, "Already advertising - stop the running advertisement first");
+                return;
+            }
+
+            final BluetoothLeAdvertiser advertiser = adapter.getBluetoothLeAdvertiser();
+            if (advertiser == null) {
+                returnError(this, intent, "getBluetoothLeAdvertiser() returned null");
+                return;
+            }
+
+            AdvertiseSettings.Builder settings = new AdvertiseSettings.Builder()
+                .setAdvertiseMode(advertiseMode(intent.getStringExtra("mode")))
+                .setTxPowerLevel(advertiseTxPower(intent.getStringExtra("tx_power")))
+                .setConnectable(intent.getBooleanExtra("connectable", true));
+            int timeout = intent.getIntExtra("timeout", 0);
+            if (timeout > 0) settings.setTimeout(timeout);
+
+            String name = intent.getStringExtra("device_name");
+            String serviceUuid = intent.getStringExtra("service_uuid");
+
+            AdvertiseData.Builder data = new AdvertiseData.Builder();
+            if (name != null && !name.isEmpty()) {
+                // The platform advertises the adapter's own name; a custom one
+                // cannot be set here, so a caller asking for it gets told that
+                // instead of a silently different advertisement.
+                if (!name.equals(adapter.getName())) {
+                    returnError(this, intent, "Cannot advertise a custom device name (adapter name is '"
+                        + adapter.getName() + "'); rename the adapter or omit device_name");
+                    return;
+                }
+                data.setIncludeDeviceName(true);
+            }
+            if (serviceUuid != null && !serviceUuid.isEmpty()) {
+                try {
+                    data.addServiceUuid(ParcelUuid.fromString(normalizeUuid(serviceUuid)));
+                } catch (IllegalArgumentException e) {
+                    returnError(this, intent, "Invalid service_uuid: " + serviceUuid);
+                    return;
+                }
+            }
+            if (intent.hasExtra("manufacturer_id")) {
+                byte[] payload = new byte[0];
+                String hex = intent.getStringExtra("manufacturer_data");
+                if (hex != null && !hex.isEmpty()) {
+                    payload = hexStringToBytes(hex);
+                    if (payload == null) {
+                        returnError(this, intent, "Invalid manufacturer_data: " + hex);
+                        return;
+                    }
+                }
+                data.addManufacturerData(intent.getIntExtra("manufacturer_id", 0), payload);
+            }
+            data.setIncludeTxPowerLevel(intent.getBooleanExtra("include_tx_power", false));
+
+            final CountDownLatch latch = new CountDownLatch(1);
+            final String[] failure = new String[1];
+            AdvertiseCallback callback = new AdvertiseCallback() {
+                @Override
+                public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+                    latch.countDown();
+                }
+
+                @Override
+                public void onStartFailure(int errorCode) {
+                    failure[0] = advertiseError(errorCode);
+                    latch.countDown();
+                }
+            };
+
+            try {
+                advertiser.startAdvertising(settings.build(), data.build(), callback);
+            } catch (Exception e) {
+                returnError(this, intent, "startAdvertising failed: " + e.getMessage());
+                return;
+            }
+
+            boolean started;
+            try {
+                // startAdvertising() is asynchronous: reporting success before
+                // onStartSuccess would tell the caller something is on the air
+                // when the platform may have rejected the settings outright.
+                started = latch.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                started = false;
+            }
+
+            if (!started) {
+                try {
+                    advertiser.stopAdvertising(callback);
+                } catch (Exception ignored) {
+                }
+                returnError(this, intent, "Advertising did not start within 5 s");
+                return;
+            }
+            if (failure[0] != null) {
+                returnError(this, intent, failure[0]);
+                return;
+            }
+
+            advertiserInstance = advertiser;
+            activeAdvertiseCallback = callback;
+            advertiseName = name;
+            advertiseServiceUuid = serviceUuid;
+
+            ResultReturner.returnData(this, intent, out -> {
+                out.beginObject();
+                out.name("advertising").value(true);
+                out.name("connectable").value(intent.getBooleanExtra("connectable", true));
+                out.name("mode").value(intent.getStringExtra("mode") == null ? "balanced"
+                    : intent.getStringExtra("mode"));
+                if (name != null) out.name("name").value(name);
+                if (serviceUuid != null) out.name("service_uuid").value(serviceUuid);
+                out.endObject();
+            });
+        }
+
+        private static int advertiseMode(String mode) {
+            if ("low_latency".equalsIgnoreCase(mode)) return AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY;
+            if ("low_power".equalsIgnoreCase(mode)) return AdvertiseSettings.ADVERTISE_MODE_LOW_POWER;
+            return AdvertiseSettings.ADVERTISE_MODE_BALANCED;
+        }
+
+        private static int advertiseTxPower(String level) {
+            if ("high".equalsIgnoreCase(level)) return AdvertiseSettings.ADVERTISE_TX_POWER_HIGH;
+            if ("low".equalsIgnoreCase(level)) return AdvertiseSettings.ADVERTISE_TX_POWER_LOW;
+            if ("ultra_low".equalsIgnoreCase(level)) return AdvertiseSettings.ADVERTISE_TX_POWER_ULTRA_LOW;
+            return AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM;
+        }
+
+        private static String advertiseError(int code) {
+            switch (code) {
+                case AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE:
+                    return "advertise failed (1): the payload is larger than a single advertisement allows";
+                case AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS:
+                    return "advertise failed (2): no free advertiser slot on this adapter";
+                case AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED:
+                    return "advertise failed (3): an advertisement is already running";
+                case AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR:
+                    return "advertise failed (4): internal error in the Bluetooth stack";
+                case AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED:
+                    return "advertise failed (5): this device does not support BLE advertising";
+                default:
+                    return "advertise failed (" + code + ")";
+            }
+        }
+
+        /** Accepts both "180d" and "0000180d-0000-1000-8000-00805f9b34fb". */
+        private static String normalizeUuid(String uuid) {
+            String trimmed = uuid.trim();
+            if (trimmed.length() == 4) return "0000" + trimmed + "-0000-1000-8000-00805f9b34fb";
+            if (trimmed.length() == 8) return trimmed + "-0000-1000-8000-00805f9b34fb";
+            return trimmed;
         }
 
         // ============================================================
