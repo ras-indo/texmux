@@ -376,6 +376,49 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             echo "=== last 80 log lines ==="
             tail -80 /tmp/check.log
+
+            # Re-run the failing tests with their output visible and
+            # against a second, unpatched build of the same fork, so
+            # that a failure can be attributed to the patch instead of
+            # to the environment.
+            echo "=== diagnosis: failing tests, verbose, patched vs unpatched ==="
+            failed=$(sed -n 's/^  CHECK\t\(.*\) FAILED$/\1/p' failure | sort -u)
+            echo "failing tests: $failed"
+
+            git clone --depth=1 https://github.com/ras-indo/proot.git /tmp/proot-ref >/dev/null 2>&1
+            cd /tmp/proot-ref
+            git fetch --depth=1 origin 289dc4e87a2e75601a126b171fbb2bcee049d0cd >/dev/null 2>&1 || true
+            git checkout -q FETCH_HEAD 2>/dev/null || git checkout -q 289dc4e87a2e75601a126b171fbb2bcee049d0cd
+            export PKG_CONFIG_PATH=/tmp/talloc
+            if make -C /tmp/proot-ref/src -j"$(nproc)" WITHOUT_PYTHON=1 \
+                CFLAGS="-O3 -DNDEBUG -ffunction-sections -fdata-sections -I/tmp/talloc/include -Wall -Wextra" \
+                LDFLAGS="-Wl,--gc-sections -L/tmp/talloc/lib -ltalloc" >/tmp/ref-build.log 2>&1; then
+                echo "unpatched reference build: OK"
+            else
+                echo "unpatched reference build: FAILED (see /tmp/ref-build.log)"
+                tail -20 /tmp/ref-build.log
+            fi
+
+            for t in $failed; do
+                echo "----- $t -----"
+                for label in patched unpatched; do
+                    case $label in
+                        patched)   bin=/tmp/proot/src/proot ;;
+                        unpatched) bin=/tmp/proot-ref/src/proot ;;
+                    esac
+                    if [ ! -x "$bin" ]; then
+                        echo "  $label: binary missing"
+                        continue
+                    fi
+                    ( cd /tmp/proot/tests && \
+                      make V=1 "check-$t" \
+                        PROOT="/tmp/proot-timeout.sh $bin" ) > "/tmp/diag-$t-$label.log" 2>&1
+                    st=$?
+                    echo "  $label: exit=$st"
+                    tail -25 "/tmp/diag-$t-$label.log" | sed 's/^/    /'
+                done
+            done
+
             exit 1
           fi
           echo "OK: no test failures"
