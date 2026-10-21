@@ -487,7 +487,57 @@ public class WifiAPI {
 
     static boolean isLocationEnabled(Context context) {
         LocationManager lm = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
-        return lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
+        if (lm == null) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // GPS-only was wrong: a device with location on via Wi-Fi/cell still passes
+            // scan results through, and we used to call that "location is off".
+            return lm.isLocationEnabled();
+        }
+        return lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+    }
+
+    /**
+     * Ask the radio for a fresh scan and wait for its completion broadcast. The cached list
+     * is empty on a device that has not scanned recently (fresh boot, Wi-Fi just toggled),
+     * which used to look like "there are no networks around".
+     */
+    private static List<ScanResult> refreshScanResults(Context context, WifiManager manager, long timeoutMs) {
+        final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(Context c, Intent i) {
+                latch.countDown();
+            }
+        };
+        boolean registered = false;
+        try {
+            context.registerReceiver(receiver,
+                new android.content.IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));
+            registered = true;
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "scan receiver not registered", e);
+        }
+        try {
+            if (!manager.startScan()) {
+                // Throttled (a few scans per two minutes) or refused: cached results only.
+                return manager.getScanResults();
+            }
+            if (registered) {
+                latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+            }
+            return manager.getScanResults();
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "startScan failed", e);
+            return manager.getScanResults();
+        } finally {
+            if (registered) {
+                try {
+                    context.unregisterReceiver(receiver);
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     public static void onReceiveWifiScanInfo(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
@@ -508,6 +558,10 @@ public class WifiAPI {
                     return;
                 }
                 List<ScanResult> scans = manager.getScanResults();
+                if ((scans == null || scans.isEmpty()) && isLocationEnabled(context)) {
+                    // No cached results: ask the radio itself instead of reporting "none".
+                    scans = refreshScanResults(context, manager, 6000);
+                }
                 if (scans != null) {
                     scans = filterScans(intent, scans);
                 }
@@ -600,13 +654,32 @@ public class WifiAPI {
                 return;
             }
             if (!applied) {
-                // Android 10+ answers false for apps without the privilege, and the
-                // switch simply does nothing. Exiting mute made the CLI look broken.
-                out.append("{\"API_ERROR\":\"Android refused to change Wi-Fi state "
-                    + "(setWifiEnabled returned false)\"}\n");
+                // CHANGE_WIFI_STATE is declared and targetSdkVersion is 28, so a false here
+                // means the platform itself refused (some ROMs gate the toggle). Report it;
+                // the caller decides what to do.
+                out.append("{\"enabled\":").append(manager.isWifiEnabled() ? "true" : "false")
+                   .append(",\"API_ERROR\":\"setWifiEnabled returned false - the platform "
+                       + "refused the Wi-Fi toggle\"}\n");
                 return;
             }
-            out.append("{\"enabled\":").append(wanted ? "true" : "false").append("}\n");
+            // setWifiEnabled() is asynchronous: read the radio back instead of echoing the
+            // argument, otherwise the CLI reports a state the device never reached.
+            long deadline = System.currentTimeMillis() + 4000;
+            while (manager.isWifiEnabled() != wanted && System.currentTimeMillis() < deadline) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            boolean actual = manager.isWifiEnabled();
+            if (actual != wanted) {
+                out.append("{\"enabled\":").append(actual ? "true" : "false")
+                   .append(",\"API_ERROR\":\"Wi-Fi did not reach the requested state within 4 s\"}\n");
+                return;
+            }
+            out.append("{\"enabled\":").append(actual ? "true" : "false").append("}\n");
         });
     }
 

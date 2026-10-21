@@ -215,6 +215,36 @@ public class BluetoothAPI {
     }
 
     /**
+     * Why a BLE scan can come back empty through no fault of the caller's, or null when
+     * empty simply means "nothing is advertising around here".
+     */
+    private static String bleEmptyReason(Context context, BluetoothAdapter adapter) {
+        if (adapter == null || !adapter.isEnabled()) {
+            return "Bluetooth turned off during the scan";
+        }
+        // Up to Android 11 the platform drops scan results unless location services are on.
+        try {
+            android.location.LocationManager lm = (android.location.LocationManager)
+                context.getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null) return null;
+            boolean locationOn;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                locationOn = lm.isLocationEnabled();
+            } else {
+                locationOn = lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+                    || lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER);
+            }
+            if (!locationOn) {
+                return "Location needs to be enabled - BLE scans return nothing without it";
+            }
+        } catch (Exception ignored) {
+            // Provider queries can throw on odd ROMs; an unexplained empty list is still
+            // better than dropping the answer.
+        }
+        return null;
+    }
+
+    /**
      * Return an error JSON with the given message.
      */
     private static void returnError(Object receiver, Intent intent, String message) {
@@ -908,7 +938,13 @@ public class BluetoothAPI {
                     Thread.currentThread().interrupt();
                 }
 
-                scanner.stopScan(callback);
+                try {
+                    scanner.stopScan(callback);
+                } catch (Exception e) {
+                    // A vanished adapter throws here; dying before returnData() would leave
+                    // the caller waiting for an answer that never comes.
+                    Logger.logStackTraceWithMessage(LOG_TAG, "stopScan failed", e);
+                }
 
                 // Build result
                 ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
@@ -951,6 +987,13 @@ public class BluetoothAPI {
                             out.endObject();
                         }
                         out.endArray();
+                        if (snap.length == 0) {
+                            // An empty list is ambiguous: nothing around, location services
+                            // off (required for BLE scans up to Android 11) or the adapter
+                            // went away. Name the cause instead of returning a bare [].
+                            String why = bleEmptyReason(getApplicationContext(), adapter);
+                            if (why != null) out.name("API_ERROR").value(why);
+                        }
                         out.endObject();
                     }
                 });

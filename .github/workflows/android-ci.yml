@@ -292,7 +292,7 @@ jobs:
             || { echo "!! a refused startService hangs the caller for 30 s"; exit 1; }
           # setWifiEnabled() answers false on Android 10+ for apps without the
           # privilege; returning nothing made `termux-wifi-enable` look like it worked.
-          grep -q 'Exiting mute made the CLI look broken' \
+          grep -q 'setWifiEnabled returned false' \
             termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
             || { echo "!! termux-wifi-enable can still exit silently"; exit 1; }
           # With Wi-Fi off getScanResults() is empty; reporting [] looks like
@@ -300,6 +300,24 @@ jobs:
           grep -q 'Wi-Fi is off - turn it on and retry' \
             termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
             || { echo "!! wifi scans with the radio off are reported as empty"; exit 1; }
+          # The toggle is asynchronous: the answer must be the radio read back, not the
+          # argument echoed.
+          grep -q 'Wi-Fi did not reach the requested state' \
+            termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
+            || { echo "!! termux-wifi-enable reports a state it never verified"; exit 1; }
+          # Cached scan lists are empty after boot / a toggle; the radio has to be asked.
+          grep -q 'refreshScanResults' \
+            termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
+            || { echo "!! wifi scan never refreshes an empty cache"; exit 1; }
+          # termux-api should drive the platform API, not send the user to a settings panel.
+          if grep -q 'ACTION_WIFI_SETTINGS\|panel.action.WIFI' \
+              termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java; then
+            echo "!! wifi is punted to a settings panel instead of the platform API"; exit 1
+          fi
+          # Empty BLE results have a cause worth naming (location off / adapter gone).
+          grep -q 'bleEmptyReason' \
+            termux-api/app/src/main/java/com/termux/api/apis/BluetoothAPI.java \
+            || { echo "!! empty BLE scans are still reported as a bare []"; exit 1; }
           # Every handler that needs a dangerous permission must go through the
           # requester instead of dying with a SecurityException.
           gated=$(grep -la "checkAndRequestPermissions" termux-api/app/src/main/java/com/termux/api/apis/*.java | wc -l)
