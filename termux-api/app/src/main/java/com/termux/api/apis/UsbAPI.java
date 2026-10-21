@@ -25,7 +25,9 @@ import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -538,13 +540,60 @@ public class UsbAPI {
             UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
 
             HashMap<String, UsbDevice> deviceList = usbManager.getDeviceList();
-            UsbDevice device = deviceList.get(deviceName);
+
+            UsbDevice device = null;
+            if (deviceName != null && !deviceName.isEmpty()) {
+                device = deviceList.get(deviceName);
+            } else {
+                // `termux-usb <vendorId> <productId>` sends ids instead of a usbfs path. Those
+                // extras used to be ignored completely, so every call answered "No such device".
+                Integer vendorId = parseUsbId(intent.getStringExtra("vendorId"));
+                Integer productId = parseUsbId(intent.getStringExtra("productId"));
+                if (vendorId != null) {
+                    List<UsbDevice> matches = new ArrayList<>();
+                    for (UsbDevice candidate : deviceList.values()) {
+                        if (candidate.getVendorId() != vendorId) continue;
+                        if (productId != null && candidate.getProductId() != productId) continue;
+                        matches.add(candidate);
+                    }
+                    if (matches.size() == 1) {
+                        device = matches.get(0);
+                    } else if (matches.size() > 1) {
+                        // Picking one at random would silently talk to the wrong device.
+                        StringBuilder message = new StringBuilder(
+                                "More than one device matches " + intent.getStringExtra("vendorId"));
+                        if (productId != null) message.append(":").append(intent.getStringExtra("productId"));
+                        message.append(". Pass the device path instead:\n");
+                        for (UsbDevice match : matches) {
+                            message.append("  ").append(match.getDeviceName()).append("\n");
+                        }
+                        final String text = message.toString();
+                        ResultReturner.returnData(this, intent, out -> out.append(text));
+                        return null;
+                    }
+                }
+            }
+
             if (device == null) {
                 Logger.logVerbose(LOG_TAG, "Failed to find device \"" + deviceName + "\"");
                 ResultReturner.returnData(this, intent, out -> out.append("No such device.\n"));
             }
 
             return device;
+        }
+
+        /** Accepts "18d1", "0x18d1" or "6353"; null when the value is not a usb id. */
+        private Integer parseUsbId(String value) {
+            if (value == null) return null;
+            String v = value.trim();
+            if (v.isEmpty()) return null;
+            try {
+                if (v.startsWith("0x") || v.startsWith("0X")) return Integer.parseInt(v.substring(2), 16);
+                if (v.matches(".*[a-fA-F].*")) return Integer.parseInt(v, 16);
+                return Integer.parseInt(v, 10);
+            } catch (NumberFormatException e) {
+                return null;
+            }
         }
 
 

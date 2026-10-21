@@ -26,9 +26,19 @@ public class VibrateAPI {
                 int milliseconds = intent.getIntExtra("duration_ms", 1000);
                 boolean force = intent.getBooleanExtra("force", false);
 
+                if (vibrator == null || !vibrator.hasVibrator()) {
+                    // A silent "success" on a device that cannot vibrate reads as a broken
+                    // command, so answer instead of returning nothing.
+                    ResultReturner.returnData(context, intent,
+                            out -> out.println("{\"API_ERROR\":\"No vibrator on this device\"}"));
+                    return;
+                }
+
                 AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
                 if (am == null) {
                     Logger.logError(LOG_TAG, "Audio service null");
+                    ResultReturner.returnData(context, intent,
+                            out -> out.println("{\"API_ERROR\":\"Audio service unavailable\"}"));
                     return;
                 }
 

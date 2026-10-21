@@ -11,6 +11,8 @@ import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.plugins.TermuxPluginUtils;
 
+import org.json.JSONObject;
+
 public class TermuxApiReceiver extends BroadcastReceiver {
 
     private static final String LOG_TAG = "TermuxApiReceiver";
@@ -31,7 +33,17 @@ public class TermuxApiReceiver extends BroadcastReceiver {
             TermuxPluginUtils.sendPluginCommandErrorNotification(context, LOG_TAG,
                     TermuxConstants.TERMUX_API_APP_NAME + " Error", message, t);
 
-            ResultReturner.noteDone(this, intent);
+            // Answer the client even when the handler failed. Without this the socket is
+            // closed with zero bytes written, and a command that throws looks exactly like a
+            // command that hangs: no output, no error, no exit status anyone can act on.
+            try {
+                final String reason = t.getMessage() == null
+                        ? t.toString() : t.getClass().getSimpleName() + ": " + t.getMessage();
+                ResultReturner.returnData(this, intent,
+                        out -> out.println(new JSONObject().put("API_ERROR", reason).toString()));
+            } catch (Throwable ignored) {
+                ResultReturner.noteDone(this, intent);
+            }
         }
     }
 

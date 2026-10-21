@@ -102,6 +102,8 @@ public class JobSchedulerAPI {
         boolean persisted = intent.getBooleanExtra("persisted", false);
         boolean idle = intent.getBooleanExtra("idle", false);
         boolean storageNotLow = intent.getBooleanExtra("storage_not_low", false);
+        String triggerContentUri = intent.getStringExtra("trigger_content_uri");
+        int triggerContentFlag = intent.getIntExtra("trigger_content_flag", 1);
 
 
         int networkTypeCode;
@@ -160,6 +162,19 @@ public class JobSchedulerAPI {
         PersistableBundle extras = new PersistableBundle();
         extras.putString(JobSchedulerService.SCRIPT_FILE_PATH, file.getAbsolutePath());
 
+        final boolean hasTriggerContent = !TextUtils.isEmpty(triggerContentUri);
+        if (hasTriggerContent && periodicMillis > 0) {
+            // JobInfo.build() throws when both are set, and the caller deserves to hear why
+            // before the whole schedule_job call dies on an IllegalArgumentException.
+            out.println("period-ms cannot be combined with trigger-content-uri: a content trigger "
+                    + "job runs when the uri changes, not on a period.");
+            return;
+        }
+        if (hasTriggerContent && Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            out.println("trigger-content-uri requires Android 7.0 (API 24) or later.");
+            return;
+        }
+
         ComponentName serviceComponent = new ComponentName(context, JobSchedulerService.class);
         JobInfo.Builder builder = new JobInfo.Builder(jobId, serviceComponent)
                 .setExtras(extras)
@@ -178,6 +193,11 @@ public class JobSchedulerAPI {
             // - https://developer.android.com/reference/android/app/job/JobInfo#getMinPeriodMillis()
             // - https://cs.android.com/android/_/android/platform/frameworks/base/+/10be4e90
             builder = builder.setPeriodic(periodicMillis);
+        }
+
+        if (hasTriggerContent) {
+            builder = builder.addTriggerContentUri(new JobInfo.TriggerContentUri(
+                    Uri.parse(triggerContentUri), triggerContentFlag));
         }
 
         JobInfo jobInfo = builder.build();

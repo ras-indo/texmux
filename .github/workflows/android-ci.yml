@@ -254,6 +254,26 @@ jobs:
             || { echo "!! the Bluetooth enable dialog is gone"; exit 1; }
           grep -aq "android.settings.LOCATION_SOURCE_SETTINGS" /tmp/apk-x/classes*.dex \
             || { echo "!! the location switch page is gone"; exit 1; }
+          # A handler that throws used to answer with nothing at all: the client read
+          # zero bytes, which looks exactly like a hang. The receiver must answer.
+          grep -q 'API_ERROR' termux-api/app/src/main/java/com/termux/api/TermuxApiReceiver.java \
+            || { echo "!! a failed handler still answers with silence"; exit 1; }
+          # openCamera() may never call back. Without a deadline the capture thread
+          # sits in Looper.loop() forever and the command appears frozen.
+          grep -q 'camera timed out after 15s' \
+            termux-api/app/src/main/java/com/termux/api/apis/CameraPhotoAPI.java \
+            || { echo "!! camera capture has no deadline"; exit 1; }
+          [ "$(grep -c 'closeCamera(' termux-api/app/src/main/java/com/termux/api/apis/CameraPhotoAPI.java)" -ge 5 ] \
+            || { echo "!! a camera callback path never quits the looper"; exit 1; }
+          # `termux-usb <vendorId> <productId>` sends ids, not a path; ignoring them
+          # made every such call answer "No such device."
+          grep -q 'parseUsbId' termux-api/app/src/main/java/com/termux/api/apis/UsbAPI.java \
+            || { echo "!! usb vendor/product id selection is gone"; exit 1; }
+          # --trigger-content-uri is advertised by termux-job-scheduler; if the handler
+          # ignores it the job becomes a plain job that fires immediately.
+          grep -q 'addTriggerContentUri' \
+            termux-api/app/src/main/java/com/termux/api/apis/JobSchedulerAPI.java \
+            || { echo "!! content trigger jobs are silently ignored"; exit 1; }
           # Every handler that needs a dangerous permission must go through the
           # requester instead of dying with a SecurityException.
           gated=$(grep -la "checkAndRequestPermissions" termux-api/app/src/main/java/com/termux/api/apis/*.java | wc -l)

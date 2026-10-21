@@ -16,6 +16,7 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.os.Handler;
 import android.os.Looper;
 import android.util.Size;
 import android.view.Surface;
@@ -43,6 +44,10 @@ import java.util.Objects;
 public class CameraPhotoAPI {
 
     private static final String LOG_TAG = "CameraPhotoAPI";
+
+    /** Guards the watchdog so a completed capture never reports a timeout afterwards. */
+    private static final java.util.concurrent.atomic.AtomicBoolean sFinished =
+            new java.util.concurrent.atomic.AtomicBoolean(true);
 
     public static void onReceive(TermuxApiReceiver apiReceiver, final Context context, Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
@@ -87,6 +92,18 @@ public class CameraPhotoAPI {
 
             Looper.prepare();
             final Looper looper = Looper.myLooper();
+            sFinished.set(false);
+
+            // openCamera() is allowed to never call back: the HAL can be wedged, another app
+            // may hold the camera, or the request may be silently dropped. Looper.loop() would
+            // then block this thread forever and the client would sit on a socket that is
+            // never written - the command looks frozen rather than failed.
+            new Handler(looper).postDelayed(() -> {
+                if (!sFinished.compareAndSet(false, true)) return;
+                stdout.println("ERROR: camera timed out after 15s");
+                stdout.flush();
+                looper.quit();
+            }, 15000);
 
             //noinspection MissingPermission
             manager.openCamera(cameraId, new CameraDevice.StateCallback() {
@@ -103,6 +120,12 @@ public class CameraPhotoAPI {
                 @Override
                 public void onDisconnected(CameraDevice camera) {
                     Logger.logInfo(LOG_TAG, "onDisconnected() from camera");
+                    // The camera was taken away (another app, unplugged HAL). Without closing
+                    // and quitting the looper this thread waits forever for a capture that can
+                    // never arrive.
+                    stdout.println("ERROR: camera was disconnected");
+                    stdout.flush();
+                    closeCamera(camera, looper);
                 }
 
                 @Override
@@ -115,6 +138,7 @@ public class CameraPhotoAPI {
             Looper.loop();
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error getting camera", e);
+            stdout.println("ERROR: " + e.getMessage());
         }
     }
 
@@ -285,6 +309,7 @@ public class CameraPhotoAPI {
     }
 
     static void closeCamera(CameraDevice camera, Looper looper) {
+        sFinished.set(true);
         try {
             camera.close();
         } catch (RuntimeException e) {
