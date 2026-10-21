@@ -8,6 +8,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -72,6 +73,12 @@ public class LocationAPI {
             @Override
             public void writeJson(final JsonWriter out) throws Exception {
                 LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+                if (manager == null) {
+                    // Without this the NPE escapes writeJson, the socket is never
+                    // written and the command looks frozen instead of failing.
+                    out.beginObject().name("API_ERROR").value("LocationManager unavailable").endObject();
+                    return;
+                }
 
                 String provider = intent.getStringExtra("provider");
                 if (provider == null)
@@ -94,7 +101,36 @@ public class LocationAPI {
                         locationToJson(lastKnownLocation, out);
                         break;
                     case REQUEST_ONCE:
+                        // requestSingleUpdate() only calls back when a fix
+                        // arrives. With the provider disabled it never does, and
+                        // the command sat on the socket forever printing nothing.
+                        if (!manager.isProviderEnabled(provider)) {
+                            out.beginObject()
+                                    .name("API_ERROR").value("Provider '" + provider + "' is disabled")
+                                    .name("hint").value("Nyalakan Location/GPS lalu jalankan ulang perintahnya.")
+                                    .endObject();
+                            break;
+                        }
+
                         Looper.prepare();
+                        final boolean[] answered = {false};
+                        final Handler timeoutHandler = new Handler();
+                        timeoutHandler.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (answered[0]) return;
+                                try {
+                                    out.beginObject()
+                                            .name("API_ERROR").value("Location timeout after 20s")
+                                            .name("hint").value("Belum ada fix. Coba di luar ruangan, atau pakai -r last / -p network.")
+                                            .endObject();
+                                } catch (IOException e) {
+                                    Logger.logStackTraceWithMessage(LOG_TAG, "Writing timeout", e);
+                                } finally {
+                                    Looper.myLooper().quit();
+                                }
+                            }
+                        }, 20 * 1000);
                         manager.requestSingleUpdate(provider, new LocationListener() {
 
                             @Override
@@ -115,6 +151,8 @@ public class LocationAPI {
                             @Override
                             public void onLocationChanged(Location location) {
                                 try {
+                                    answered[0] = true;
+                                    timeoutHandler.removeCallbacksAndMessages(null);
                                     locationToJson(location, out);
                                 } catch (IOException e) {
                                     Logger.logStackTraceWithMessage(LOG_TAG, "Writing json", e);

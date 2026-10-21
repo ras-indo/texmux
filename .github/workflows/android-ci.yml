@@ -231,6 +231,23 @@ jobs:
           grep -q 'if (!asked) finish();' \
             termux-api/app/src/main/java/com/termux/api/activities/TermuxApiPermissionActivity.java \
             || { echo "!! a failed request leaves the activity alive"; exit 1; }
+          # The follow-up must not depend on onRequestPermissionsResult() alone.
+          [ "$(grep -c 'runFollowUpAction();' termux-api/app/src/main/java/com/termux/api/activities/TermuxApiPermissionActivity.java)" -ge 2 ] \
+            || { echo "!! the queued action is only reachable from one callback"; exit 1; }
+          # A disabled provider must not block the command forever.
+          grep -q "isProviderEnabled(provider)" \
+            termux-api/app/src/main/java/com/termux/api/apis/LocationAPI.java \
+            || { echo "!! a disabled provider can hang the command"; exit 1; }
+          grep -q 'Location timeout after 20s' \
+            termux-api/app/src/main/java/com/termux/api/apis/LocationAPI.java \
+            || { echo "!! no timeout on requestSingleUpdate"; exit 1; }
+          # The location switch has no dialog, only a settings page. The CLI must
+          # be able to open it too, not just the app's activity chain.
+          sh -n app/src/main/assets/termux-api/bin/termux-location \
+            || { echo "!! termux-location is not valid sh"; exit 1; }
+          grep -q 'android.settings.LOCATION_SOURCE_SETTINGS' \
+            app/src/main/assets/termux-api/bin/termux-location \
+            || { echo "!! the CLI cannot open the location switch"; exit 1; }
           # Turning the adapter on is a separate system dialog. Without it a scan
           # can never run, no matter which permissions have been granted.
           grep -aq "android.bluetooth.adapter.action.REQUEST_ENABLE" /tmp/apk-x/classes*.dex \

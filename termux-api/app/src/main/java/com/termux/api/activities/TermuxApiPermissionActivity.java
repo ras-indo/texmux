@@ -243,9 +243,7 @@ public class TermuxApiPermissionActivity extends Activity {
         Logger.logVerbose(LOG_TAG, "onResume");
         super.onResume();
 
-        // Coming back from the dialog we just opened: nothing left to do.
-        if (flowFinished || flowStarted) return;
-        flowStarted = true;
+        if (flowFinished) return;
 
         Intent intent = getIntent();
         ArrayList<String> requested = intent.getStringArrayListExtra(PERMISSIONS_EXTRA);
@@ -256,17 +254,26 @@ public class TermuxApiPermissionActivity extends Activity {
             }
         }
 
+        // Everything asked for is granted: run whatever the caller queued. This
+        // must not depend on onRequestPermissionsResult() alone - if the result
+        // is dropped (activity recreated by the system, OEM quirk) the user
+        // would otherwise get the permission dialog and then nothing at all.
         if (missing.isEmpty()) {
             runFollowUpAction();
-        } else {
-            // PermissionUtils returns false without launching anything when a
-            // permission is not declared in the manifest or the call throws.
-            // Ignoring that leaves this invisible activity alive and the user
-            // waiting for a dialog that was never requested.
-            boolean asked = PermissionUtils.requestPermissions(
-                    this, missing.toArray(new String[0]), REQUEST_CODE);
-            if (!asked) finish();
+            return;
         }
+
+        // Still missing and a dialog is already up: wait for it.
+        if (flowStarted) return;
+        flowStarted = true;
+
+        // PermissionUtils returns false without launching anything when a
+        // permission is not declared in the manifest or the call throws.
+        // Ignoring that leaves this invisible activity alive and the user
+        // waiting for a dialog that was never requested.
+        boolean asked = PermissionUtils.requestPermissions(
+                this, missing.toArray(new String[0]), REQUEST_CODE);
+        if (!asked) finish();
     }
 
     @Override

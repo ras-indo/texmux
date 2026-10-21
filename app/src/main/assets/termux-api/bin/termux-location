@@ -121,4 +121,18 @@ shift $((OPTIND-1))
 
 if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 
-/data/data/com.termux/files/apps/com.termux/bin/termux-api Location $PARAMS
+STATUS=0
+OUTPUT=$(/data/data/com.termux/files/apps/com.termux/bin/termux-api Location $PARAMS) || STATUS=$?
+printf '%s\n' "$OUTPUT"
+
+# The switch itself has no dialog: Android only offers a settings page for it.
+# The app normally opens that page right after the permission dialog, but that
+# launch can be dropped by the platform, so do it here as well - `am start` runs
+# with Termux's own identity while Termux is in the foreground and is allowed.
+case "$OUTPUT" in
+    *"Location services are off"*|*"is disabled"*)
+        am start -a android.settings.LOCATION_SOURCE_SETTINGS >/dev/null 2>&1 || true
+        ;;
+esac
+
+exit $STATUS
