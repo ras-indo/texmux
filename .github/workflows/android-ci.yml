@@ -352,7 +352,8 @@ jobs:
           APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
           rm -rf /tmp/apk-n && mkdir -p /tmp/apk-n
           unzip -oq "$APK" -d /tmp/apk-n 'classes*.dex' \
-            'assets/termux-api/bin/termux-nsd' 'assets/termux-api/bin/termux-companion'
+            'assets/termux-api/bin/termux-nsd' 'assets/termux-api/bin/termux-companion' \
+            'assets/termux-api/bin/termux-bluetooth'
           for token in "NsdManager unavailable on this device" \
                        "Missing 'service_type' (for example _http._tcp.)" \
                        "CompanionDeviceManager needs Android 8.0 (API 26)" \
