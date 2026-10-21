@@ -389,6 +389,18 @@ jobs:
             grep -q "\"$name\"" app/src/main/java/com/termux/app/TermuxInstaller.java \
               || { echo "!! $name is not deployed by the installer"; exit 1; }
           done
+          # BLE advertising: the GATT server is useless without it, so both the
+          # handler and the CLI branch have to be in the artifact.
+          for token in "This device cannot advertise over BLE" \
+                       "no free advertiser slot on this adapter" \
+                       "getBluetoothLeAdvertiser() returned null"; do
+            grep -aq -- "$token" /tmp/apk-n/classes*.dex \
+              || { echo "!! dex is missing '$token'"; exit 1; }
+          done
+          grep -q 'advertise)' /tmp/apk-n/assets/termux-api/bin/termux-bluetooth \
+            || { echo "!! the bluetooth CLI has no advertise branch"; exit 1; }
+          grep -q 'manufacturer_id' /tmp/apk-n/assets/termux-api/bin/termux-bluetooth \
+            || { echo "!! advertise cannot carry a manufacturer payload"; exit 1; }
           # No settings detour here either: these are platform APIs, not panels.
           if grep -q 'android.settings' termux-api/app/src/main/java/com/termux/api/apis/NsdAPI.java \
                 termux-api/app/src/main/java/com/termux/api/apis/CompanionAPI.java; then
