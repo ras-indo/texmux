@@ -322,12 +322,28 @@ jobs:
           # status the suite already uses for a test that cannot run
           # on this host, so a hang is neither reported as a failure
           # nor silently ignored.
+          #
+          # "timeout" is looked up with an absolute path: some tests
+          # run proot with an empty PATH, where a bare "timeout" would
+          # not be found.
           cat > /tmp/proot-timeout.sh <<'EOF'
           #!/bin/sh
-          timeout -k 5 "${PROOT_TIMEOUT:-120}" "$@"
+          limit=${PROOT_TIMEOUT:-120}
+          TIMEOUT_BIN=
+          for candidate in /usr/bin/timeout /bin/timeout /usr/local/bin/timeout; do
+              if [ -x "$candidate" ]; then
+                  TIMEOUT_BIN=$candidate
+                  break
+              fi
+          done
+          if [ -z "$TIMEOUT_BIN" ]; then
+              echo "proot-timeout: no timeout command found" >&2
+              exit 125
+          fi
+          "$TIMEOUT_BIN" -k 5 "$limit" "$@"
           status=$?
           if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
-              echo "proot-timeout: killed after ${PROOT_TIMEOUT:-120}s" >&2
+              echo "proot-timeout: killed after ${limit}s" >&2
               exit 125
           fi
           exit "$status"
