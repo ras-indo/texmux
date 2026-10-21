@@ -18,6 +18,7 @@ import com.termux.api.apis.CameraPhotoAPI;
 import com.termux.api.apis.ClipboardAPI;
 import com.termux.api.apis.ContactListAPI;
 import com.termux.api.apis.DialogAPI;
+import com.termux.api.apis.CompanionAPI;
 import com.termux.api.apis.DownloadAPI;
 import com.termux.api.apis.FingerprintAPI;
 import com.termux.api.apis.InfraredAPI;
@@ -28,6 +29,7 @@ import com.termux.api.apis.LocationAPI;
 import com.termux.api.apis.MediaPlayerAPI;
 import com.termux.api.apis.MediaScannerAPI;
 import com.termux.api.apis.MicRecorderAPI;
+import com.termux.api.apis.NsdAPI;
 import com.termux.api.apis.NfcAPI;
 import com.termux.api.apis.NotificationAPI;
 import com.termux.api.apis.NotificationListAPI;
@@ -199,6 +201,12 @@ public final class DirectDispatcher {
                 break;
             case "Nfc":
                 NfcAPI.onReceive(context, intent);
+                break;
+            case "Nsd":
+                NsdAPI.onReceive(handlerContext, context, intent);
+                break;
+            case "Companion":
+                CompanionAPI.onReceive(handlerContext, context, intent);
                 break;
             case "Notification":
                 NotificationAPI.onReceiveShowNotification(handlerContext, context, intent);

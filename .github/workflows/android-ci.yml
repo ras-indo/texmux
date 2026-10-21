@@ -346,6 +346,55 @@ jobs:
             || { echo "!! permission request can return without answering"; exit 1; }
           echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, BT enable dialog, location switch page, $gated gated handlers, chained system dialogs"
 
+      - name: Verify the Nsd / Companion API additions are in the APK
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
+          rm -rf /tmp/apk-n && mkdir -p /tmp/apk-n
+          unzip -oq "$APK" -d /tmp/apk-n 'classes*.dex' \
+            'assets/termux-api/bin/termux-nsd' 'assets/termux-api/bin/termux-companion'
+          for token in "NsdManager unavailable on this device" \
+                       "Missing 'service_type' (for example _http._tcp.)" \
+                       "CompanionDeviceManager needs Android 8.0 (API 26)" \
+                       "Association chooser could not be opened" \
+                       "startObservingDevicePresence"; do
+            grep -aq -- "$token" /tmp/apk-n/classes*.dex \
+              || { echo "!! dex is missing '$token'"; exit 1; }
+          done
+          # Association runs through a system chooser, so the helper activity has
+          # to survive the manifest merger - without it the API fails exactly when
+          # the user is supposed to pick a device.
+          grep -q 'CompanionAPI\$AssociateActivity' termux-api/app/src/main/AndroidManifest.xml \
+            || { echo "!! the companion chooser activity is not declared"; exit 1; }
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | head -1)
+          if [ -n "${AAPT:-}" ]; then
+            "$AAPT" dump xmltree "$APK" AndroidManifest.xml | grep -q 'AssociateActivity' \
+              || { echo "!! the merger dropped the companion chooser"; exit 1; }
+          fi
+          for token in discover register unregister service_type status; do
+            grep -q -- "$token" /tmp/apk-n/assets/termux-api/bin/termux-nsd \
+              || { echo "!! termux-nsd is missing $token"; exit 1; }
+          done
+          for token in associate observe unobserve disassociate list status; do
+            grep -q -- "$token" /tmp/apk-n/assets/termux-api/bin/termux-companion \
+              || { echo "!! termux-companion is missing $token"; exit 1; }
+          done
+          for name in termux-nsd termux-companion; do
+            bash -n "/tmp/apk-n/assets/termux-api/bin/$name" \
+              || { echo "!! $name in the APK is not valid bash"; exit 1; }
+          done
+          # Extracting the scripts is not enough: they have to be deployed into
+          # $PREFIX/bin at install time or the commands never exist on the device.
+          for name in termux-nsd termux-companion; do
+            grep -q "\"$name\"" app/src/main/java/com/termux/app/TermuxInstaller.java \
+              || { echo "!! $name is not deployed by the installer"; exit 1; }
+          done
+          # No settings detour here either: these are platform APIs, not panels.
+          if grep -q 'android.settings' termux-api/app/src/main/java/com/termux/api/apis/NsdAPI.java \
+                termux-api/app/src/main/java/com/termux/api/apis/CompanionAPI.java; then
+            echo "!! a new API redirects to a settings panel"; exit 1
+          fi
+
       - name: Collect only the APK needed (arm64-v8a)
         run: |
           mkdir -p upload_apk

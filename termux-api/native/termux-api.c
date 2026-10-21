@@ -256,7 +256,7 @@ static int is_static_method(const char *method) {
         "Wallpaper", "WifiConnectionInfo", "WifiScanInfo",
         "WifiEnable", "Wifi", "AudioInfo", "CallLog",
         "InfraredFrequencies", "InfraredTransmit", "MediaPlayer",
-        "Nfc", "Keystore",
+        "Nfc", "Keystore", "Nsd", "Companion",
         NULL
     };
     for (int i = 0; noinput[i]; i++)

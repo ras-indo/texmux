@@ -1,0 +1,89 @@
+#!@TERMUX_PREFIX@/bin/bash
+#
+# NAME
+#     termux-companion — pasangan perangkat lewat CompanionDeviceManager
+#
+# SYNOPSIS
+#     termux-companion status
+#     termux-companion list
+#     termux-companion associate
+#     termux-companion observe <MAC>
+#     termux-companion unobserve <MAC>
+#     termux-companion disassociate [MAC]
+#
+# DESCRIPTION
+#     Memakai CompanionDeviceManager milik Android. Association membuat sebuah
+#     perangkat Bluetooth "dikenal" sistem: setelah itu aplikasi boleh memantau
+#     kehadirannya (observe), dan tidak perlu melewati dialog pairing biasa tiap
+#     kali tersambung.
+#
+#     `associate` membuka chooser bawaan sistem - itu memang satu-satunya jalur
+#     API untuk membuat association, jadi pilih perangkatnya di layar tersebut.
+#
+# OPTIONS
+#     status                 Ringkasan: tersedia atau tidak, jumlah association.
+#     list                   Daftar association: id, MAC, profile.
+#     associate              Buka chooser sistem, lalu laporkan device yang dipilih.
+#     observe <MAC>          Mulai memantau kehadiran perangkat (harus associated).
+#     unobserve <MAC>        Berhenti memantau.
+#     disassociate [MAC]     Hapus association (tanpa MAC = semua).
+#
+# CONTOH
+#     termux-companion associate
+#     termux-companion list
+#     termux-companion observe AA:BB:CC:DD:EE:FF
+#
+# CATATAN
+#     Butuh Android 8.0 (API 26) ke atas. `observe` pada perangkat yang belum
+#     di-associate akan ditolak platform - pesan penolakannya diteruskan apa
+#     adanya, bukan didiamkan.
+
+set -u
+
+call_api() {
+    @TERMUX_PREFIX@/bin/termux-api Companion "$@"
+}
+
+show_usage() {
+    sed -n '3,42p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+cmd_simple() {
+    local command="$1"; shift
+    case "${1:-}" in
+        -h|--help) show_usage; exit 0 ;;
+    esac
+    call_api --es command "$command"
+}
+
+cmd_address() {
+    local command="$1" address="${2:-}"
+    case "$address" in
+        -h|--help) show_usage; exit 0 ;;
+    esac
+    if [ -z "$address" ]; then
+        echo "termux-companion $command: butuh alamat MAC" >&2
+        exit 1
+    fi
+    call_api --es command "$command" --es address "$address"
+}
+
+if [ $# -eq 0 ]; then
+    show_usage
+    exit 1
+fi
+
+command="$1"; shift
+case "$command" in
+    status|list|associate) cmd_simple "$command" "$@" ;;
+    observe|unobserve) cmd_address "$command" "${1:-}" ;;
+    disassociate)
+        case "${1:-}" in
+            -h|--help) show_usage; exit 0 ;;
+            "") call_api --es command disassociate ;;
+            *) call_api --es command disassociate --es address "$1" ;;
+        esac
+        ;;
+    -h|--help|help) show_usage ;;
+    *) echo "Command tidak dikenal: $command" >&2; show_usage; exit 1 ;;
+esac

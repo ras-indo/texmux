@@ -1,0 +1,133 @@
+#!@TERMUX_PREFIX@/bin/bash
+#
+# NAME
+#     termux-nsd — DNS-SD/mDNS service discovery dan advertisement
+#
+# SYNOPSIS
+#     termux-nsd discover  --service <tipe> [--timeout <detik>]
+#     termux-nsd register  --name <nama> --service <tipe> --port <port>
+#     termux-nsd unregister [--name <nama>] [--service <tipe>]
+#     termux-nsd status
+#
+# DESCRIPTION
+#     Memakai NsdManager (Network Service Discovery) milik Android: menemukan
+#     service di jaringan lokal lewat multicast DNS, dan mengiklankan service
+#     milik sendiri supaya bisa ditemukan perangkat lain.
+#
+#     Ini API platform sungguhan, bukan ping ke port: hasil discover berisi nama
+#     service, host hasil resolve, dan port yang diiklankan.
+#
+# OPTIONS
+#     discover
+#         --service, -s <tipe>   Tipe service, mis. _http._tcp. atau _ssh._tcp.
+#         --timeout <detik>      Lama mendengarkan (default 5, maksimum 60).
+#     register
+#         --name, -n <nama>      Nama service yang diiklankan.
+#         --service, -s <tipe>   Tipe service, mis. _ssh._tcp.
+#         --port, -p <port>      Port yang diiklankan (1-65535).
+#     unregister
+#         --name, -n <nama>      Nama yang didaftarkan (kosong = semua).
+#         --service, -s <tipe>   Batasi ke tipe tertentu.
+#
+# CONTOH
+#     termux-nsd discover -s _http._tcp. --timeout 8
+#     termux-nsd register -n "HP Gue" -s _ssh._tcp. -p 8022
+#     termux-nsd status
+#     termux-nsd unregister
+#
+# CATATAN
+#     Registrasi hidup selama proses aplikasi masih berjalan; pakai
+#     `termux-nsd unregister` untuk melepasnya lebih awal.
+#     Butuh Android 4.1+ (NsdManager ada sejak API 16).
+
+set -u
+
+call_api() {
+    @TERMUX_PREFIX@/bin/termux-api Nsd "$@"
+}
+
+show_usage() {
+    sed -n '3,40p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+cmd_discover() {
+    local service_type="" timeout=5
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_usage; exit 0 ;;
+            --service|-s) service_type="${2:-}"; shift 2 ;;
+            --type|-t) service_type="${2:-}"; shift 2 ;;
+            --timeout) timeout="${2:-5}"; shift 2 ;;
+            *)
+                if [ -z "$service_type" ]; then
+                    service_type="$1"; shift
+                else
+                    echo "Opsi tidak dikenal: $1" >&2; exit 1
+                fi
+                ;;
+        esac
+    done
+    if [ -z "$service_type" ]; then
+        echo "termux-nsd discover: butuh --service <tipe>, mis. _http._tcp." >&2
+        exit 1
+    fi
+    call_api --es command discover --es service_type "$service_type" --ei timeout "$timeout"
+}
+
+cmd_register() {
+    local name="" service_type="" port=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_usage; exit 0 ;;
+            --name|-n) name="${2:-}"; shift 2 ;;
+            --service|-s) service_type="${2:-}"; shift 2 ;;
+            --port|-p) port="${2:-}"; shift 2 ;;
+            *) echo "Opsi tidak dikenal: $1" >&2; exit 1 ;;
+        esac
+    done
+    if [ -z "$name" ] || [ -z "$service_type" ] || [ -z "$port" ]; then
+        echo "termux-nsd register: butuh --name, --service dan --port" >&2
+        exit 1
+    fi
+    call_api --es command register --es service_name "$name" \
+        --es service_type "$service_type" --ei port "$port"
+}
+
+cmd_unregister() {
+    local args=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help) show_usage; exit 0 ;;
+            --name|-n) args+=(--es service_name "${2:-}"); shift 2 ;;
+            --service|-s) args+=(--es service_type "${2:-}"); shift 2 ;;
+            *) echo "Opsi tidak dikenal: $1" >&2; exit 1 ;;
+        esac
+    done
+    if [ ${#args[@]} -gt 0 ]; then
+        call_api --es command unregister "${args[@]}"
+    else
+        call_api --es command unregister
+    fi
+}
+
+cmd_status() {
+    case "${1:-}" in
+        -h|--help) show_usage; exit 0 ;;
+    esac
+    call_api --es command status
+}
+
+if [ $# -eq 0 ]; then
+    show_usage
+    exit 1
+fi
+
+command="$1"; shift
+case "$command" in
+    discover) cmd_discover "$@" ;;
+    register) cmd_register "$@" ;;
+    unregister) cmd_unregister "$@" ;;
+    status) cmd_status "$@" ;;
+    -h|--help|help) show_usage ;;
+    *) echo "Command tidak dikenal: $command" >&2; show_usage; exit 1 ;;
+esac

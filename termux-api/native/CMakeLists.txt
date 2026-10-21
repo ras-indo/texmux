@@ -48,6 +48,7 @@ set(script_files
     scripts/termux-clipboard-get.in
     scripts/termux-clipboard-set.in
     scripts/termux-contact-list.in
+    scripts/termux-companion.in
     scripts/termux-dialog.in
     scripts/termux-download.in
     scripts/termux-fingerprint.in
@@ -63,6 +64,7 @@ set(script_files
     scripts/termux-notification.in
     scripts/termux-notification-channel.in
     scripts/termux-notification-list.in
+    scripts/termux-nsd.in
     scripts/termux-notification-remove.in
     scripts/termux-saf-create.in
     scripts/termux-saf-dirs.in
