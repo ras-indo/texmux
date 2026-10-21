@@ -259,7 +259,13 @@ public class TermuxApiPermissionActivity extends Activity {
         if (missing.isEmpty()) {
             runFollowUpAction();
         } else {
-            PermissionUtils.requestPermissions(this, missing.toArray(new String[0]), REQUEST_CODE);
+            // PermissionUtils returns false without launching anything when a
+            // permission is not declared in the manifest or the call throws.
+            // Ignoring that leaves this invisible activity alive and the user
+            // waiting for a dialog that was never requested.
+            boolean asked = PermissionUtils.requestPermissions(
+                    this, missing.toArray(new String[0]), REQUEST_CODE);
+            if (!asked) finish();
         }
     }
 
@@ -276,9 +282,39 @@ public class TermuxApiPermissionActivity extends Activity {
         }
 
         // Granted: keep going into the hardware dialog the caller queued.
-        // Denied: stop, the JSON response already told the user what is missing.
-        if (allGranted) runFollowUpAction();
-        else finish();
+        if (allGranted) {
+            runFollowUpAction();
+            return;
+        }
+
+        // Denied. If Android is no longer willing to show the dialog (denied
+        // twice / "don't ask again"), there is no in-app way out: send the user
+        // to this app's permission page, which is the only remaining system UI.
+        if (isPermanentlyDenied(permissions)) {
+            flowFinished = true;
+            finish();
+            openSettingsPageNow(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            return;
+        }
+
+        // First denial: the dialog will simply appear again on the next run.
+        finish();
+    }
+
+    /** True when every denied permission can no longer be asked for. */
+    private boolean isPermanentlyDenied(String[] permissions) {
+        // Runtime permissions do not exist before M, so nothing can be stuck.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false;
+
+        boolean deniedOne = false;
+        for (String permission : permissions) {
+            if (isGranted(this, permission)) continue;
+            deniedOne = true;
+            // false here means either "never asked" (impossible at this point)
+            // or "don't ask again" - only the latter can reach this code.
+            if (shouldShowRequestPermissionRationale(permission)) return false;
+        }
+        return deniedOne;
     }
 
     /** Runs the system dialog / settings page the caller asked for, then exits. */
@@ -288,19 +324,21 @@ public class TermuxApiPermissionActivity extends Activity {
 
         String systemAction = getIntent().getStringExtra(SYSTEM_ACTION_EXTRA);
         if (systemAction != null) {
-            finish();
             try {
+                // Launch first: a finished activity's token is gone on some
+                // OEM builds, and a start from a dead activity is dropped.
                 startActivity(new Intent(systemAction));
             } catch (Exception ignored) {
                 // The JSON response already tells the user what to switch on.
             }
+            finish();
             return;
         }
 
         String settingsAction = getIntent().getStringExtra(SETTINGS_ACTION_EXTRA);
         if (settingsAction != null) {
-            finish();
             openSettingsPageNow(settingsAction);
+            finish();
             return;
         }
 

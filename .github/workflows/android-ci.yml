@@ -225,6 +225,12 @@ jobs:
           grep -q "onRequestPermissionsResult" \
             termux-api/app/src/main/java/com/termux/api/activities/TermuxApiPermissionActivity.java \
             || { echo "!! the permission result is never handled"; exit 1; }
+          # requestPermissions() returns false without asking when the permission
+          # is not declared in the manifest; ignoring that leaves the invisible
+          # activity alive and the user waiting for a dialog that never comes.
+          grep -q 'if (!asked) finish();' \
+            termux-api/app/src/main/java/com/termux/api/activities/TermuxApiPermissionActivity.java \
+            || { echo "!! a failed request leaves the activity alive"; exit 1; }
           # Turning the adapter on is a separate system dialog. Without it a scan
           # can never run, no matter which permissions have been granted.
           grep -aq "android.bluetooth.adapter.action.REQUEST_ENABLE" /tmp/apk-x/classes*.dex \
