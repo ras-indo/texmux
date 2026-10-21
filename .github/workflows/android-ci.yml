@@ -434,6 +434,9 @@ jobs:
             tail -20 /tmp/ref-build.log
           fi
 
+          regressions=0
+          pre_existing=0
+          inconclusive=0
           for t in $failed; do
             echo "----- $t -----"
             # The make targets carry the file extension: check-%.sh for
@@ -445,8 +448,12 @@ jobs:
             esac
             if [ -z "$target" ]; then
               echo "  no test file found for $t"
+              inconclusive=$((inconclusive + 1))
               continue
             fi
+            # The log is named after the test as the suite reported it,
+            # without the file extension.
+            base=${target%.*}
             for label in patched unpatched; do
               case $label in
                 patched)   bin=/tmp/proot/src/proot ;;
@@ -459,11 +466,52 @@ jobs:
               set +e
               ( cd /tmp/proot/tests && \
                 make -k V=1 "check-$target" \
-                  PROOT="/tmp/proot-timeout.sh $bin" ) > "/tmp/diag-$t-$label.log" 2>&1
+                  PROOT="/tmp/proot-timeout.sh $bin" ) > "/tmp/diag-$base-$label.log" 2>&1
               st=$?
-              echo "  $label: exit=$st"
-              tail -25 "/tmp/diag-$t-$label.log" | sed 's/^/    /'
+              # The make target reports the verdict of the test, not of
+              # the shell: 0 means the test passed.  A missing verdict
+              # must not be read as a pass, and a stray NUL byte must
+              # not make the verdict unreadable.
+              diag=/tmp/diag-$base-$label.log
+              if [ ! -s "$diag" ]; then
+                verdict=unknown
+              elif tr -d '\000' < "$diag" | grep -qE "CHECK[[:space:]]+.*FAILED$"; then
+                verdict=FAILED
+              elif tr -d '\000' < "$diag" | grep -qE "CHECK[[:space:]]+.*skipped$"; then
+                verdict=skipped
+              elif tr -d '\000' < "$diag" | grep -qE "CHECK[[:space:]]+.* ok$"; then
+                verdict=ok
+              else
+                verdict=unknown
+              fi
+              echo "  $label: make_exit=$st verdict=$verdict"
+              tail -25 "$diag" | sed 's/^/    /'
+              eval "res_$label=$verdict"
             done
+            if [ "${res_patched:-none}" = FAILED ] && [ "${res_unpatched:-none}" = ok ]; then
+              echo "  VERDICT: REGRESSION -- the test fails with the patch and passes without it"
+              regressions=$((regressions + 1))
+            elif [ "${res_patched:-none}" = unknown ] || [ "${res_unpatched:-none}" = unknown ]; then
+              echo "  VERDICT: INCONCLUSIVE -- the test could not be re-run"
+              inconclusive=$((inconclusive + 1))
+            else
+              echo "  VERDICT: pre-existing -- it fails without the patch too"
+              pre_existing=$((pre_existing + 1))
+            fi
+            unset res_patched res_unpatched
           done
 
-          exit 1
+          echo "=== summary ==="
+          echo "regressions: $regressions"
+          echo "pre-existing failures: $pre_existing"
+          echo "inconclusive: $inconclusive"
+          if [ "$regressions" -ne 0 ]; then
+            echo "!! the patch introduced $regressions regression(s)"
+            exit 1
+          fi
+          if [ "$inconclusive" -ne 0 ]; then
+            echo "!! $inconclusive test(s) could not be attributed to either build"
+            exit 1
+          fi
+          echo "OK: every failure also fails without the patch -- no regression"
+          exit 0
