@@ -1,14 +1,12 @@
 package com.termux.api.apis;
 
 import android.bluetooth.BluetoothDevice;
-import android.companion.AssociationInfo;
 import android.companion.AssociationRequest;
 import android.companion.BluetoothDeviceFilter;
 import android.companion.CompanionDeviceManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
-import android.net.MacAddress;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -91,19 +89,21 @@ public class CompanionAPI {
     }
 
     private static void list(JsonWriter out, CompanionDeviceManager manager) throws Exception {
-        List<AssociationInfo> associations = manager.getAssociations();
+        List<String> associations = manager.getAssociations();
 
         out.beginObject();
         out.name("count").value(associations == null ? 0 : associations.size());
         out.name("associations");
         out.beginArray();
         if (associations != null) {
-            for (AssociationInfo info : associations) {
+            for (String entry : associations) {
+                // Up to Android 11 these entries are MAC addresses; from 12 the
+                // platform switched to association ids, so the same field is
+                // reported as an id when it is not MAC-shaped. Guessing would be
+                // worse than saying which one it is.
                 out.beginObject();
-                out.name("id").value(info.getId());
-                MacAddress mac = info.getDeviceMacAddress();
-                if (mac != null) out.name("address").value(mac.toString());
-                out.name("profile").value(info.getDeviceProfile());
+                out.name("id").value(entry);
+                if (isMacAddress(entry)) out.name("address").value(entry);
                 out.endObject();
             }
         }
@@ -112,7 +112,7 @@ public class CompanionAPI {
     }
 
     private static void status(JsonWriter out, CompanionDeviceManager manager) throws Exception {
-        List<AssociationInfo> associations = manager.getAssociations();
+        List<String> associations = manager.getAssociations();
         out.beginObject();
         out.name("available").value(true);
         out.name("api_level").value(Build.VERSION.SDK_INT);
@@ -152,22 +152,27 @@ public class CompanionAPI {
         boolean everything = address == null || address.isEmpty();
 
         int removed = 0;
-        List<AssociationInfo> associations = manager.getAssociations();
+        List<String> associations = manager.getAssociations();
         if (associations != null) {
-            for (AssociationInfo info : associations) {
-                MacAddress mac = info.getDeviceMacAddress();
-                boolean match = everything || (mac != null && mac.toString().equalsIgnoreCase(address));
+            for (String entry : associations) {
+                boolean match = everything || entry.equalsIgnoreCase(address);
                 if (!match) continue;
-                manager.disassociate(info);
+                manager.disassociate(entry);
                 removed++;
             }
         }
 
-        List<AssociationInfo> left = manager.getAssociations();
+        List<String> left = manager.getAssociations();
         out.beginObject();
         out.name("disassociated").value(removed);
         out.name("remaining").value(left == null ? 0 : left.size());
         out.endObject();
+    }
+
+    /** MAC on API 26-30; anything else is treated as an association id. */
+    private static boolean isMacAddress(String value) {
+        if (value == null) return false;
+        return value.matches("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}");
     }
 
     private static void associate(Context context, Intent intent) {
@@ -247,7 +252,8 @@ public class CompanionAPI {
                 return;
             }
 
-            BluetoothDevice device = data.getParcelableExtra(CompanionDeviceManager.EXTRA_DEVICE);
+            BluetoothDevice device =
+                (BluetoothDevice) data.getParcelableExtra(CompanionDeviceManager.EXTRA_DEVICE);
             if (device == null) {
                 fail(getIntent(), "The chooser returned no device");
                 return;
