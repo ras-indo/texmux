@@ -1856,12 +1856,12 @@ public class BluetoothAPI {
             switch (action) {
                 case "status": {
                     ResultReturner.returnData(this, intent, out -> {
-                        out.beginObject();
-                        out.name("supported").value(adapter.isMultipleAdvertisementSupported());
-                        out.name("advertising").value(activeAdvertiseCallback != null);
-                        if (advertiseName != null) out.name("name").value(advertiseName);
-                        if (advertiseServiceUuid != null) out.name("service_uuid").value(advertiseServiceUuid);
-                        out.endObject();
+                        JSONObject obj = new JSONObject();
+                        obj.put("supported", adapter.isMultipleAdvertisementSupported());
+                        obj.put("advertising", activeAdvertiseCallback != null);
+                        if (advertiseName != null) obj.put("name", advertiseName);
+                        if (advertiseServiceUuid != null) obj.put("service_uuid", advertiseServiceUuid);
+                        out.append(obj.toString()).append("\n");
                     });
                     return;
                 }
@@ -1882,7 +1882,9 @@ public class BluetoothAPI {
                     advertiseName = null;
                     advertiseServiceUuid = null;
                     ResultReturner.returnData(this, intent, out -> {
-                        out.beginObject().name("advertising").value(false).endObject();
+                        JSONObject obj = new JSONObject();
+                        obj.put("advertising", false);
+                        out.append(obj.toString()).append("\n");
                     });
                     return;
                 }
@@ -2005,14 +2007,14 @@ public class BluetoothAPI {
             advertiseServiceUuid = serviceUuid;
 
             ResultReturner.returnData(this, intent, out -> {
-                out.beginObject();
-                out.name("advertising").value(true);
-                out.name("connectable").value(intent.getBooleanExtra("connectable", true));
-                out.name("mode").value(intent.getStringExtra("mode") == null ? "balanced"
+                JSONObject obj = new JSONObject();
+                obj.put("advertising", true);
+                obj.put("connectable", intent.getBooleanExtra("connectable", true));
+                obj.put("mode", intent.getStringExtra("mode") == null ? "balanced"
                     : intent.getStringExtra("mode"));
-                if (name != null) out.name("name").value(name);
-                if (serviceUuid != null) out.name("service_uuid").value(serviceUuid);
-                out.endObject();
+                if (name != null) obj.put("name", name);
+                if (serviceUuid != null) obj.put("service_uuid", serviceUuid);
+                out.append(obj.toString()).append("\n");
             });
         }
 
