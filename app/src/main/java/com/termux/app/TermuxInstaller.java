@@ -561,6 +561,76 @@ final class TermuxInstaller {
         }
     }
 
+    /**
+     * A shipped script whose shebang names an interpreter that is not deployed
+     * fails at exec() with ENOENT — the shell reports "No such file or
+     * directory" even though the script is present, executable and on PATH.
+     * That is what happened to scripts committed with
+     * {@code #!/data/data/com.termux/files/apps/com.termux/bin/bash}: nothing
+     * ever deploys a bash into {@code apps/com.termux/bin}, and {@code /data}
+     * is bind-mounted into the container, so the path always resolves to that
+     * empty location.  CMake rewrites "@TERMUX_PREFIX@/bin/{bash,sh}" to
+     * "/bin/..." for the scripts it generates, but an asset committed straight
+     * into the APK never goes through that step.
+     * <p>
+     * Normalise on deploy, so a script is runnable on an already-installed
+     * device right after an APK update, whatever its source shebang said.  Not
+     * idempotency-critical: a normalised script no longer matches the prefix
+     * and is left untouched on the next launch.
+     */
+    private static void normalizeScriptShebang(File script) {
+        try {
+            if (!script.isFile()) return;
+            byte[] prefix = ("#!" + TERMUX_FILES_DIR_PATH + "/" + APPS_COM_TEXMUX + "/bin/").getBytes("US-ASCII");
+            byte[] data = readFileBytes(script);
+            if (data.length <= prefix.length) return;
+            for (int i = 0; i < prefix.length; i++) {
+                if (data[i] != prefix[i]) return; // shebang already fine (or no shebang)
+            }
+
+            int lineEnd = -1;
+            for (int i = prefix.length; i < data.length; i++) {
+                if (data[i] == '\n') { lineEnd = i; break; }
+                if (data[i] == '\r') return; // unexpected line ending, leave the file alone
+            }
+            if (lineEnd < 0) return;
+
+            String interpreter = new String(data, prefix.length, lineEnd - prefix.length, "US-ASCII").trim();
+            String fixedShebang;
+            if ("bash".equals(interpreter)) {
+                fixedShebang = "#!/bin/bash";
+            } else if ("sh".equals(interpreter)) {
+                fixedShebang = "#!/bin/sh";
+            } else {
+                // Unknown target: substituting would be guesswork.
+                Logger.logWarn(LOG_TAG, "Script " + script.getName() + " has an unknown shebang interpreter: " + interpreter);
+                return;
+            }
+
+            byte[] head = fixedShebang.getBytes("US-ASCII");
+            byte[] rewritten = new byte[head.length + (data.length - lineEnd)];
+            System.arraycopy(head, 0, rewritten, 0, head.length);
+            System.arraycopy(data, lineEnd, rewritten, head.length, data.length - lineEnd);
+            try (FileOutputStream out = new FileOutputStream(script)) {
+                out.write(rewritten);
+            }
+            script.setExecutable(true, false);
+            Logger.logInfo(LOG_TAG, "Normalised " + script.getName() + " shebang to " + fixedShebang);
+        } catch (Exception e) {
+            Logger.logWarn(LOG_TAG, "Could not normalise shebang of " + script.getName() + ": " + e.getMessage());
+        }
+    }
+
+    private static byte[] readFileBytes(File file) throws Exception {
+        try (InputStream in = new java.io.FileInputStream(file);
+             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream((int) Math.max(64L, file.length()))) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+            return out.toByteArray();
+        }
+    }
+
     // ─── Deploy proot, am-socket, and termux-am ──────────────────────────────────────────
     //   proot              → apps/bin/proot      (static talloc, Bionic-linked)
    // termux-am-socket   → apps/com.termux/bin/termux-am-socket  (static, for AM socket inside proot)
@@ -1062,6 +1132,7 @@ final class TermuxInstaller {
                 }
             }
             dst.setExecutable(true, false);
+            normalizeScriptShebang(dst);
             Logger.logInfo(LOG_TAG, "Deployed termux-callback to " + dst.getAbsolutePath());
         } catch (java.io.FileNotFoundException e) {
             Logger.logWarn(LOG_TAG, "termux-callback not found in assets/termux-api/, skipping");
@@ -1105,6 +1176,7 @@ final class TermuxInstaller {
                     }
                 }
                 dst.setExecutable(true, false);
+                normalizeScriptShebang(dst);
             } catch (java.io.FileNotFoundException e) {
                 // Script might not be present - that's ok for incremental builds
                 Logger.logDebug(LOG_TAG, "termux-api script not found in assets: " + script);

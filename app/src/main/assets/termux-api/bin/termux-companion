@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/apps/com.termux/bin/bash
+#!/bin/bash
 #
 # NAME
 #     termux-companion — pasangan perangkat lewat CompanionDeviceManager

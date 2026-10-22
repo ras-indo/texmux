@@ -4,24 +4,35 @@
 #     termux-wifi-scaninfo — Get last Wi-Fi scan information
 #
 # SYNOPSIS
-#     termux-wifi-scaninfo
+#     termux-wifi-scaninfo [-v]
 #
 # DESCRIPTION
 #     Retrieve the results of the most recent Wi-Fi network scan.
-#     Returns a JSON array of scan result objects, each containing:
-#     SSID (network name), BSSID (MAC address of access point),
-#     RSSI signal strength in dBm, frequency in MHz, channel number,
-#     capabilities string (WPA/WPA2/WPA3 security info), Wi-Fi standard
-#     (802.11b/g/n/ac/ax), and timestamp of when the scan result
-#     was last seen.
 #
-#     The scan results reflect the most recent scan completed by the
-#     system. On Android 13+, location must be enabled for scan results
-#     to be populated. Active scans may take 3-5 seconds.
+#     A JSON array of scan result objects is printed when the list is known
+#     to be current: either the radio completed a scan for this call, or the
+#     platform cache is younger than two minutes. Each object contains:
+#     ssid (network name), bssid (MAC address of access point), rssi signal
+#     strength in dBm, frequency_mhz, channel, capabilities string
+#     (WPA/WPA2/WPA3 security info), wifi_generation (802.11b/g/n/ac/ax) and
+#     timestamp of when the scan result was last seen.
+#
+#     A JSON object is printed instead when the answer is not a current scan:
+#       - the radio is off: "API_ERROR": "Wi-Fi is off - turn it on and retry"
+#       - the radio is still enabling/disabling: an API_ERROR naming that state
+#       - only a stale platform cache was available: "cached": true plus the
+#         results inside "results", so they cannot be mistaken for a live scan
+#     The object always carries the radio state (wifi_enabled / wifi_state),
+#     so no reply has to be guessed at.
+#
+#     On Android 13+, location must be enabled for scan results to be
+#     populated. Active scans may take 3-5 seconds.
 #     Use termux-wifi-connectioninfo to see the currently connected network.
 #
 # OPTIONS
-#     -h, --help  Display this help message
+#     -v, --verbose  Always print the object form, with the radio state and
+#                    the age of the scan list, even when it is current
+#     -h, --help     Display this help message
 #
 # EXAMPLES
 #     # Show last Wi-Fi scan info
@@ -30,26 +41,50 @@
 set -e -u
 
 SCRIPTNAME=termux-wifi-scaninfo
+verbose=false
+
 show_usage () {
     cat <<EOF
-Usage: $SCRIPTNAME
+Usage: $SCRIPTNAME [-v]
 
 Retrieve the results of the most recent Wi-Fi network scan.
-Returns a JSON array of visible access points. On Android 13+,
-location services must be enabled for scan results to populate.
+Prints a JSON array of visible access points while the list is current.
+On Android 13+, location services must be enabled for scan results to populate.
 
 OUTPUT
     JSON array of objects, each with the following fields:
-        SSID         - Broadcast network name
-        BSSID        - MAC address of the access point
-        capabilities - Security and protocol capabilities string
-                       (e.g., "[WPA2-EAP-CCMP][WPS]", "[ESS]")
-        frequency    - Operating frequency in MHz
-        channel      - Wi-Fi channel number (derived from frequency)
-        level        - RSSI signal strength in dBm (negative value)
-        timestamp    - Timestamp in microseconds since boot when this
-                       result was last seen
-        wifiStandard - Wi-Fi standard (802.11b/g/n/ac/ax)
+        ssid                 - Broadcast network name ("" when hidden)
+        bssid                - MAC address of the access point
+        capabilities         - Security and protocol capabilities string
+                               (e.g., "[WPA2-EAP-CCMP][WPS]", "[ESS]")
+        security_type        - Security summary derived from capabilities
+        frequency_mhz        - Operating frequency in MHz
+        channel              - Wi-Fi channel number (derived from frequency)
+        channel_bandwidth_mhz
+                             - Channel width (20 / 40 / 80 / 80+80 / 160)
+        center_frequency_mhz - Center frequency of a wide channel
+        rssi / rssi_percent  - Signal strength in dBm / as a percentage
+        timestamp            - Microseconds since boot when this result was
+                               last seen
+        wifi_generation      - 802.11 generation (b/g/n/ac/ax/be)
+
+    A JSON object is printed instead when the answer is not a current scan:
+        API_ERROR      - why (radio off, radio still settling, no results)
+        wifi_enabled   - the Wi-Fi setting (true/false)
+        wifi_state     - enabled / disabled / enabling / disabling / unknown
+        radio_state_mismatch
+                       - the setting and the radio disagree: the toggle did
+                         not take effect, so a cached list is not a live one
+        cached         - true when the results below come from the platform
+                         cache rather than from a scan completed just now
+        scan_requested - the platform accepted a scan for this call
+        scan_completed - that scan finished inside the wait window
+        scan_age_seconds
+                       - age of the newest cached result, when known
+        results        - the access points (only when cached is true)
+
+    A radio that is off never yields a scan list: the cached entries are
+    dropped instead of being presented as what is around you.
 
 PERMISSIONS
     android.permission.ACCESS_FINE_LOCATION (Android 10+, API level 29)
@@ -58,19 +93,32 @@ EXAMPLES
     # Show all visible Wi-Fi networks
     $SCRIPTNAME
 
-    # Filter to SSID and signal strength only
-    $SCRIPTNAME | jq '.[] | {SSID, level}'
+    # Filter to ssid and signal strength only
+    $SCRIPTNAME | jq '.[] | {ssid, rssi}'
 
     # Sort by signal strength (strongest first)
-    $SCRIPTNAME | jq 'sort_by(.level) | reverse'
+    $SCRIPTNAME | jq 'sort_by(.rssi) | reverse'
+
+    # Radio state and scan age, whatever the state
+    $SCRIPTNAME -v | jq '{wifi_state, cached, scan_age_seconds}'
 EOF
     exit 0
 }
 
-while getopts :h option
+# Long options are not getopts' business; accept the spelled-out forms too.
+if [ "${1:-}" = "--verbose" ]; then
+    verbose=true
+    shift
+fi
+if [ "${1:-}" = "--help" ]; then
+    show_usage
+fi
+
+while getopts :hv option
 do
     case "$option" in
         h) show_usage;;
+        v) verbose=true;;
         ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
     esac
 done
@@ -78,4 +126,8 @@ shift $((OPTIND-1))
 
 if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 
-@TERMUX_PREFIX@/bin/termux-api WifiScanInfo
+if [ "$verbose" = true ]; then
+    @TERMUX_PREFIX@/bin/termux-api WifiScanInfo --ez verbose true
+else
+    @TERMUX_PREFIX@/bin/termux-api WifiScanInfo
+fi

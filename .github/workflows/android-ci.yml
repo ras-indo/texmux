@@ -166,6 +166,33 @@ jobs:
           echo "termux-api client in APK: $size bytes, --timeout + exit codes present"
           echo "OK: one termux-api client, no stale duplicates"
 
+      - name: Verify every shipped termux-api script is runnable inside the container
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
+          rm -rf /tmp/apk-api && mkdir -p /tmp/apk-api
+          unzip -oq "$APK" -d /tmp/apk-api 'assets/termux-api/bin/*' 'assets/termux-api/libexec/*'
+          # A script whose shebang names a path the container does not have dies
+          # at exec() with ENOENT - the shell reports "No such file or directory"
+          # even though the script is present, executable and on PATH.  That is
+          # what shipped termux-nsd/termux-companion pointing at
+          # <files>/apps/com.termux/bin/bash, a path nothing deploys.
+          bad=0
+          count=0
+          for f in /tmp/apk-api/assets/termux-api/bin/* /tmp/apk-api/assets/termux-api/libexec/*; do
+            [ -f "$f" ] || continue
+            [ "$(head -c 2 "$f" | tr -d '\0')" = '#!' ] || continue   # compiled client, not a script
+            first=$(head -1 "$f")
+            count=$((count + 1))
+            case "$first" in
+              '#!/bin/sh')   sh -n "$f"   || { echo "!! $(basename "$f") is not valid sh"; bad=1; } ;;
+              '#!/bin/bash') bash -n "$f" || { echo "!! $(basename "$f") is not valid bash"; bad=1; } ;;
+              *) echo "!! $(basename "$f") has a shebang the container cannot resolve: $first"; bad=1 ;;
+            esac
+          done
+          [ "$bad" -eq 0 ] || exit 1
+          echo "OK: $count shell scripts in the APK use /bin/sh or /bin/bash and parse"
+
       - name: Verify the wifi/bluetooth API additions are in the APK
         run: |
           set -euo pipefail

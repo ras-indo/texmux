@@ -49,6 +49,7 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -131,7 +132,7 @@ public class BluetoothAPI {
 
         String command = intent.getStringExtra("command");
         if (command == null) {
-            ResultReturner.returnData(apiReceiver, intent, out -> {
+            reply(apiReceiver, intent, out -> {
                 out.append("{\"error\":\"Missing 'command' extra\"}\n");
             });
             return;
@@ -151,10 +152,22 @@ public class BluetoothAPI {
 
         // Check runtime permissions for API 31+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (needsBluetoothPermission(context, command)) {
-                TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
-                        Manifest.permission.BLUETOOTH_CONNECT,
-                        Manifest.permission.BLUETOOTH_SCAN);
+            // Ask for exactly the permissions this command needs, and let
+            // checkAndRequestPermissions() write the JSON answer when one is
+            // missing.
+            //
+            // This used to test the command's own requirement but then request a
+            // hardcoded CONNECT+SCAN set. For `advertise` (BLUETOOTH_ADVERTISE,
+            // see requiredPermissions()) the whole requested set was already
+            // granted, so checkAndRequestPermissions() returned true WITHOUT
+            // writing anything, the `return` below still fired, and the client
+            // sat out its 30 s timeout: "Handler did not produce a response".
+            // BLUETOOTH_ADVERTISE lives in the same "Nearby devices" group as
+            // SCAN/CONNECT but is granted per-permission, and nothing else in
+            // this API ever requested it, so `advertise` could never succeed on
+            // Android 12+ (and `gatt-server` could never advertise either).
+            if (!TermuxApiPermissionActivity.checkAndRequestPermissions(
+                    context, intent, requiredPermissions(command))) {
                 return;
             }
         } else {
@@ -175,7 +188,7 @@ public class BluetoothAPI {
         // granting BLUETOOTH_SCAN/CONNECT alone can never make a scan work.
         BluetoothAdapter adapter = getBluetoothAdapter(context);
         if (adapter != null && !adapter.isEnabled() && !reportOnly) {
-            ResultReturner.returnData(apiReceiver, intent, out -> {
+            reply(apiReceiver, intent, out -> {
                 out.append("{\"error\":\"Bluetooth is off\",\"enabled\":false,")
                     .append("\"hint\":\"Setujui dialog Android untuk menyalakan Bluetooth, lalu jalankan ulang perintahnya.\"}\n");
             });
@@ -201,17 +214,32 @@ public class BluetoothAPI {
     }
 
     /**
-     * Determine if the given command needs BLUETOOTH_CONNECT or BLUETOOTH_SCAN.
+     * The runtime permissions a command cannot run without, on API 31+.
+     *
+     * <p>Every list also contains BLUETOOTH_CONNECT: the handlers read adapter
+     * and device names, which the platform gates on CONNECT even when the
+     * command is really about scanning or advertising.</p>
      */
-    private static boolean needsBluetoothPermission(Context context, String command) {
+    public static String[] requiredPermissions(String command) {
+        if (command == null) return new String[]{Manifest.permission.BLUETOOTH_CONNECT};
         switch (command) {
             case "le-scan":
-                return !PermissionUtils.checkPermission(context, Manifest.permission.BLUETOOTH_SCAN);
-            case "gatt-server":
+                // ACCESS_FINE_LOCATION is part of this set because BLUETOOTH_SCAN
+                // is declared without usesPermissionFlags="neverForLocation"
+                // (AndroidManifest.xml:63): without a location grant the platform
+                // lets the scan start and then silently drops every result, which
+                // reads as "no devices nearby" instead of "permission missing".
+                return new String[]{
+                        Manifest.permission.BLUETOOTH_SCAN,
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.ACCESS_FINE_LOCATION};
             case "advertise":
-                return !PermissionUtils.checkPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE);
+            case "gatt-server":
+                return new String[]{
+                        Manifest.permission.BLUETOOTH_ADVERTISE,
+                        Manifest.permission.BLUETOOTH_CONNECT};
             default:
-                return !PermissionUtils.checkPermission(context, Manifest.permission.BLUETOOTH_CONNECT);
+                return new String[]{Manifest.permission.BLUETOOTH_CONNECT};
         }
     }
 
@@ -256,14 +284,66 @@ public class BluetoothAPI {
 
     /**
      * Return an error JSON with the given message.
+     *
+     * <p>Goes through {@link #reply} rather than calling ResultReturner itself,
+     * so a failing write cannot turn an error into silence.</p>
      */
     private static void returnError(Object receiver, Intent intent, String message) {
-        ResultReturner.returnData(receiver, intent, new ResultReturner.ResultJsonWriter() {
-            @Override
-            public void writeJson(JsonWriter out) throws Exception {
-                out.beginObject();
-                out.name("error").value(message);
-                out.endObject();
+        final String text = message == null ? "Unknown error" : message;
+        Logger.logDebug(LOG_TAG, "Returning error: " + text);
+        reply(receiver, intent, out -> {
+            JSONObject obj = new JSONObject();
+            obj.put("error", text);
+            out.append(obj.toString()).append("\n");
+        });
+    }
+
+    /**
+     * Send a reply through {@link ResultReturner}, but never let a failure
+     * inside the reply itself turn into silence.
+     *
+     * <p>{@code ResultReturner} runs the writer on its own thread and catches
+     * whatever it throws (ResultReturner.java:325): the socket is then closed
+     * without a single byte, SocketListener never sees a response, and the
+     * caller is told "Handler did not produce a response" 30 s later. Any
+     * writer body that touches the platform can throw - a SecurityException
+     * from a getter that needs BLUETOOTH_CONNECT, a JSONException, an
+     * IllegalStateException from a dead binder - so every reply is buffered
+     * first and an error JSON is written in its place when it fails.</p>
+     *
+     * <p>Writers that take over the socket themselves ({@link
+     * ResultReturner.BinaryOutput}, {@link ResultReturner.WithInput}, {@link
+     * ResultReturner.WithAncillaryFd}) are passed through untouched: wrapping
+     * them in a lambda would hide their type from ResultReturner's
+     * {@code instanceof} checks and break binary/input/FD replies.</p>
+     */
+    private static void reply(Object receiver, Intent intent,
+                              ResultReturner.ResultWriter body) {
+        if (body instanceof ResultReturner.BinaryOutput
+                || body instanceof ResultReturner.WithInput
+                || body instanceof ResultReturner.WithAncillaryFd) {
+            ResultReturner.returnData(receiver, intent, body);
+            return;
+        }
+        ResultReturner.returnData(receiver, intent, out -> {
+            StringWriter buffer = new StringWriter();
+            PrintWriter bufferWriter = new PrintWriter(buffer);
+            try {
+                body.writeResult(bufferWriter);
+                bufferWriter.flush();
+                out.append(buffer.toString());
+                out.flush();
+            } catch (Throwable t) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Bluetooth reply failed", t);
+                try {
+                    JSONObject err = new JSONObject();
+                    err.put("error", "Reply failed: " + t.getClass().getSimpleName()
+                            + (t.getMessage() != null ? ": " + t.getMessage() : ""));
+                    out.append(err.toString()).append("\n");
+                    out.flush();
+                } catch (Throwable ignored) {
+                    // Nothing left to report to.
+                }
             }
         });
     }
@@ -395,7 +475,9 @@ public class BluetoothAPI {
                 builder.setServiceUuid(ParcelUuid.fromString(serviceUuidStr));
                 hasFilter = true;
             } catch (IllegalArgumentException e) {
-                Logger.logError(LOG_TAG, "Invalid service_uuid: " + serviceUuidStr);
+                // Report instead of ignoring: dropping the filter turns a typo
+                // into "the neighbourhood" instead of "that device".
+                throw new IllegalArgumentException("Invalid service_uuid: " + serviceUuidStr);
             }
         }
 
@@ -457,6 +539,13 @@ public class BluetoothAPI {
 
         private static final String LOG_TAG = "BluetoothService";
 
+        /**
+         * Set while a handler is still working on a reply from a worker thread.
+         * onStartCommand() stops the service as soon as it returns, so without
+         * this the component could be torn down while a scan is still collecting.
+         */
+        private volatile boolean keepAlive;
+
         @Override
         public IBinder onBind(Intent intent) {
             return null;
@@ -474,6 +563,7 @@ public class BluetoothAPI {
             String command = intent.getStringExtra("command");
             if (command == null) {
                 Logger.logError(LOG_TAG, "No command extra");
+                returnError(this, intent, "Missing 'command' extra");
                 stopSelf(startId);
                 return START_NOT_STICKY;
             }
@@ -530,12 +620,15 @@ public class BluetoothAPI {
                         returnError(this, intent, "Unknown command: " + command);
                         break;
                 }
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                // Throwable, not Exception: a NoClassDefFoundError on an old
+                // ROM used to escape this catch, the handler thread died and the
+                // client was left with silence instead of the reason.
                 Logger.logStackTraceWithMessage(LOG_TAG, "Error handling command: " + command, e);
-                returnError(this, intent, "Internal error: " + e.getMessage());
+                returnError(this, intent, "Internal error: " + e);
             }
 
-            stopSelf(startId);
+            if (!keepAlive) stopSelf(startId);
             return START_NOT_STICKY;
         }
 
@@ -563,13 +656,13 @@ public class BluetoothAPI {
             switch (action) {
                 case "enable":
                     adapter.enable();
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append("{\"status\":\"enabled\"}\n");
                     });
                     break;
                 case "disable":
                     adapter.disable();
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append("{\"status\":\"disabled\"}\n");
                     });
                     break;
@@ -580,14 +673,14 @@ public class BluetoothAPI {
                         return;
                     }
                     adapter.setName(name);
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append("{\"status\":\"name_set\",\"name\":\"" + escapeJson(name) + "\"}\n");
                     });
                     break;
                 }
                 case "info":
                 default:
-                    ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+                    reply(this, intent, new ResultReturner.ResultJsonWriter() {
                         @Override
                         @SuppressLint("HardwareIds")
                         public void writeJson(JsonWriter out) throws Exception {
@@ -665,13 +758,13 @@ public class BluetoothAPI {
             switch (action) {
                 case "start":
                     adapter.startDiscovery();
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append("{\"status\":\"discovery_started\"}\n");
                     });
                     break;
                 case "cancel":
                     adapter.cancelDiscovery();
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append("{\"status\":\"discovery_cancelled\"}\n");
                     });
                     break;
@@ -708,13 +801,13 @@ public class BluetoothAPI {
                         // ignore
                     }
                     String jsonStr = result.toString();
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append(jsonStr).append("\n");
                     });
                     break;
                 case "status":
                 default:
-                    ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+                    reply(this, intent, new ResultReturner.ResultJsonWriter() {
                         @Override
                         public void writeJson(JsonWriter out) throws Exception {
                             out.beginObject();
@@ -739,42 +832,57 @@ public class BluetoothAPI {
                 return;
             }
 
-            ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
-                @Override
-                public void writeJson(JsonWriter out) throws Exception {
-                    out.beginObject();
+            // getProfileProxy() waits for the ServiceListener, and that listener is
+            // delivered on the main looper. Building this answer on the main thread
+            // therefore blocked the only thread able to deliver the proxy, so both
+            // lookups always timed out to null after 5 s of frozen UI. Collect on a
+            // worker thread, where the wait can actually be satisfied.
+            keepAlive = true;
+            new Thread(() -> {
+                try {
+                    reply(this, intent, new ResultReturner.ResultJsonWriter() {
+                        @Override
+                        public void writeJson(JsonWriter out) throws Exception {
+                            out.beginObject();
 
-                    // A2DP sink (connected speakers/headphones)
-                    out.name("a2dp");
-                    BluetoothProfile a2dpProfile = getProfileProxy(BluetoothProfile.A2DP);
-                    if (a2dpProfile != null) {
-                        out.beginArray();
-                        List<BluetoothDevice> a2dpDevices = a2dpProfile.getConnectedDevices();
-                        for (BluetoothDevice dev : a2dpDevices) {
-                            writeDeviceSummary(out, dev);
+                            // A2DP sink (connected speakers/headphones)
+                            out.name("a2dp");
+                            BluetoothProfile a2dpProfile = getProfileProxy(BluetoothProfile.A2DP);
+                            if (a2dpProfile != null) {
+                                out.beginArray();
+                                List<BluetoothDevice> a2dpDevices = a2dpProfile.getConnectedDevices();
+                                for (BluetoothDevice dev : a2dpDevices) {
+                                    writeDeviceSummary(out, dev);
+                                }
+                                out.endArray();
+                            } else {
+                                out.nullValue();
+                            }
+
+                            // Headset / Hands-Free
+                            out.name("headset");
+                            BluetoothProfile headsetProfile = getProfileProxy(BluetoothProfile.HEADSET);
+                            if (headsetProfile != null) {
+                                out.beginArray();
+                                List<BluetoothDevice> hsDevices = headsetProfile.getConnectedDevices();
+                                for (BluetoothDevice dev : hsDevices) {
+                                    writeDeviceSummary(out, dev);
+                                }
+                                out.endArray();
+                            } else {
+                                out.nullValue();
+                            }
+
+                            out.endObject();
                         }
-                        out.endArray();
-                    } else {
-                        out.nullValue();
-                    }
-
-                    // Headset / Hands-Free
-                    out.name("headset");
-                    BluetoothProfile headsetProfile = getProfileProxy(BluetoothProfile.HEADSET);
-                    if (headsetProfile != null) {
-                        out.beginArray();
-                        List<BluetoothDevice> hsDevices = headsetProfile.getConnectedDevices();
-                        for (BluetoothDevice dev : hsDevices) {
-                            writeDeviceSummary(out, dev);
-                        }
-                        out.endArray();
-                    } else {
-                        out.nullValue();
-                    }
-
-                    out.endObject();
+                    });
+                } catch (Throwable t) {
+                    returnError(this, intent, "Profile query failed: " + t);
+                } finally {
+                    keepAlive = false;
+                    stopSelf();
                 }
-            });
+            }, "bt-profiles").start();
         }
 
         @SuppressLint("MissingPermission")
@@ -840,29 +948,82 @@ public class BluetoothAPI {
             if (action == null) action = "start";
 
             if ("stop".equals(action)) {
-                // Stop active scan
+                boolean wasRunning = activeScanCallback != null;
                 if (activeScanCallback != null) {
-                    scanner.stopScan(activeScanCallback);
+                    try {
+                        scanner.stopScan(activeScanCallback);
+                    } catch (Exception e) {
+                        // A vanished adapter throws here; the references are
+                        // dropped either way, so answer instead of dying.
+                        Logger.logStackTraceWithMessage(LOG_TAG, "stopScan failed", e);
+                    }
                     activeScanCallback = null;
                 }
                 if (activeScanWriter != null) {
                     activeScanWriter.interrupt();
                     activeScanWriter = null;
                 }
-                ResultReturner.returnData(this, intent, out -> {
-                    out.append("{\"status\":\"scan_stopped\"}\n");
+                reply(this, intent, out -> {
+                    JSONObject obj = new JSONObject();
+                    obj.put("status", "scan_stopped");
+                    obj.put("was_running", wasRunning);
+                    out.append(obj.toString()).append("\n");
                 });
                 return;
             }
 
-            // Start scan
-            List<ScanFilter> filters = buildScanFilters(intent);
-            ScanSettings settings = buildScanSettings(intent);
+            if ("status".equals(action)) {
+                // `le-scan status` used to fall through into the start branch and
+                // launch a five second scan just to ask whether one was running.
+                reply(this, intent, out -> {
+                    JSONObject obj = new JSONObject();
+                    obj.put("running", activeScanCallback != null);
+                    obj.put("streaming", activeScanWriter != null);
+                    out.append(obj.toString()).append("\n");
+                });
+                return;
+            }
+            if (!"start".equals(action)) {
+                returnError(this, intent, "Unknown le-scan action: " + action);
+                return;
+            }
 
-            // Check if streaming output is requested
+            List<ScanFilter> filters;
+            ScanSettings settings;
+            try {
+                filters = buildScanFilters(intent);
+                settings = buildScanSettings(intent);
+            } catch (IllegalArgumentException e) {
+                // A malformed filter (bad service_uuid, bad scan_mode) used to be
+                // logged and then ignored, so the scan silently returned the whole
+                // neighbourhood instead of the device that was asked for.
+                returnError(this, intent, e.getMessage());
+                return;
+            }
+
+            // Streaming is an explicit request and must NOT be inferred from the
+            // presence of socket_output: SocketListener puts a socket_output on
+            // EVERY request - its own fallback socket for a normal request
+            // (SocketListener.java:399) and the client's own socket for a
+            // streaming one (SocketListener.java:355) - so "socket_output !=
+            // null" is true even for a plain `scan`. The old code used exactly
+            // that test, so every scan took the streaming branch: BleScanWriter
+            // connected to the fallback socket, wrote nothing until a device
+            // appeared and never closed, the daemon's gate copied zero bytes and
+            // gave up after 30 s. `adapter info` answered because it never
+            // looked at socket_output at all.
+            //
+            // EXTRA_JSON_ERRORS cannot be used as the discriminator either: it
+            // is set on both branches (SocketListener.java:369 and :404).
+            // Streaming therefore has to be asked for explicitly.
+            final boolean streaming = intent.getBooleanExtra("streaming", false);
             String socketOutput = intent.getStringExtra("socket_output");
+            if (streaming && (socketOutput == null || socketOutput.isEmpty())) {
+                returnError(this, intent, "streaming requested but socket_output is missing");
+                return;
+            }
 
-            if (socketOutput != null && !socketOutput.isEmpty()) {
+            if (streaming) {
                 // Streaming mode — launch writer thread
                 activeScanCallback = new ScanCallback() {
                     @Override
@@ -883,6 +1044,11 @@ public class BluetoothAPI {
 
                 activeScanWriter = new BleScanWriter(socketOutput);
                 activeScanWriter.setLimit(intent.getIntExtra("limit", BleScanWriter.DEFAULT_LIMIT));
+                // A stream can be bounded by --duration. Without it the scan runs
+                // until `le-scan stop` or the result limit closes the socket -
+                // which is what a stream is for, but it has to be asked for.
+                activeScanWriter.setDuration(intent.getIntExtra("duration",
+                        intent.getIntExtra("timeout", 0)));
                 activeScanWriter.start();
 
                 try {
@@ -897,15 +1063,28 @@ public class BluetoothAPI {
                     return;
                 }
 
-                ResultReturner.returnData(this, intent, out -> {
-                    out.append("{\"status\":\"scan_started\",\"streaming\":true}\n");
-                });
+                // No reply() here: a streaming caller reads socket_output, and a
+                // second connection to that address would race the writer.
+                // BleScanWriter writes a scan_started line first, so the stream
+                // never begins with silence either.
             } else {
-                // Single-shot: collect results until timeout
+                // Single-shot: collect results for `duration`, answer with one
+                // array.
+                //
+                // The waiting must not run on this thread. onStartCommand() runs
+                // on the main looper and the platform delivers ScanCallback on
+                // that same looper, so the old lock.wait(timeout) blocked the
+                // only thread able to deliver a result: scans came back empty
+                // after stalling the service. Collect on a worker thread instead.
                 final List<Map<String, Object>> results = new ArrayList<>();
                 final Object lock = new Object();
+                final CountDownLatch scanDone = new CountDownLatch(1);
+                // The platform reports refusal asynchronously, so the code has to
+                // survive until the answer is written, or an empty list is all the
+                // caller sees.
+                final int[] scanError = {-1};
 
-                ScanCallback callback = new ScanCallback() {
+                final ScanCallback callback = new ScanCallback() {
                     @Override
                     public void onScanResult(int callbackType, ScanResult result) {
                         synchronized (lock) {
@@ -919,15 +1098,29 @@ public class BluetoothAPI {
 
                     @Override
                     public void onScanFailed(int errorCode) {
-                        synchronized (lock) {
-                            lock.notifyAll();
-                        }
+                        Logger.logError(LOG_TAG, "BLE scan failed with error: " + errorCode);
+                        scanError[0] = errorCode;
+                        scanDone.countDown();
                     }
                 };
 
+                // The CLI sends --duration; older callers sent timeout. Accept
+                // both, or the documented option is silently ignored.
+                int requested = intent.getIntExtra("duration",
+                        intent.getIntExtra("timeout", 5000));
+                if (requested < 100) requested = 100;
+                if (requested > 60000) requested = 60000;
+                final int timeout = requested;
+
                 try {
+                    // Publish the callback as the active one: without this a
+                    // `le-scan stop` arriving during the collect window could
+                    // not stop anything, and `le-scan status` claimed no scan
+                    // was running while one was.
+                    activeScanCallback = callback;
                     scanner.startScan(filters, settings, callback);
                 } catch (Exception e) {
+                    activeScanCallback = null;
                     // A SecurityException here (permission revoked while the
                     // dialog was up, BLE disabled by the system) used to bubble
                     // into the generic handler and answer with an opaque
@@ -936,84 +1129,91 @@ public class BluetoothAPI {
                     return;
                 }
 
-                // Wait for timeout or external stop condition
-                // The CLI sends --duration; older callers sent timeout. Accept
-                // both, or the documented option is silently ignored.
-                int timeout = intent.getIntExtra("duration",
-                        intent.getIntExtra("timeout", 5000));
-                if (timeout < 100) timeout = 100;
-                if (timeout > 60000) timeout = 60000;
-                try {
-                    synchronized (lock) {
-                        lock.wait(timeout);
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+                final Context appContext = getApplicationContext();
+                // Keep the service alive until the answer is written: stopSelf()
+                // in onStartCommand() would otherwise tear it down mid-collect.
+                keepAlive = true;
+                new Thread(() -> {
+                    try {
+                        scanDone.await(timeout, TimeUnit.MILLISECONDS);
 
-                try {
-                    scanner.stopScan(callback);
-                } catch (Exception e) {
-                    // A vanished adapter throws here; dying before returnData() would leave
-                    // the caller waiting for an answer that never comes.
-                    Logger.logStackTraceWithMessage(LOG_TAG, "stopScan failed", e);
-                }
-
-                // Build result
-                ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
-                    @Override
-                    public void writeJson(JsonWriter out) throws Exception {
-                        out.beginObject();
-                        out.name("results");
-                        out.beginArray();
-                        Map<String, Object>[] snap;
-                        synchronized (lock) {
-                            snap = results.toArray(new Map[0]);
+                        try {
+                            scanner.stopScan(callback);
+                        } catch (Exception e) {
+                            // A vanished adapter throws here; dying before the
+                            // reply would leave the caller without an answer.
+                            Logger.logStackTraceWithMessage(LOG_TAG, "stopScan failed", e);
                         }
-                        for (Map<String, Object> entry : snap) {
-                            ScanResult sr = (ScanResult) entry.get("result");
+
+                    // Build result
+                    reply(this, intent, new ResultReturner.ResultJsonWriter() {
+                        @Override
+                        public void writeJson(JsonWriter out) throws Exception {
                             out.beginObject();
-                            BluetoothDevice dev = sr.getDevice();
-                            out.name("address").value(dev != null ? dev.getAddress() : "");
-                            out.name("name").value(dev != null && dev.getName() != null ? dev.getName() : "");
-                            out.name("rssi").value(sr.getRssi());
-                            ScanRecord record = sr.getScanRecord();
-                            if (record != null) {
-                                if (record.getServiceUuids() != null) {
-                                    out.name("service_uuids");
-                                    out.beginArray();
-                                    for (ParcelUuid uuid : record.getServiceUuids()) {
-                                        out.value(uuid.toString());
-                                    }
-                                    out.endArray();
-                                }
-                            SparseArray<byte[]> manuData = record.getManufacturerSpecificData();
-                            if (manuData != null && manuData.size() > 0) {
-                                out.name("manufacturer_data");
+                            out.name("results");
+                            out.beginArray();
+                            Map<String, Object>[] snap;
+                            synchronized (lock) {
+                                snap = results.toArray(new Map[0]);
+                            }
+                            for (Map<String, Object> entry : snap) {
+                                ScanResult sr = (ScanResult) entry.get("result");
+                                BluetoothDevice dev = sr.getDevice();
                                 out.beginObject();
-                                for (int i = 0; i < manuData.size(); i++) {
-                                        out.name(String.valueOf(manuData.keyAt(i))).value(bytesToHexString(manuData.valueAt(i)));
+                                out.name("address").value(dev != null ? dev.getAddress() : "");
+                                out.name("name").value(dev != null && dev.getName() != null
+                                        ? dev.getName() : "");
+                                out.name("rssi").value(sr.getRssi());
+                                ScanRecord record = sr.getScanRecord();
+                                if (record != null) {
+                                    if (record.getServiceUuids() != null) {
+                                        out.name("service_uuids");
+                                        out.beginArray();
+                                        for (ParcelUuid uuid : record.getServiceUuids()) {
+                                            out.value(uuid.toString());
+                                        }
+                                        out.endArray();
                                     }
-                                    out.endObject();
+                                    SparseArray<byte[]> manuData = record.getManufacturerSpecificData();
+                                    if (manuData != null && manuData.size() > 0) {
+                                        out.name("manufacturer_data");
+                                        out.beginObject();
+                                        for (int i = 0; i < manuData.size(); i++) {
+                                            out.name(String.valueOf(manuData.keyAt(i)))
+                                                    .value(bytesToHexString(manuData.valueAt(i)));
+                                        }
+                                        out.endObject();
+                                    }
                                 }
+                                out.endObject();
+                            }
+                            out.endArray();
+                            if (snap.length == 0) {
+                                // An empty list is ambiguous: nothing around, location
+                                // services off (required for BLE scans up to Android 11) or
+                                // the adapter went away. Name the cause instead of a bare [].
+                                String why = scanError[0] != -1
+                                        ? "Scan failed with error code " + scanError[0]
+                                        : bleEmptyReason(appContext, adapter);
+                                if (why != null) out.name("API_ERROR").value(why);
                             }
                             out.endObject();
                         }
-                        out.endArray();
-                        if (snap.length == 0) {
-                            // An empty list is ambiguous: nothing around, location services
-                            // off (required for BLE scans up to Android 11) or the adapter
-                            // went away. Name the cause instead of returning a bare [].
-                            String why = bleEmptyReason(getApplicationContext(), adapter);
-                            if (why != null) out.name("API_ERROR").value(why);
-                        }
-                        out.endObject();
+                    });
+                    } catch (Throwable t) {
+                        // Anything escaping here would close the socket with zero
+                        // bytes, which the caller can only read as a dead handler.
+                        Logger.logStackTraceWithMessage(LOG_TAG, "BLE scan collect failed", t);
+                        returnError(this, intent, "BLE scan failed: " + t);
+                    } finally {
+                        activeScanCallback = null;
+                        keepAlive = false;
+                        stopSelf();
                     }
-                });
+                }, "ble-scan-collect").start();
             }
         }
 
-        // ============================================================
         // GATT Client — Connect
         // ============================================================
 
@@ -1038,7 +1238,7 @@ public class BluetoothAPI {
                     container.gatt.disconnect();
                     container.gatt.close();
                 }
-                ResultReturner.returnData(this, intent, out -> {
+                reply(this, intent, out -> {
                     out.append("{\"status\":\"disconnected\",\"address\":\"" + escapeJson(address) + "\"}\n");
                 });
                 return;
@@ -1055,7 +1255,7 @@ public class BluetoothAPI {
                     case BluetoothGatt.STATE_DISCONNECTING: stateStr = "disconnecting"; break;
                     default: stateStr = "disconnected"; break;
                 }
-                ResultReturner.returnData(this, intent, out -> {
+                reply(this, intent, out -> {
                     out.append("{\"status\":\"already_registered\",\"state\":\"" + stateStr + "\"}\n");
                 });
                 return;
@@ -1160,7 +1360,7 @@ public class BluetoothAPI {
             final boolean isConnected = connected;
             final boolean isNotConnected = !connected;
             final boolean isNotAcquired = !acquired;
-            ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+            reply(this, intent, new ResultReturner.ResultJsonWriter() {
                 @Override
                 public void writeJson(JsonWriter out) throws Exception {
                     out.beginObject();
@@ -1214,7 +1414,7 @@ public class BluetoothAPI {
 
             List<BluetoothGattService> services = container.gatt.getServices();
 
-            ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+            reply(this, intent, new ResultReturner.ResultJsonWriter() {
                 @Override
                 public void writeJson(JsonWriter out) throws Exception {
                     out.beginObject();
@@ -1326,7 +1526,7 @@ public class BluetoothAPI {
                 return;
             }
 
-            ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+            reply(this, intent, new ResultReturner.ResultJsonWriter() {
                 @Override
                 public void writeJson(JsonWriter out) throws Exception {
                     out.beginObject();
@@ -1497,7 +1697,7 @@ public class BluetoothAPI {
             } catch (Exception ignored) { }
             final String deviceName = resolvedName;
 
-            ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+            reply(this, intent, new ResultReturner.ResultJsonWriter() {
                 @Override
                 public void writeJson(JsonWriter out) throws Exception {
                     out.beginObject();
@@ -1567,7 +1767,7 @@ public class BluetoothAPI {
                     return;
                 }
                 final byte[] descVal = descriptor.getValue();
-                ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+                reply(this, intent, new ResultReturner.ResultJsonWriter() {
                     @Override
                     public void writeJson(JsonWriter out) throws Exception {
                         out.beginObject();
@@ -1601,7 +1801,7 @@ public class BluetoothAPI {
             }
 
             final byte[] chrValue = characteristic.getValue();
-            ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+            reply(this, intent, new ResultReturner.ResultJsonWriter() {
                 @Override
                 public void writeJson(JsonWriter out) throws Exception {
                     out.beginObject();
@@ -1698,7 +1898,7 @@ public class BluetoothAPI {
                     returnError(this, intent, "Descriptor write timed out");
                     return;
                 }
-                ResultReturner.returnData(this, intent, out -> {
+                reply(this, intent, out -> {
                     out.append("{\"status\":\"descriptor_written\",\"uuid\":\"" + escapeJson(descriptorUuid) + "\"}\n");
                 });
                 return;
@@ -1736,7 +1936,7 @@ public class BluetoothAPI {
                 return;
             }
 
-            ResultReturner.returnData(this, intent, out -> {
+            reply(this, intent, out -> {
                 out.append("{\"status\":\"characteristic_written\",\"uuid\":\"" + escapeJson(characteristicUuid) + "\"}\n");
             });
         }
@@ -1823,7 +2023,7 @@ public class BluetoothAPI {
                 return;
             }
 
-            ResultReturner.returnData(this, intent, out -> {
+            reply(this, intent, out -> {
                 out.append("{\"status\":\"notification_" + (enable ? "enabled" : "disabled") +
                         "\",\"uuid\":\"" + escapeJson(characteristicUuid) + "\"}\n");
             });
@@ -1855,7 +2055,7 @@ public class BluetoothAPI {
 
             switch (action) {
                 case "status": {
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         JSONObject obj = new JSONObject();
                         obj.put("supported", adapter.isMultipleAdvertisementSupported());
                         obj.put("advertising", activeAdvertiseCallback != null);
@@ -1881,7 +2081,7 @@ public class BluetoothAPI {
                     advertiserInstance = null;
                     advertiseName = null;
                     advertiseServiceUuid = null;
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         JSONObject obj = new JSONObject();
                         obj.put("advertising", false);
                         out.append(obj.toString()).append("\n");
@@ -1916,7 +2116,10 @@ public class BluetoothAPI {
                 .setTxPowerLevel(advertiseTxPower(intent.getStringExtra("tx_power")))
                 .setConnectable(intent.getBooleanExtra("connectable", true));
             int timeout = intent.getIntExtra("timeout", 0);
-            if (timeout > 0) settings.setTimeout(timeout);
+            // AdvertiseSettings.setTimeout() rejects anything outside
+            // 0..180000 with IllegalArgumentException, which build() throws on
+            // this thread: clamp instead of answering "Internal error".
+            if (timeout > 0) settings.setTimeout(Math.min(timeout, 180000));
 
             String name = intent.getStringExtra("device_name");
             String serviceUuid = intent.getStringExtra("service_uuid");
@@ -1970,52 +2173,84 @@ public class BluetoothAPI {
                 }
             };
 
+            final AdvertiseSettings builtSettings;
+            final AdvertiseData builtData;
             try {
-                advertiser.startAdvertising(settings.build(), data.build(), callback);
-            } catch (Exception e) {
-                returnError(this, intent, "startAdvertising failed: " + e.getMessage());
+                builtSettings = settings.build();
+                builtData = data.build();
+            } catch (IllegalArgumentException e) {
+                // build() validates the 31-byte legacy payload limit and the
+                // settings ranges; throwing here used to surface as a bare
+                // "Internal error" because nothing named the offending extras.
+                returnError(this, intent, "Invalid advertisement (payload too large or "
+                        + "settings out of range): " + e.getMessage());
                 return;
             }
+            final boolean connectable = intent.getBooleanExtra("connectable", true);
+            final String mode = intent.getStringExtra("mode") == null
+                    ? "balanced" : intent.getStringExtra("mode");
 
-            boolean started;
-            try {
-                // startAdvertising() is asynchronous: reporting success before
-                // onStartSuccess would tell the caller something is on the air
-                // when the platform may have rejected the settings outright.
-                started = latch.await(5, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                started = false;
-            }
-
-            if (!started) {
+            // startAdvertising() is asynchronous and the platform posts its
+            // AdvertiseCallback on the main looper - the very thread
+            // onStartCommand() runs on. Waiting for that callback there could
+            // never succeed: the old latch.await(5 s) blocked the looper that had
+            // to signal the latch, so `advertise start` always stalled five
+            // seconds and then reported "Advertising did not start within 5 s"
+            // (or an ANR on a slow device) whatever the radio actually did.
+            keepAlive = true;
+            new Thread(() -> {
                 try {
-                    advertiser.stopAdvertising(callback);
-                } catch (Exception ignored) {
+                    try {
+                        advertiser.startAdvertising(builtSettings, builtData, callback);
+                    } catch (Exception e) {
+                        returnError(this, intent, "startAdvertising failed: " + e);
+                        return;
+                    }
+
+                    boolean started;
+                    try {
+                        // Reporting success before onStartSuccess would tell the
+                        // caller something is on the air when the platform may
+                        // have rejected the settings outright.
+                        started = latch.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        started = false;
+                    }
+
+                    if (!started) {
+                        try {
+                            advertiser.stopAdvertising(callback);
+                        } catch (Exception e) {
+                            Logger.logStackTraceWithMessage(LOG_TAG, "stopAdvertising failed", e);
+                        }
+                        returnError(this, intent, "Advertising did not start within 5 s");
+                        return;
+                    }
+                    if (failure[0] != null) {
+                        returnError(this, intent, failure[0]);
+                        return;
+                    }
+
+                    advertiserInstance = advertiser;
+                    activeAdvertiseCallback = callback;
+                    advertiseName = name;
+                    advertiseServiceUuid = serviceUuid;
+
+                    reply(this, intent, out -> {
+                        JSONObject obj = new JSONObject();
+                        obj.put("advertising", true);
+                        obj.put("connectable", connectable);
+                        obj.put("mode", mode);
+                        if (name != null) obj.put("name", name);
+                        if (serviceUuid != null) obj.put("service_uuid", serviceUuid);
+                        out.append(obj.toString()).append("\n");
+                    });
+                } finally {
+                    keepAlive = false;
+                    stopSelf();
                 }
-                returnError(this, intent, "Advertising did not start within 5 s");
-                return;
-            }
-            if (failure[0] != null) {
-                returnError(this, intent, failure[0]);
-                return;
-            }
-
-            advertiserInstance = advertiser;
-            activeAdvertiseCallback = callback;
-            advertiseName = name;
-            advertiseServiceUuid = serviceUuid;
-
-            ResultReturner.returnData(this, intent, out -> {
-                JSONObject obj = new JSONObject();
-                obj.put("advertising", true);
-                obj.put("connectable", intent.getBooleanExtra("connectable", true));
-                obj.put("mode", intent.getStringExtra("mode") == null ? "balanced"
-                    : intent.getStringExtra("mode"));
-                if (name != null) obj.put("name", name);
-                if (serviceUuid != null) obj.put("service_uuid", serviceUuid);
-                out.append(obj.toString()).append("\n");
-            });
+            }, "ble-advertise").start();
         }
 
         private static int advertiseMode(String mode) {
@@ -2137,7 +2372,7 @@ public class BluetoothAPI {
                         return;
                     }
 
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append("{\"status\":\"gatt_server_started\"}\n");
                     });
                     break;
@@ -2148,7 +2383,7 @@ public class BluetoothAPI {
                         gattServerInstance.close();
                         gattServerInstance = null;
                     }
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append("{\"status\":\"gatt_server_stopped\"}\n");
                     });
                     break;
@@ -2224,7 +2459,7 @@ public class BluetoothAPI {
                         return;
                     }
 
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append("{\"status\":\"service_added\",\"uuid\":\"" + escapeJson(serviceUuid) + "\"}\n");
                     });
                     break;
@@ -2232,7 +2467,7 @@ public class BluetoothAPI {
                 case "status":
                 default: {
                     final boolean running = gattServerInstance != null;
-                    ResultReturner.returnData(this, intent, new ResultReturner.ResultJsonWriter() {
+                    reply(this, intent, new ResultReturner.ResultJsonWriter() {
                         @Override
                         public void writeJson(JsonWriter out) throws Exception {
                             out.beginObject();
@@ -2301,7 +2536,7 @@ public class BluetoothAPI {
                     rfcommServerSocket = adapter.listenUsingRfcommWithServiceRecord(
                             intent.getStringExtra("name") != null ? intent.getStringExtra("name") : "TermuxAPI",
                             uuid);
-                    ResultReturner.returnData(this, intent, out -> {
+                    reply(this, intent, out -> {
                         out.append("{\"status\":\"listening\",\"uuid\":\"" + uuid.toString() + "\"}\n");
                     });
                 } catch (IOException e) {
@@ -2323,7 +2558,7 @@ public class BluetoothAPI {
                         return;
                     }
                     // Extract file descriptor via reflection
-                    ResultReturner.returnData(this, intent, new ResultReturner.WithAncillaryFd() {
+                    reply(this, intent, new ResultReturner.WithAncillaryFd() {
                         @Override
                         public void writeResult(PrintWriter out) {
                             try {
@@ -2372,7 +2607,7 @@ public class BluetoothAPI {
             }
 
             // Use WithAncillaryFd to return the file descriptor
-            ResultReturner.returnData(this, intent, new ResultReturner.WithAncillaryFd() {
+            reply(this, intent, new ResultReturner.WithAncillaryFd() {
                 @Override
                 public void writeResult(PrintWriter out) {
                     try {
@@ -2414,6 +2649,8 @@ public class BluetoothAPI {
         private int delay = DEFAULT_DELAY;
         private int limit = DEFAULT_LIMIT;
         private int counter;
+        /** Upper bound for the stream in milliseconds; 0 means "until stopped". */
+        private int duration;
 
         // Thread-safe queue of JSON strings to write
         private final LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>();
@@ -2428,6 +2665,10 @@ public class BluetoothAPI {
 
         void setLimit(int limit) {
             this.limit = limit;
+        }
+
+        void setDuration(int duration) {
+            this.duration = duration;
         }
 
         void addResult(int callbackType, ScanResult result) {
@@ -2489,8 +2730,29 @@ public class BluetoothAPI {
 
                     try (PrintWriter writer = new PrintWriter(outputSocket.getOutputStream())) {
 
+                        // Announce before the first result: a stream that opens
+                        // with silence is indistinguishable from a handler that
+                        // never ran, and the caller cannot tell the two apart.
+                        writer.write("{\"status\":\"scan_started\",\"streaming\":true}\n");
+                        writer.flush();
+
+                        final long deadline = duration > 0
+                                ? System.currentTimeMillis() + duration : 0;
+
                         while (isRunning) {
-                            String json = queue.poll(delay, TimeUnit.MILLISECONDS);
+                            if (deadline > 0 && System.currentTimeMillis() >= deadline) {
+                                writer.write("{\"status\":\"scan_finished\",\"results\":"
+                                        + counter + "}\n");
+                                writer.flush();
+                                break;
+                            }
+
+                            long wait = delay;
+                            if (deadline > 0) {
+                                wait = Math.max(1, Math.min(delay, deadline - System.currentTimeMillis()));
+                            }
+
+                            String json = queue.poll(wait, TimeUnit.MILLISECONDS);
                             if (json != null) {
                                 writer.write(json + "\n");
                                 writer.flush();

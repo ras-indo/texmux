@@ -23,6 +23,9 @@ import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.plugins.TermuxPluginUtils;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FileDescriptor;
 import java.io.IOException;
@@ -116,6 +119,109 @@ public abstract class ResultReturner {
      */
     public static void setDirectResponseHook(Runnable hook) {
         directResponseHook.set(hook);
+    }
+
+    /**
+     * Clear the response hook for this thread.
+     *
+     * <p>Must be called when the request ends: the hook captures the client's
+     * output stream, so leaving it set would keep a closed socket (and its
+     * buffers) reachable from a pooled thread for as long as the process lives.</p>
+     */
+    public static void clearDirectResponseHook() {
+        directResponseHook.remove();
+    }
+
+    // ─── Failure reporting (what the client is told when nothing was written) ──
+    //
+    // Before this existed the only trace of a failing handler was a logcat
+    // entry: the client was handed one anonymous "Handler did not produce a
+    // response" object or, on the async path, zero bytes. Everything below
+    // exists so that a failure names its command and throwable in the answer
+    // the client already reads.
+
+    /**
+     * Set by {@link com.termux.api.SocketListener} on requests that arrived over
+     * the JSON socket.  When set, a handler that throws must answer with a JSON
+     * error object instead of closing the socket without a byte, because the JSON
+     * client treats "no bytes" exactly like a hang.
+     */
+    public static final String EXTRA_JSON_ERRORS = "__termux_api_json_errors";
+
+    /** Correlation id echoed back in that error object. */
+    public static final String EXTRA_CORRELATION_ID = "__termux_api_correlation_id";
+
+    /**
+     * A response write that failed, described for the client.
+     *
+     * <p>Holds text rather than the {@link Throwable}: by the time it is read the
+     * request is over, and a retained throwable would pin its whole object graph
+     * to a pooled thread, which is how a single failure turns into a leak.</p>
+     */
+    public static final class Failure {
+        public final String exceptionClass;
+        public final String detail;
+
+        Failure(String exceptionClass, String detail) {
+            this.exceptionClass = exceptionClass;
+            this.detail = detail;
+        }
+
+        /** e.g. {@code java.io.IOException: broken pipe} - one line, never a stack trace. */
+        public String describe() {
+            return detail;
+        }
+    }
+
+    private static final ThreadLocal<Failure> directWriteFailure = new ThreadLocal<>();
+
+    /** The failed response write for this thread, or {@code null} when it succeeded. */
+    public static Failure getDirectWriteFailure() {
+        return directWriteFailure.get();
+    }
+
+    /** Clear the recorded response write failure for this thread. */
+    public static void clearDirectWriteFailure() {
+        directWriteFailure.remove();
+    }
+
+    private static void noteDirectWriteFailure(Throwable t) {
+        directWriteFailure.set(new Failure(exceptionClassName(t), describeThrowable(t)));
+    }
+
+    /** Fully qualified exception class name, e.g. {@code java.lang.NullPointerException}. */
+    public static String exceptionClassName(Throwable t) {
+        return t == null ? "java.lang.Throwable" : t.getClass().getName();
+    }
+
+    /**
+     * One-line description of a throwable for the client: class name plus message,
+     * clipped and stripped of newlines.
+     *
+     * <p>Deliberately not a stack trace: this text is shown to the user and pasted
+     * into bug reports, and a trace there buries the cause instead of naming it.
+     * The full trace still goes to logcat.</p>
+     */
+    public static String describeThrowable(Throwable t) {
+        if (t == null) return "java.lang.Throwable";
+        String className = exceptionClassName(t);
+        String message = t.getMessage();
+        if (message == null) return className;
+        String flattened = oneLine(message);
+        if (flattened.isEmpty()) return className;
+        return className + ": " + flattened;
+    }
+
+    /** @return {@code s} with control characters replaced by spaces, clipped to 300 chars. */
+    static String oneLine(String s) {
+        StringBuilder sb = new StringBuilder(Math.min(s.length(), 300));
+        for (int i = 0; i < s.length() && sb.length() < 300; i++) {
+            char c = s.charAt(i);
+            if (c == '\n' || c == '\r' || c == '\t') sb.append(' ');
+            else if (c >= 0x20) sb.append(c);
+        }
+        if (s.length() > 300) sb.append(" ...");
+        return sb.toString().trim();
     }
 
     // ─── ResultWriter types (unchanged) ──────────────────────────────
@@ -284,6 +390,7 @@ public abstract class ResultReturner {
             // ── Legacy back-connect path ─────────────────────────────
             PrintWriter writer = null;
             LocalSocket outputSocket = null;
+            CountingOutputStream countedOut = null;
             try {
                 outputSocket = new LocalSocket();
                 String outputSocketAddress = intent.getStringExtra(SOCKET_OUTPUT_EXTRA);
@@ -291,14 +398,18 @@ public abstract class ResultReturner {
                     throw new IOException("Missing '" + SOCKET_OUTPUT_EXTRA + "' extra");
                 Logger.logDebug(LOG_TAG, "Connecting to output socket \"" + outputSocketAddress + "\"");
                 outputSocket.connect(getApiLocalSocketAddress(ResultReturner.context, "output", outputSocketAddress));
-                writer = new PrintWriter(outputSocket.getOutputStream());
+                // Count what actually leaves for the client: a handler that throws
+                // after writing half an object must not be reported as if it had
+                // written nothing, and a failed write must not pass for success.
+                countedOut = new CountingOutputStream(outputSocket.getOutputStream());
+                writer = new PrintWriter(countedOut);
 
                 if (resultWriter != null) {
                     if (resultWriter instanceof WithAncillaryFd) {
                         ((WithAncillaryFd) resultWriter).setOutputSocketForFds(outputSocket);
                     }
                     if (resultWriter instanceof BinaryOutput) {
-                        ((BinaryOutput) resultWriter).setOutput(outputSocket.getOutputStream());
+                        ((BinaryOutput) resultWriter).setOutput(countedOut);
                     }
                     if (resultWriter instanceof WithInput) {
                         try (LocalSocket inputSocket = new LocalSocket()) {
@@ -330,6 +441,21 @@ public abstract class ResultReturner {
 
                 TermuxPluginUtils.sendPluginCommandErrorNotification(ResultReturner.context, LOG_TAG,
                         TermuxConstants.TERMUX_API_APP_NAME + " Error", message, t);
+
+                // Answer instead of closing in silence. This throwable used to reach
+                // logcat only, so an async handler (a Service writing after dispatch
+                // returned) that failed before its first byte left the client reading
+                // zero bytes - indistinguishable from a hang, and invisible to any
+                // script that only looks at the exit status.
+                //
+                // Only when nothing was written: if bytes already went to the client
+                // it has (part of) the answer, and appending a second object would
+                // make both of them unparseable. Exactly one answer per request.
+                if (writer != null && countedOut != null && countedOut.count() == 0
+                        && intent.getBooleanExtra(EXTRA_JSON_ERRORS, false)
+                        && !(resultWriter instanceof BinaryOutput)) {
+                    writeJsonErrorLine(writer, intent, t);
+                }
 
                 if (asyncResult != null && receiver != null && receiver.isOrderedBroadcast()) {
                     asyncResult.setResultCode(1);
@@ -375,43 +501,141 @@ public abstract class ResultReturner {
      */
     private static void writeDirect(OutputStream out, Intent intent, ResultWriter resultWriter) {
         PrintWriter pw = null;
+        boolean delivered = false;
         try {
             InputStream directIn = directInputStream.get();
+            // Count what actually reaches the client: a writer that produces no
+            // bytes must not be reported as an answer.
+            CountingOutputStream counted = new CountingOutputStream(out);
 
             if (resultWriter != null) {
                 if (resultWriter instanceof BinaryOutput) {
-                    ((BinaryOutput) resultWriter).setOutput(out);
-                }
-                if (resultWriter instanceof WithInput && directIn != null) {
-                    ((WithInput) resultWriter).setInput(directIn);
+                    ((BinaryOutput) resultWriter).setOutput(counted);
                 }
                 if (resultWriter instanceof WithAncillaryFd) {
                     // FD transfer not supported in direct mode
                     Logger.logWarn(LOG_TAG, "FD transfer not supported in direct response mode");
                 }
 
-                pw = new PrintWriter(out);
-                if (resultWriter instanceof WithInput && directIn != null) {
-                    resultWriter.writeResult(pw);
-                } else if (resultWriter instanceof WithInput) {
-                    // WithInput but no input stream provided — write empty input
-                    ((WithInput) resultWriter).setInput(new java.io.ByteArrayInputStream(new byte[0]));
-                    resultWriter.writeResult(pw);
-                } else {
-                    resultWriter.writeResult(pw);
+                pw = new PrintWriter(counted);
+                if (resultWriter instanceof WithInput) {
+                    // A handler that reads stdin gets an empty stream rather than a
+                    // silent null, so it cannot NPE and report "no output" instead.
+                    ((WithInput) resultWriter).setInput(directIn != null
+                            ? directIn
+                            : new ByteArrayInputStream(new byte[0]));
                 }
+                resultWriter.writeResult(pw);
+            }
+
+            // PrintWriter swallows IOException, so checkError() is the only way to
+            // learn that the client is gone. Flushing here - and not in finally -
+            // also keeps a half-written JSON object out of the socket when
+            // writeResult() throws: better a clean error than truncated output.
+            if (pw != null) {
+                pw.flush();
+                if (pw.checkError()) {
+                    noteDirectWriteFailure(new IOException("write to the client socket failed (broken pipe?)"));
+                } else if (counted.count() == 0) {
+                    // A writer ran and produced nothing: the client would read zero
+                    // bytes and SocketListener could not tell it from a hang.
+                    noteDirectWriteFailure(new IOException(
+                            "the handler's result writer wrote no output"));
+                } else {
+                    delivered = true;
+                }
+            } else {
+                // Nothing to write (noteDone): the command did all it had to do.
+                delivered = true;
             }
         } catch (Throwable t) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error in direct write", t);
+            noteDirectWriteFailure(t);
         } finally {
-            if (pw != null) {
-                pw.flush();
+            // Only claim "responded" when the client actually got the result. The
+            // hook is what tells SocketListener to stay quiet, so firing it after a
+            // failed write is what turned a real exception into silence.
+            if (delivered) {
+                Runnable hook = directResponseHook.get();
+                if (hook != null) {
+                    try { hook.run(); } catch (Exception ignored) {}
+                }
             }
-            // Fire response hook so SocketListener knows the response was sent
-            Runnable hook = directResponseHook.get();
-            if (hook != null) {
-                try { hook.run(); } catch (Exception ignored) {}
+        }
+    }
+
+    // ─── Helpers for the back-connect path ─────────────────────────────
+
+    /**
+     * Answers a handler that threw before writing anything with one JSON error
+     * object, so a client that reads the response can tell a crash from a hang.
+     *
+     * <p>Callers must only use this when no bytes have been written yet: a client
+     * that has already received part of an answer cannot be given a second
+     * document without breaking both.</p>
+     */
+    private static void writeJsonErrorLine(PrintWriter writer, Intent intent, Throwable t) {
+        try {
+            String command = intent.getStringExtra("api_method");
+            JSONObject obj = new JSONObject();
+            String correlationId = intent.getStringExtra(EXTRA_CORRELATION_ID);
+            if (correlationId != null && !correlationId.isEmpty()) {
+                obj.put("correlationId", correlationId);
             }
+            obj.put("success", false);
+            obj.put("error", (command == null || command.isEmpty() ? "" : command + ": ")
+                    + "handler threw " + describeThrowable(t));
+            if (command != null && !command.isEmpty()) {
+                obj.put("command", command);
+            }
+            obj.put("exception", exceptionClassName(t));
+            obj.put("hint", "The handler threw before it answered; the stack trace is in logcat under '"
+                    + LOG_TAG + "'.");
+            writer.print(obj.toString());
+            writer.print('\n');
+            writer.flush();
+            if (writer.checkError()) {
+                Logger.logWarn(LOG_TAG, "Error answer for '" + command
+                        + "' could not be delivered to the client");
+            }
+        } catch (Throwable ignored) {
+            // The throwable itself is already in logcat; there is nobody else to tell.
+        }
+    }
+
+    /** Counts the bytes handed to the client, so a partial write is recognisable. */
+    private static final class CountingOutputStream extends OutputStream {
+        private final OutputStream target;
+        private long count;
+
+        CountingOutputStream(OutputStream target) {
+            this.target = target;
+        }
+
+        long count() {
+            return count;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            target.write(b);
+            count++;
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            target.write(b, off, len);
+            count += len;
+        }
+
+        @Override
+        public void flush() throws IOException {
+            target.flush();
+        }
+
+        @Override
+        public void close() throws IOException {
+            target.close();
         }
     }
 }

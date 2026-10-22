@@ -6,6 +6,7 @@ import android.content.Context;
 import android.os.Build;
 import android.content.Intent;
 import android.provider.Settings;
+import android.util.JsonWriter;
 import android.widget.Toast;
 
 import com.termux.api.apis.AudioAPI;
@@ -50,6 +51,7 @@ import com.termux.api.apis.VolumeAPI;
 import com.termux.api.apis.WallpaperAPI;
 import com.termux.api.apis.WifiAPI;
 import com.termux.api.activities.TermuxApiPermissionActivity;
+import com.termux.api.util.ResultReturner;
 import com.termux.shared.logger.Logger;
 
 /**
@@ -87,6 +89,7 @@ public final class DirectDispatcher {
         String apiMethod = intent.getStringExtra("api_method");
         if (apiMethod == null) {
             Logger.logError(LOG_TAG, "Missing 'api_method' extra");
+            replyError(handlerContext, intent, "Missing 'api_method' extra");
             return;
         }
 
@@ -98,18 +101,18 @@ public final class DirectDispatcher {
                 AudioAPI.onReceive(handlerContext, context, intent);
                 break;
             case "Bluetooth":
-                String btCommand = intent.getStringExtra("command");
-                if ("gatt-server".equals(btCommand) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // The permission set comes from the handler itself
+                // (BluetoothAPI.requiredPermissions) so the two gates cannot
+                // drift apart. They did: this block asked for CONNECT+SCAN only,
+                // so `advertise` was dispatched with BLUETOOTH_ADVERTISE still
+                // ungranted, told the handler's own gate "advertise needs
+                // ADVERTISE", and that gate then requested CONNECT+SCAN - an
+                // already-granted set - which writes no answer at all. The
+                // client timed out with "Handler did not produce a response".
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    String btCommand = intent.getStringExtra("command");
                     if (TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
-                            Manifest.permission.BLUETOOTH_CONNECT,
-                            Manifest.permission.BLUETOOTH_SCAN,
-                            Manifest.permission.BLUETOOTH_ADVERTISE)) {
-                        BluetoothAPI.onReceive(handlerContext, context, intent);
-                    }
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    if (TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent,
-                            Manifest.permission.BLUETOOTH_CONNECT,
-                            Manifest.permission.BLUETOOTH_SCAN)) {
+                            BluetoothAPI.requiredPermissions(btCommand))) {
                         BluetoothAPI.onReceive(handlerContext, context, intent);
                     }
                 } else {
@@ -319,7 +322,28 @@ public final class DirectDispatcher {
                 WifiAPI.onReceive(handlerContext, context, intent);
                 break;
             default:
+                // Answer instead of returning silently: SocketListener has no
+                // way to know a dispatch was refused, so a bare return became
+                // "Handler did not produce a response" 30 s later.
                 Logger.logError(LOG_TAG, "Unrecognized 'api_method' extra: '" + apiMethod + "'");
+                replyError(handlerContext, intent,
+                        "Unrecognized api_method: " + apiMethod);
+        }
+    }
+
+    /** Write an error JSON to the caller, on both the direct and broadcast paths. */
+    private static void replyError(Object receiver, Intent intent, String message) {
+        try {
+            ResultReturner.returnData(receiver, intent, new ResultReturner.ResultJsonWriter() {
+                @Override
+                public void writeJson(JsonWriter out) throws Exception {
+                    out.beginObject();
+                    out.name("error").value(message);
+                    out.endObject();
+                }
+            });
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to return dispatch error", e);
         }
     }
 }

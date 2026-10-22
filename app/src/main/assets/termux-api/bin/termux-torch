@@ -13,7 +13,10 @@
 #     when the device goes to sleep or the battery is critically low.
 #
 #     Accepts exactly one argument: "on" to activate or "off" to
-#     deactivate. Returns the result as JSON via termux-api.
+#     deactivate. The command always prints a JSON acknowledgement with
+#     the torch state the system actually reached, or a JSON error that
+#     names the cause (no flash unit, camera busy, torch state not
+#     applied), and exits non-zero in the error case.
 #     Note: The torch cannot be used while the camera is active.
 #
 # OPTIONS
@@ -30,6 +33,7 @@
 set -e -u
 
 SCRIPTNAME=termux-torch
+TERMUX_API=/data/data/com.termux/files/apps/com.termux/bin/termux-api
 
 show_usage () {
     cat <<EOF
@@ -38,9 +42,16 @@ Usage: $SCRIPTNAME [on | off]
 Toggle the device's LED flash (torch) on or off using the camera
 flashlight API (CameraManager.setTorchMode).
 
-OUTPUT:
-  No JSON output. The torch LED turns on/off directly.
-  JSON response from API on success.
+OUTPUT (JSON, always non-empty):
+  {"requested":true,"enabled":true,"verified":true,"camera_id":"0"}
+      requested  the state that was asked for
+      enabled    the state the system reported back (null when it
+                 reported nothing, in which case verified is false)
+      verified   whether the reported state matches the request
+  On failure a JSON object with "error" and "error_type" is printed and
+  the command exits 1, e.g. error_type "NoFlashUnit" (no camera with a
+  flash), "TorchUnavailable" or "CameraAccessException" (camera busy or
+  flash disabled), "NotApplied" (the state did not change).
 
 PERMISSIONS:
   android.permission.CAMERA (for torch access)
@@ -57,21 +68,23 @@ EXAMPLES:
   # Turn torch off
   $SCRIPTNAME off
 EOF
-    exit 1
 }
 
 if [ "$#" -eq 0 ]; then
-	echo "Illegal param count"
+	echo "ERROR: missing argument, expected 'on' or 'off'." >&2
 	show_usage
+	exit 1
 fi
 
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
 	show_usage
+	exit 0
 fi
 
 if [ "$#" -ne 1 ]; then
-	echo "Illegal param count"
+	echo "ERROR: expected exactly one argument, got $#." >&2
 	show_usage
+	exit 1
 fi
 
 PARAMS=""
@@ -81,8 +94,46 @@ if [ "$1" = on ]; then
 elif [ "$1" = off ]; then
 	PARAMS="--ez enabled false"
 else
-	echo "Illegal parameter: $1"
+	echo "ERROR: illegal parameter: $1" >&2
 	show_usage
+	exit 1
 fi
 
-/data/data/com.termux/files/apps/com.termux/bin/termux-api Torch $PARAMS
+STATUS=0
+OUT=$("$TERMUX_API" Torch $PARAMS) || STATUS=$?
+
+# An empty body used to mean either "the torch was switched" or "the service
+# never answered" — those must not look the same, so say which one happened.
+if [ -z "$OUT" ]; then
+	echo "ERROR: termux-api returned no response for Torch." >&2
+	echo "       The Termux:API app or its API service is not running (try: termux-api-start)." >&2
+	exit 1
+fi
+
+printf '%s\n' "$OUT"
+
+case "$OUT" in
+	*'"error"'*)
+		case "$OUT" in
+			*NoFlashUnit*)
+				MSG="this device has no camera with a flash unit, so there is no torch to switch."
+				;;
+			*TorchUnavailable*|*CameraAccessException*)
+				MSG="the camera is busy or unavailable (in use by this or another app, or disabled); close camera apps and retry."
+				;;
+			*NotApplied*)
+				MSG="the system did not apply the requested torch state."
+				;;
+			*needs_permission*|*CameraPermissionDenied*)
+				MSG="the CAMERA permission is not granted for Termux:API; grant it and retry."
+				;;
+			*)
+				MSG="termux-api reported an error for Torch (see the JSON above)."
+				;;
+		esac
+		echo "ERROR: $MSG" >&2
+		exit 1
+		;;
+esac
+
+exit "$STATUS"

@@ -41,6 +41,20 @@ int termux_api_exit_status = TERMUX_API_EXIT_OK;
 /* Seconds to wait for the handler's response; --timeout overrides it. */
 static int response_timeout_sec = SOCKET_TIMEOUT_SEC;
 
+/* Whether --timeout was given explicitly, in which case it is also honoured as
+ * the wait for the streaming back-connect instead of the short default. */
+static int response_timeout_explicit = 0;
+
+/* How long to wait for the app to open the streaming back-connect socket
+ * (see transmit_socket_to_stdout()). A handler that streams connects before it
+ * starts waiting for data, so this is a connect deadline, not a data deadline. */
+#define STREAM_CONNECT_GRACE_SEC 5
+
+/* Set by run_api_command() so streaming failures can name the command and the
+ * address the client was waiting on instead of printing a bare timeout. */
+static const char *stream_diag_method = NULL;
+static const char *stream_diag_addr = NULL;
+
 static void print_usage(FILE *out, const char *prog) {
     fprintf(out,
         "Usage: %s <method> [extras...]\n"
@@ -581,17 +595,27 @@ static int is_streaming_method(const char *method) {
  *     4. Read response on SAME connection → stdout
  *     5. Close connection
  *
- *   STREAMING APIs (Sensor, Location, etc.):
+ *   STREAMING APIs (Sensor, Location, MicRecorder, SpeechToText,
+ *                   TextToSpeech, NotificationList):
  *     1. Create 1 ephemeral OUTPUT socket (NOT 2 — stdin is inline)
- *     2. Build JSON with socket_output address
+ *     2. Build JSON with socket_output="<address>" INSIDE "args"
  *     3. Connect to dispatcher, send JSON
- *     4. Read response on OUTPUT socket (Java Service writes here)
+ *     4. Read response on the OUTPUT socket (the app back-connects to it)
+ *
+ *   socket_output must be an "args" member: ApiRequest.fromJson() turns only
+ *   that object into intent extras and SocketListener reads the address from
+ *   the intent. A root-level socket_output is silently discarded, the request
+ *   is handled as non-streaming, and the answer goes to the dispatcher
+ *   connection the client never reads - which is what produced the old
+ *   30 s "streaming connection never arrived" hang.
  *
  *   Compared to OLD protocol:
  *     - NO input socket (ephemeral) → stdin goes inline in JSON
  *     - NO legacy string format    → JSON command
  *     - NO 7-regex parsing on Java → single APIRequest.parse()
- *     - NO ResultReturner back-connect → direct response stream
+ *     - Streaming still uses a back-connect (ResultReturner connects to
+ *       socket_output); only the non-streaming answer is written directly on
+ *       the dispatcher connection
  */
 int run_api_command(int argc, char **argv) {
     if (argc == 2 && strcmp(argv[1], "--version") == 0) {
@@ -620,7 +644,10 @@ int run_api_command(int argc, char **argv) {
             return -1;
         }
         int t = atoi(argv[i + 1]);
-        if (t > 0) response_timeout_sec = t;
+        if (t > 0) {
+            response_timeout_sec = t;
+            response_timeout_explicit = 1;
+        }
         for (int j = i; j + 2 < argc; j++) argv[j] = argv[j + 2];
         argc -= 2;
         i--;
@@ -672,29 +699,52 @@ int run_api_command(int argc, char **argv) {
         output_server_fd = create_abstract_server_socket(output_addr_str, &output_addr);
         if (output_server_fd == -1) { close(fd); return 1; }
         set_accept_timeout(output_server_fd, response_timeout_sec);
+        /* Diagnostics only: a failure message has to say which command and
+         * which address nobody connected to. */
+        stream_diag_method = method;
+        stream_diag_addr = output_addr_str;
     }
 
-    /* ── Build JSON command ────────────────────────────────────── */
+    /* ── Build JSON command ──────────────────────────────────────
+     *
+     * socket_output has to travel INSIDE "args". ApiRequest.fromJson() only
+     * mirrors the "args" object into intent extras and drops every other
+     * root-level key, so appending it to the JSON root (the old splice below)
+     * made SocketListener's getStringExtra("socket_output") return null: the
+     * request was then handled as a non-streaming one, the answer was written
+     * to the request connection that a streaming client never reads, and the
+     * client sat on its own output socket until its 30 s timeout printed
+     * "no response within 30 s (streaming connection never arrived)".
+     *
+     * Adding it as a normal "--es socket_output <addr>" argument lets the
+     * builder place it in "args" (and open "args" at all when the command has
+     * no other extras, e.g. `termux-api MicRecorder -a record`).
+     */
+    char **json_argv = argv;
+    int json_argc = argc;
+    if (streaming && output_addr_str[0]) {
+        json_argv = malloc(sizeof(char *) * (size_t)(argc + 3));
+        if (!json_argv) {
+            close(fd);
+            if (output_server_fd != -1) close(output_server_fd);
+            fprintf(stderr, "ERROR: Out of memory\n");
+            return 1;
+        }
+        memcpy(json_argv, argv, sizeof(char *) * (size_t)argc);
+        json_argv[argc]     = "--es";
+        json_argv[argc + 1] = "socket_output";
+        json_argv[argc + 2] = output_addr_str;
+        json_argc = argc + 3;
+    }
+
     size_t cmd_len;
-    char *json = build_json_command(argc, argv, &cmd_len);
+    char *json = build_json_command(json_argc, json_argv, &cmd_len);
+    if (json_argv != argv) free(json_argv);
     if (!json) {
         close(fd);
         if (output_server_fd != -1) close(output_server_fd);
         fprintf(stderr, "ERROR: Out of memory\n");
         return 1;
-    }
-
-    /* Append socket_output to JSON if streaming */
-    if (streaming && output_addr_str[0]) {
-        size_t extra = strlen(output_addr_str) + 32;
-        char *new_json = realloc(json, cmd_len + extra + 2);
-        if (new_json) {
-            json = new_json;
-            size_t pos = cmd_len - 1;
-            size_t n = snprintf(json + pos, extra, ",\"socket_output\":\"%s\"}", output_addr_str);
-            cmd_len = pos + n;
-            json[cmd_len] = '\0';
-        }
     }
 
     /* ── Send JSON command ─────────────────────────────────────── */
@@ -962,12 +1012,37 @@ void* transmit_stdin_to_socket(void* arg) {
 }
 
 int transmit_socket_to_stdout(int input_server_fd) {
+    /*
+     * Wait for the app to connect to our output socket.  This is not the data
+     * timeout: a handler that supports streaming connects *before* it starts
+     * waiting for sensor fixes, so a connection that has not arrived after a
+     * few seconds is not going to arrive at all.  Waiting the full response
+     * timeout here is what turned a protocol mismatch into a 30 s hang that
+     * printed nothing actionable.
+     */
+    const int grace_sec = response_timeout_explicit
+                          ? response_timeout_sec
+                          : (response_timeout_sec < STREAM_CONNECT_GRACE_SEC
+                             ? response_timeout_sec : STREAM_CONNECT_GRACE_SEC);
+
     struct pollfd pfd = { .fd = input_server_fd, .events = POLLIN };
-    int pr = poll(&pfd, 1, response_timeout_sec * 1000);
+    int pr = poll(&pfd, 1, grace_sec * 1000);
     if (pr <= 0) {
         if (pr == 0) {
-            fprintf(stderr, "ERROR: no response within %d s (streaming connection never arrived)\n",
-                    response_timeout_sec);
+            fprintf(stderr,
+                "ERROR: Termux API app never opened the streaming connection.\n"
+                "       method       : %s\n"
+                "       socket_output: \"%s\"\n"
+                "       Waited %d s after the request was accepted. No data can arrive any\n"
+                "       more, because no handler is writing to this address. Usual cause is a\n"
+                "       Termux:API app build older than this client (it ignores the address),\n"
+                "       or a handler that aborted before replying (permission denied, service\n"
+                "       crashed). Update/Reinstall Termux:API and retry; see\n"
+                "       `logcat -s TermuxApiReceiver SocketListener` for the handler side.\n"
+                "       If the handler is only slow to start, retry with --timeout <seconds>.\n",
+                stream_diag_method ? stream_diag_method : "?",
+                stream_diag_addr ? stream_diag_addr : "?",
+                grace_sec);
             termux_api_exit_status = TERMUX_API_EXIT_NO_RESPONSE;
         }
         else perror("poll(input)");
@@ -977,6 +1052,12 @@ int transmit_socket_to_stdout(int input_server_fd) {
     socklen_t addrlen = sizeof(remote);
     int client_fd = accept(input_server_fd, (struct sockaddr *)&remote, &addrlen);
     if (client_fd == -1) { perror("accept(input)"); return -1; }
+
+    /* A handler that connects and then stalls must not hang the command
+     * forever either: bound the read as well, at twice the response timeout so
+     * that a slow `-r updates` stream is not cut short by an idle gap. */
+    struct timeval read_tv = { .tv_sec = response_timeout_sec * 2, .tv_usec = 0 };
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &read_tv, sizeof(read_tv));
 
     char cbuf[256];
     struct iovec io = { .iov_base = NULL, .iov_len = 0 };
@@ -991,12 +1072,40 @@ int transmit_socket_to_stdout(int input_server_fd) {
 
     char buf[4096];
     ssize_t n;
+    long long streamed = 0;
     while ((n = read(client_fd, buf, sizeof(buf))) > 0 || (n == -1 && errno == EINTR)) {
         if (n == -1) continue;
         if (fd != -1 && n == 1 && buf[0] == '@') n = 0;
-        if (n > 0) write(STDOUT_FILENO, buf, (size_t)n);
+        if (n > 0) {
+            write(STDOUT_FILENO, buf, (size_t)n);
+            streamed += n;
+        }
     }
-    if (n < 0) perror("read");
+    if (streamed == 0 && n == 0) {
+        /* Connected, then closed without a single byte. Every handler that
+         * supports streaming writes at least one JSON object, a result line or
+         * an API_ERROR, so this is a handler bug - and it used to look exactly
+         * like success to a script (empty stdout, exit 0). */
+        fprintf(stderr,
+            "ERROR: the handler connected to socket_output \"%s\" (method %s) and wrote nothing.\n"
+            "       An empty stream is a handler failure, not an empty result. Repeat with\n"
+            "       `logcat -s ResultReturner SocketListener` to see what the handler did.\n",
+            stream_diag_addr ? stream_diag_addr : "?",
+            stream_diag_method ? stream_diag_method : "?");
+        termux_api_exit_status = TERMUX_API_EXIT_NO_RESPONSE;
+    } else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        /* Stream went silent: the handler connected but stopped writing and
+         * never closed. Report it instead of exiting 0 with partial output. */
+        fprintf(stderr,
+            "ERROR: streaming connection went silent for %d s (method %s, socket_output \"%s\").\n"
+            "       The handler stopped writing without closing the stream.\n",
+            response_timeout_sec * 2,
+            stream_diag_method ? stream_diag_method : "?",
+            stream_diag_addr ? stream_diag_addr : "?");
+        termux_api_exit_status = TERMUX_API_EXIT_NO_RESPONSE;
+    } else if (n < 0) {
+        perror("read");
+    }
     close(client_fd);
     return fd;
 }

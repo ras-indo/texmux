@@ -15,9 +15,14 @@
 #     Wi-Fi interface, supplicant state (COMPLETED/SCANNING/AUTHENTICATING/...),
 #     and Wi-Fi generation (802.11b/g/n/ac/ax/be).
 #
-#     If the device is not connected to any Wi-Fi network, returns an
-#     empty object or error. Use termux-wifi-enable to turn Wi-Fi on,
-#     and termux-wifi-scaninfo to scan for available networks.
+#     The radio state is part of the answer: wifi_enabled is the Wi-Fi
+#     setting, wifi_state is the radio itself, and connected says whether an
+#     association is actually up. With the radio off there is no connection
+#     to describe, so an API_ERROR says so instead of handing back the
+#     placeholder values the platform keeps for a dead interface.
+#
+#     Use termux-wifi-enable to turn Wi-Fi on, and termux-wifi-scaninfo to
+#     scan for available networks.
 #
 # OPTIONS
 #     -h, --help  Display this help message
@@ -38,23 +43,39 @@ Returns a JSON object with network and connection parameters.
 
 OUTPUT
     JSON object with the following fields:
-        BSSID            - MAC address of the access point
-        SSID             - Network name (may be empty if hidden)
-        RSSI             - Signal strength in dBm (negative value)
-        frequency        - Operating frequency in MHz
+        wifi_enabled     - the Wi-Fi setting (true/false)
+        wifi_state       - enabled / disabled / enabling / disabling / unknown
+        radio_state_mismatch
+                         - the setting and the radio disagree: the toggle did
+                           not take effect
+        connected        - an association is up (supplicant COMPLETED)
+        bssid            - MAC address of the access point
+        ssid             - Network name ("" when hidden or unassociated)
+        rssi             - Signal strength in dBm (negative value)
+        rssi_percent     - Signal strength as a percentage
+        frequency_mhz    - Operating frequency in MHz
         channel          - Wi-Fi channel number (derived from frequency)
-        linkSpeed        - Current link speed in Mbps
-        IP               - Device IPv4 address on this network
+        band             - 2.4 GHz / 5 GHz / 6 GHz
+        link_speed_mbps  - Current link speed in Mbps
+        ip               - Device IPv4 address on this network
+        interface        - Network interface name (e.g. wlan0)
+        ip_addresses     - Interface addresses with prefix length
+                           (e.g. ["192.168.1.5/24"])
         gateway          - Default gateway IP address
-        dns1             - Primary DNS server IP address
-        dns2             - Secondary DNS server IP address
-        macAddress       - MAC address of the device Wi-Fi interface
-        prefixLength     - Network prefix length (e.g., 24 for /24)
-        wifiStandard     - Wi-Fi generation (802.11b/g/n/ac/ax/be)
-        supplicantState  - Connection state (COMPLETED / SCANNING /
-                          AUTHENTICATING / ASSOCIATING / DISCONNECTED)
+        dns_servers      - Configured DNS resolvers
+        private_dns      - Private DNS (DNS-over-TLS) is active
+        dhcp_server      - DHCP server that leased the address
+        mac_address      - MAC address of the device Wi-Fi interface
+        network_id       - Configured network id the device is attached to
+        standard         - 802.11 standard reported by the platform
+        wifi_generation  - Wi-Fi generation (802.11b/g/n/ac/ax/be)
+        supplicant_state - Connection state (COMPLETED / SCANNING /
+                           AUTHENTICATING / ASSOCIATING / DISCONNECTED)
 
-    Returns an empty object if the device is not connected to Wi-Fi.
+    With the Wi-Fi radio off there is nothing to describe: the reply is
+    { "wifi_enabled": false, "wifi_state": "disabled", "API_ERROR":
+    "Wi-Fi is off - turn it on and retry" } rather than a placeholder
+    connection.
 
 PERMISSIONS
     android.permission.ACCESS_FINE_LOCATION (Android 10+, API level 29)
@@ -68,7 +89,10 @@ EXAMPLES
     $SCRIPTNAME | jq '.'
 
     # Extract just the IP address
-    $SCRIPTNAME | jq -r '.IP'
+    $SCRIPTNAME | jq -r '.ip'
+
+    # Is an association actually up?
+    $SCRIPTNAME | jq -r '.connected'
 EOF
     exit 0
 }

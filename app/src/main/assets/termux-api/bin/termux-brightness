@@ -15,7 +15,11 @@
 #     When set to auto, the system takes over brightness control using
 #     the ambient light sensor. When set to a numeric value, auto-brightness
 #     is disabled and the screen is locked to the specified level.
-#     Returns the new brightness state as JSON via termux-api.
+#     The command always prints a JSON acknowledgement with the value
+#     read back from the system, or a JSON error, and exits non-zero on
+#     error. Changing system settings needs the special "Modify system
+#     settings" access (WRITE_SETTINGS), which has no permission dialog;
+#     the error names it and how to grant it.
 #
 # OPTIONS
 #     -h, --help  Display this help message
@@ -30,6 +34,8 @@
 set -e -u
 
 SCRIPTNAME=termux-brightness
+TERMUX_API=/data/data/com.termux/files/apps/com.termux/bin/termux-api
+
 show_usage() {
     cat <<EOF
 Usage: $SCRIPTNAME {brightness|auto}
@@ -43,15 +49,21 @@ When set to a numeric value, auto-brightness is disabled and the screen
 is locked to the specified level. Values outside 0-255 are clamped.
 When set to "auto", the system takes over brightness control dynamically.
 
-OUTPUT:
-  No JSON output on success. The termux-api service sets the system
-  brightness value via Settings.System. On error, an error message is
-  printed to stderr.
+OUTPUT (JSON, always non-empty):
+  {"brightness":128,"mode":"manual","requested_brightness":128,"applied":true}
+      brightness  value read back from the system after the write
+      mode        "auto" or "manual" as read back from the system
+      applied     whether the system took the requested values
+  On failure a JSON object with "error" and "error_type" is printed and
+  the command exits 1. When WRITE_SETTINGS is missing the error also
+  carries "special_access", "settings_action" and "how_to".
 
 PERMISSIONS:
   Android 1+ — android.permission.WRITE_SETTINGS
-  Requires the user to grant "Modify system settings" permission in
-  Android Settings > Apps > Termux > Modify system settings.
+  This one is a "special app access" permission: Android shows no
+  permission dialog for it, so it must be enabled in
+  Android Settings > Apps > Termux:API > Modify system settings.
+  Without it the system silently ignores the brightness change.
 
 OPTIONS:
   -h, --help    Display this help message.
@@ -73,26 +85,60 @@ EXAMPLES:
   # Dim screen to minimum
   $SCRIPTNAME 0
 EOF
-    exit 0
 }
 
 if [ $# != 1 ]; then
+    echo "ERROR: expected exactly one argument: a brightness value (0-255) or 'auto'." >&2
     show_usage
+    exit 1
 fi
 
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     show_usage
+    exit 0
 fi
 
-if ! [[ $1 =~ ^([0-9]+)|auto$ ]]; then
-    echo "ERROR: Arg must be a number between 0 - 255 or auto!"
+if ! [[ $1 =~ ^([0-9]+|auto)$ ]]; then
+    echo "ERROR: Arg must be a number between 0 - 255 or auto!" >&2
     show_usage
+    exit 1
 fi
 
-if [ "$1" == auto ]; then
+if [ "$1" = auto ]; then
 ARGS="--ez auto true"
 else
 ARGS="--ei brightness $1 --ez auto false"
 fi
 
-/data/data/com.termux/files/apps/com.termux/bin/termux-api Brightness $ARGS
+STATUS=0
+OUT=$("$TERMUX_API" Brightness $ARGS) || STATUS=$?
+
+# An empty body used to mean either "the brightness was changed" or "the
+# service never answered" — those must not look the same, so say which one.
+if [ -z "$OUT" ]; then
+    echo "ERROR: termux-api returned no response for Brightness." >&2
+    echo "       The Termux:API app or its API service is not running (try: termux-api-start)." >&2
+    exit 1
+fi
+
+printf '%s\n' "$OUT"
+
+case "$OUT" in
+    *'"error"'*)
+        case "$OUT" in
+            *WRITE_SETTINGS*)
+                echo "ERROR: WRITE_SETTINGS (\"Modify system settings\") is not granted." >&2
+                echo "       Android has no permission dialog for this special access, and without" >&2
+                echo "       it the system silently ignores the brightness change." >&2
+                echo "       Fix: Settings > Apps > Termux:API > Modify system settings > Allow," >&2
+                echo "       then run: $SCRIPTNAME $1" >&2
+                ;;
+            *)
+                echo "ERROR: termux-api reported an error for Brightness (see the JSON above)." >&2
+                ;;
+        esac
+        exit 1
+        ;;
+esac
+
+exit "$STATUS"

@@ -11,11 +11,20 @@
 #     Accepts exactly one argument: "true" to enable Wi-Fi or "false"
 #     to disable it.
 #
-#     When enabling, the device will scan for and connect to known
-#     networks automatically. When disabling, any active Wi-Fi
-#     connection is dropped. The new state is returned via termux-api.
-#     Note: On some Android versions, the system may show a
-#     confirmation dialog when toggling Wi-Fi.
+#     The answer is the radio read back after the toggle, never the argument
+#     echoed. "enabled" is the state the radio is actually in, "changed" says
+#     whether this call moved it, and "API_ERROR" appears only when the
+#     requested state was not reached.
+#
+#     A radio that already is where the caller wants it is not an error: the
+#     toggle is skipped and the reply carries "already_in_state": true with
+#     "changed": false. Some builds answer false from setWifiEnabled() for a
+#     no-op, which used to be reported as "the platform refused".
+#
+#     When enabling, the device scans for and connects to known networks
+#     automatically. When disabling, any active Wi-Fi connection is dropped.
+#     Note: On some Android versions, the system may show a confirmation
+#     dialog when toggling Wi-Fi.
 #
 # OPTIONS
 #     true   enable Wi-Fi
@@ -43,7 +52,32 @@ ARGUMENTS
     false  Disable Wi-Fi
 
 OUTPUT
-    Returns the new Wi-Fi state as a JSON response from the API.
+    JSON object describing what happened:
+
+        enabled            state the radio is in after the call
+        requested          state that was asked for
+        changed            true only when this call moved the radio
+        already_in_state   true when no toggle was needed (none was attempted)
+        previous_enabled   the Wi-Fi setting before the call
+        wifi_enabled       the Wi-Fi setting after the call
+        wifi_state         enabled / disabled / enabling / disabling / unknown
+        radio_state_mismatch
+                           the setting and the radio disagree: the platform
+                           did not carry the toggle through
+        note               present when setWifiEnabled() answered false for a
+                           toggle the radio nonetheless performed
+        API_ERROR          present only when the requested state was not
+                           reached; "enabled" still carries the real state
+
+    The toggle is asynchronous, so the reply is the state read back after
+    the call, not the argument echoed. No API_ERROR is reported for a call
+    that found the radio already in the requested state.
+
+    API_ERROR values:
+        setWifiEnabled returned false - the platform refused the Wi-Fi toggle
+        Wi-Fi did not reach the requested state within 4 s
+        Android refused to change Wi-Fi state: ...
+        Missing 'enabled' extra - pass true or false
 
 PERMISSIONS
     android.permission.CHANGE_WIFI_STATE
@@ -61,6 +95,9 @@ EXAMPLES
 
     # Enable and then check connection
     $SCRIPTNAME true && sleep 5 && termux-wifi-connectioninfo
+
+    # Did the toggle actually change anything?
+    $SCRIPTNAME true | jq -r '.changed'
 EOF
         exit 1
 }

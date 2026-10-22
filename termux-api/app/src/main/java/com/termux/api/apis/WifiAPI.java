@@ -434,6 +434,150 @@ public class WifiAPI {
         return getWifiGeneration(freq, standard);
     }
 
+    // ─── Wi-Fi radio state ────────────────────────────────────────────
+
+    /** How long a scan is still presented as current without a completed scan of its own. */
+    private static final long CACHE_FRESH_SECONDS = 120;
+
+    /** How long setWifiEnabled() gets to move the radio before that is called a failure. */
+    private static final long WIFI_TOGGLE_TIMEOUT_MS = 4000;
+
+    /**
+     * What the platform says about the Wi-Fi radio, from both sources it exposes.
+     *
+     * isWifiEnabled() is the *setting*; getWifiState() is the radio.  They disagree
+     * exactly when a Quick Settings toggle did not take effect (setting on, chip
+     * down) - the state in which getScanResults() keeps serving its last list and
+     * looks like a live scan.  Carrying both makes that state readable instead of
+     * invisible, and stops the two from being reported as one.
+     */
+    private static final class WifiRadio {
+        final boolean settingEnabled;
+        final int state;
+        final boolean readFailed;
+
+        WifiRadio(boolean settingEnabled, int state, boolean readFailed) {
+            this.settingEnabled = settingEnabled;
+            this.state = state;
+            this.readFailed = readFailed;
+        }
+
+        static WifiRadio read(WifiManager manager) {
+            boolean setting = false;
+            int state = WifiManager.WIFI_STATE_UNKNOWN;
+            boolean failed = false;
+            try {
+                setting = manager.isWifiEnabled();
+            } catch (RuntimeException e) {
+                // SecurityException without ACCESS_WIFI_STATE, or a vendor RuntimeException.
+                failed = true;
+            }
+            try {
+                state = manager.getWifiState();
+            } catch (RuntimeException e) {
+                failed = true;
+            }
+            return new WifiRadio(setting, state, failed);
+        }
+
+        /** The radio itself is up (not merely the setting). */
+        boolean radioOn() {
+            return state == WifiManager.WIFI_STATE_ENABLED;
+        }
+
+        /**
+         * Is the interface up right now? Unlike radioOn() this counts a radio that is
+         * still shutting down as up, because it is: "disabling" is not yet off. Used to
+         * report the state a toggle actually reached without claiming a half-done one.
+         */
+        boolean up() {
+            return state == WifiManager.WIFI_STATE_ENABLED
+                || state == WifiManager.WIFI_STATE_DISABLING;
+        }
+
+        boolean transitional() {
+            return state == WifiManager.WIFI_STATE_ENABLING
+                || state == WifiManager.WIFI_STATE_DISABLING;
+        }
+
+        /** Best effort: the radio when the platform reports it, else the setting. */
+        boolean on() {
+            if (state == WifiManager.WIFI_STATE_ENABLED) return true;
+            if (state == WifiManager.WIFI_STATE_DISABLED) return false;
+            return settingEnabled;
+        }
+
+        /** Settled and down: a scan list in this state can only be a stale cache. */
+        boolean off() {
+            if (state == WifiManager.WIFI_STATE_DISABLED) return true;
+            return !radioOn() && !transitional() && !settingEnabled;
+        }
+
+        /** Setting and radio disagree - the toggle did not take effect. */
+        boolean mismatch() {
+            return !transitional() && state != WifiManager.WIFI_STATE_UNKNOWN
+                && settingEnabled != radioOn();
+        }
+
+        String stateName() {
+            switch (state) {
+                case WifiManager.WIFI_STATE_ENABLED:   return "enabled";
+                case WifiManager.WIFI_STATE_DISABLED:  return "disabled";
+                case WifiManager.WIFI_STATE_ENABLING:  return "enabling";
+                case WifiManager.WIFI_STATE_DISABLING: return "disabling";
+                default:                               return "unknown";
+            }
+        }
+    }
+
+    /** The radio fields every Wi-Fi answer carries, so no reply is ambiguous. */
+    private static void writeRadioFields(JsonWriter out, WifiRadio radio) throws Exception {
+        out.name("wifi_enabled").value(radio.settingEnabled);
+        out.name("wifi_state").value(radio.stateName());
+        if (radio.readFailed) {
+            out.name("radio_read_failed").value(true);
+        }
+        if (radio.mismatch()) {
+            out.name("radio_state_mismatch").value(true);
+            out.name("radio_note").value("the Wi-Fi setting is "
+                + (radio.settingEnabled ? "on" : "off") + " but the radio is "
+                + (radio.radioOn() ? "up" : "down") + " - the toggle did not take effect");
+        }
+    }
+
+    /** Waits for the radio to settle in `wanted`, or for the deadline to pass. */
+    private static void waitForWifiState(WifiManager manager, boolean wanted, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            WifiRadio radio = WifiRadio.read(manager);
+            // A transitional state is not an answer: "disabling" is not yet off.
+            if (radio.on() == wanted && !radio.transitional()) return;
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    /**
+     * Age in seconds of the newest result, or -1 when the platform's timestamp
+     * cannot be interpreted (ScanResult.timestamp is "microseconds since boot"; a
+     * few OEM builds write epoch-derived values there instead).
+     */
+    private static long newestScanAgeSeconds(List<ScanResult> scans) {
+        if (scans == null || scans.isEmpty()) return -1;
+        long newestUs = Long.MIN_VALUE;
+        for (ScanResult scan : scans) {
+            if (scan.timestamp > newestUs) newestUs = scan.timestamp;
+        }
+        if (newestUs <= 0) return -1;
+        long ageUs = android.os.SystemClock.elapsedRealtime() * 1000L - newestUs;
+        if (ageUs < -5000000L || ageUs > 86400000000L) return -1;
+        return ageUs / 1000000L;
+    }
+
     // ─── Existing methods (keep for backward compat via old action strings) ───
 
     public static void onReceiveWifiConnectionInfo(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
@@ -444,42 +588,68 @@ public class WifiAPI {
             @Override
             public void writeJson(JsonWriter out) throws Exception {
                 WifiManager manager = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-                WifiInfo info = manager.getConnectionInfo();
+                if (manager == null) {
+                    out.beginObject().name("API_ERROR").value("WifiManager unavailable").endObject();
+                    return;
+                }
+                WifiRadio radio = WifiRadio.read(manager);
+                if (radio.off()) {
+                    // getConnectionInfo() still answers with a placeholder WifiInfo here
+                    // ("<unknown ssid>", -127 dBm, 02:00:00:00:00:00). Reporting that as a
+                    // connection was the lie, so name the radio state instead.
+                    out.beginObject();
+                    writeRadioFields(out, radio);
+                    out.name("API_ERROR").value("Wi-Fi is off - turn it on and retry");
+                    out.endObject();
+                    return;
+                }
                 out.beginObject();
+                writeRadioFields(out, radio);
+                if (radio.transitional()) {
+                    out.name("note").value("Wi-Fi radio is " + radio.stateName()
+                        + " - the fields below may describe the previous state");
+                }
+                WifiInfo info = manager.getConnectionInfo();
                 if (info == null) {
                     out.name("API_ERROR").value("No current connection");
-                } else {
-                    out.name("bssid").value(info.getBSSID());
-                    out.name("frequency_mhz").value(info.getFrequency());
-                    //noinspection deprecation
-                    out.name("ip").value(Formatter.formatIpAddress(info.getIpAddress()));
-                    out.name("link_speed_mbps").value(info.getLinkSpeed());
-                    out.name("mac_address").value(info.getMacAddress());
-                    out.name("network_id").value(info.getNetworkId());
-                    out.name("rssi").value(info.getRssi());
-                    out.name("ssid").value(info.getSSID().replaceAll("\"", ""));
-                    out.name("ssid_hidden").value(info.getHiddenSSID());
-                    out.name("supplicant_state").value(info.getSupplicantState().toString());
-
-                    // ── New fields (Task 2) ──
-                    int freq = info.getFrequency();
-                    out.name("channel").value(frequencyToChannel(freq));
-                    out.name("band").value(bandFromFrequency(freq));
-                    out.name("rssi_percent").value(rssiToPercent(info.getRssi()));
-                    String standard = getWifiStandard(info);
-                    out.name("standard").value(standard);
-                    String generation = getWifiGeneration(freq, standard);
-                    if (generation != null) {
-                        out.name("wifi_generation").value(generation);
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        out.name("tx_link_speed_mbps").value(info.getTxLinkSpeedMbps());
-                        out.name("rx_link_speed_mbps").value(info.getRxLinkSpeedMbps());
-                        out.name("max_tx_link_speed_mbps").value(info.getMaxSupportedTxLinkSpeedMbps());
-                        out.name("max_rx_link_speed_mbps").value(info.getMaxSupportedRxLinkSpeedMbps());
-                    }
-                    writeLinkProperties(context, out);
+                    out.endObject();
+                    return;
                 }
+                boolean connected = info.getSupplicantState() == android.net.wifi.SupplicantState.COMPLETED;
+                out.name("connected").value(connected);
+                out.name("bssid").value(info.getBSSID());
+                out.name("frequency_mhz").value(info.getFrequency());
+                //noinspection deprecation
+                out.name("ip").value(Formatter.formatIpAddress(info.getIpAddress()));
+                out.name("link_speed_mbps").value(info.getLinkSpeed());
+                out.name("mac_address").value(info.getMacAddress());
+                out.name("network_id").value(info.getNetworkId());
+                out.name("rssi").value(info.getRssi());
+                // getSSID() is null while the radio is up but unassociated; .replaceAll() on
+                // that used to kill the whole reply instead of returning "".
+                String ssid = info.getSSID();
+                out.name("ssid").value(ssid == null ? "" : ssid.replaceAll("\"", ""));
+                out.name("ssid_hidden").value(info.getHiddenSSID());
+                out.name("supplicant_state").value(info.getSupplicantState().toString());
+
+                // ── New fields (Task 2) ──
+                int freq = info.getFrequency();
+                out.name("channel").value(frequencyToChannel(freq));
+                out.name("band").value(bandFromFrequency(freq));
+                out.name("rssi_percent").value(rssiToPercent(info.getRssi()));
+                String standard = getWifiStandard(info);
+                out.name("standard").value(standard);
+                String generation = getWifiGeneration(freq, standard);
+                if (generation != null) {
+                    out.name("wifi_generation").value(generation);
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    out.name("tx_link_speed_mbps").value(info.getTxLinkSpeedMbps());
+                    out.name("rx_link_speed_mbps").value(info.getRxLinkSpeedMbps());
+                    out.name("max_tx_link_speed_mbps").value(info.getMaxSupportedTxLinkSpeedMbps());
+                    out.name("max_rx_link_speed_mbps").value(info.getMaxSupportedRxLinkSpeedMbps());
+                }
+                writeLinkProperties(context, out);
                 out.endObject();
             }
         });
@@ -497,12 +667,28 @@ public class WifiAPI {
             || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
     }
 
+    /** The list a scan attempt produced, plus whether the platform actually scanned. */
+    private static final class ScanSnapshot {
+        final List<ScanResult> results;
+        final boolean requested;   // startScan() was accepted
+        final boolean completed;   // the SCAN_RESULTS_AVAILABLE_ACTION arrived in time
+
+        ScanSnapshot(List<ScanResult> results, boolean requested, boolean completed) {
+            this.results = results;
+            this.requested = requested;
+            this.completed = completed;
+        }
+    }
+
     /**
      * Ask the radio for a fresh scan and wait for its completion broadcast. The cached list
      * is empty on a device that has not scanned recently (fresh boot, Wi-Fi just toggled),
      * which used to look like "there are no networks around".
+     *
+     * It also reports whether the platform accepted and finished the scan: without that
+     * a throttled startScan() degrades silently into "here is the cache, looks live".
      */
-    private static List<ScanResult> refreshScanResults(Context context, WifiManager manager, long timeoutMs) {
+    private static ScanSnapshot refreshScanResults(Context context, WifiManager manager, long timeoutMs) {
         final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
         android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
             @Override
@@ -521,15 +707,22 @@ public class WifiAPI {
         try {
             if (!manager.startScan()) {
                 // Throttled (a few scans per two minutes) or refused: cached results only.
-                return manager.getScanResults();
+                return new ScanSnapshot(manager.getScanResults(), false, false);
             }
+            boolean completed = false;
             if (registered) {
-                latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                completed = latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
             }
-            return manager.getScanResults();
+            return new ScanSnapshot(manager.getScanResults(), true, completed);
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "startScan failed", e);
-            return manager.getScanResults();
+            List<ScanResult> cached = null;
+            try {
+                cached = manager.getScanResults();
+            } catch (RuntimeException ignored) {
+                // Reading the cache failed as well; the caller reports that instead of [].
+            }
+            return new ScanSnapshot(cached, false, false);
         } finally {
             if (registered) {
                 try {
@@ -538,6 +731,72 @@ public class WifiAPI {
                 }
             }
         }
+    }
+
+    /** One array element; the field set is what scan-info has always returned. */
+    private static void writeScanResult(JsonWriter out, ScanResult scan) throws Exception {
+        out.beginObject();
+        out.name("bssid").value(scan.BSSID);
+        out.name("frequency_mhz").value(scan.frequency);
+        out.name("band").value(bandFromFrequency(scan.frequency));
+        out.name("rssi").value(scan.level);
+        out.name("rssi_percent").value(rssiToPercent(scan.level));
+        // SSID is null on a hidden/blank entry and JsonWriter.value(null) writes JSON null,
+        // which jq then trips over - keep it a string.
+        out.name("ssid").value(scan.SSID == null ? "" : scan.SSID);
+        out.name("timestamp").value(scan.timestamp);
+
+        int channelWidth = scan.channelWidth;
+        String channelWidthMhz = "???";
+        switch (channelWidth) {
+            case ScanResult.CHANNEL_WIDTH_20MHZ:
+                channelWidthMhz = "20";
+                break;
+            case ScanResult.CHANNEL_WIDTH_40MHZ:
+                channelWidthMhz = "40";
+                break;
+            case ScanResult.CHANNEL_WIDTH_80MHZ:
+                channelWidthMhz = "80";
+                break;
+            case ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ:
+                channelWidthMhz = "80+80";
+                break;
+            case ScanResult.CHANNEL_WIDTH_160MHZ:
+                channelWidthMhz = "160";
+                break;
+        }
+        out.name("channel_bandwidth_mhz").value(channelWidthMhz);
+        if (channelWidth != ScanResult.CHANNEL_WIDTH_20MHZ) {
+            out.name("center_frequency_mhz").value(scan.centerFreq0);
+        }
+        if (!TextUtils.isEmpty(scan.capabilities)) {
+            out.name("capabilities").value(scan.capabilities);
+        }
+        if (!TextUtils.isEmpty(scan.operatorFriendlyName)) {
+            out.name("operator_name").value(scan.operatorFriendlyName.toString());
+        }
+        if (!TextUtils.isEmpty(scan.venueName)) {
+            out.name("venue_name").value(scan.venueName.toString());
+        }
+
+        if (!TextUtils.isEmpty(scan.capabilities)) {
+            out.name("security_type").value(getSecurityType(scan.capabilities));
+        }
+        out.name("channel").value(frequencyToChannel(scan.frequency));
+        String generation = getScanResultGeneration(scan);
+        if (generation != null) {
+            out.name("wifi_generation").value(generation);
+        }
+
+        out.endObject();
+    }
+
+    private static void writeScanResults(JsonWriter out, List<ScanResult> scans) throws Exception {
+        out.beginArray();
+        for (ScanResult scan : scans) {
+            writeScanResult(out, scan);
+        }
+        out.endArray();
     }
 
     public static void onReceiveWifiScanInfo(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
@@ -551,83 +810,96 @@ public class WifiAPI {
                     out.beginObject().name("API_ERROR").value("WifiManager unavailable").endObject();
                     return;
                 }
-                if (!manager.isWifiEnabled()) {
-                    // With Wi-Fi off getScanResults() returns an empty list, which used
-                    // to look like "no networks around" instead of "the radio is off".
-                    out.beginObject().name("API_ERROR").value("Wi-Fi is off - turn it on and retry").endObject();
+                WifiRadio radio = WifiRadio.read(manager);
+                if (!radio.radioOn()) {
+                    // The radio is down (or on its way down) yet getScanResults() still answers
+                    // from its last cache - which is how a scan run just after the user switched
+                    // Wi-Fi off came back looking live. Name the radio state, serve nothing.
+                    out.beginObject();
+                    if (radio.off()) {
+                        out.name("API_ERROR").value("Wi-Fi is off - turn it on and retry");
+                    } else if (radio.state == WifiManager.WIFI_STATE_UNKNOWN) {
+                        out.name("API_ERROR").value(
+                            "Wi-Fi radio state could not be read - turn Wi-Fi on and retry");
+                    } else {
+                        out.name("API_ERROR").value("Wi-Fi radio is " + radio.stateName()
+                            + " - retry when it has settled");
+                    }
+                    writeRadioFields(out, radio);
+                    out.name("results_served").value(false);
+                    out.endObject();
                     return;
                 }
-                List<ScanResult> scans = manager.getScanResults();
-                if ((scans == null || scans.isEmpty()) && isLocationEnabled(context)) {
+
+                boolean locationEnabled = isLocationEnabled(context);
+                List<ScanResult> cached = null;
+                try {
+                    cached = manager.getScanResults();
+                } catch (SecurityException e) {
+                    // Android 10+ hands out scan results only to a caller with location access;
+                    // the read throws instead of returning nothing.
+                    String msg = e.getMessage() == null ? "permission denied" : e.getMessage();
+                    out.beginObject();
+                    out.name("API_ERROR").value("Cannot read scan results: " + msg);
+                    writeRadioFields(out, radio);
+                    out.endObject();
+                    return;
+                }
+                ScanSnapshot snapshot = new ScanSnapshot(cached, false, false);
+                if ((cached == null || cached.isEmpty()) && locationEnabled) {
                     // No cached results: ask the radio itself instead of reporting "none".
-                    scans = refreshScanResults(context, manager, 6000);
+                    snapshot = refreshScanResults(context, manager, 6000);
                 }
-                if (scans != null) {
-                    scans = filterScans(intent, scans);
+                if (snapshot.results == null) {
+                    out.beginObject();
+                    out.name("API_ERROR").value("Failed getting scan results");
+                    writeRadioFields(out, radio);
+                    out.endObject();
+                    return;
                 }
-                if (scans == null) {
-                    out.beginObject().name("API_ERROR").value("Failed getting scan results").endObject();
-                } else if (scans.isEmpty() && !isLocationEnabled(context)) {
+
+                List<ScanResult> scans = filterScans(intent, snapshot.results);
+                long ageSeconds = newestScanAgeSeconds(snapshot.results);
+                // Only a scan that finished during this call, or a cache younger than the
+                // freshness window, may be presented as current.
+                boolean current = snapshot.completed
+                    || (ageSeconds >= 0 && ageSeconds <= CACHE_FRESH_SECONDS);
+                boolean noResults = snapshot.results.isEmpty();
+
+                if (noResults && !locationEnabled) {
                     String errorMessage = "Location needs to be enabled on the device";
-                    out.beginObject().name("API_ERROR").value(errorMessage).endObject();
-                } else {
-                    out.beginArray();
-                    for (ScanResult scan : scans) {
-                        out.beginObject();
-                        out.name("bssid").value(scan.BSSID);
-                        out.name("frequency_mhz").value(scan.frequency);
-                        out.name("band").value(bandFromFrequency(scan.frequency));
-                        out.name("rssi").value(scan.level);
-                        out.name("rssi_percent").value(rssiToPercent(scan.level));
-                        out.name("ssid").value(scan.SSID);
-                        out.name("timestamp").value(scan.timestamp);
-
-                        int channelWidth = scan.channelWidth;
-                        String channelWidthMhz = "???";
-                        switch (channelWidth) {
-                            case ScanResult.CHANNEL_WIDTH_20MHZ:
-                                channelWidthMhz = "20";
-                                break;
-                            case ScanResult.CHANNEL_WIDTH_40MHZ:
-                                channelWidthMhz = "40";
-                                break;
-                            case ScanResult.CHANNEL_WIDTH_80MHZ:
-                                channelWidthMhz = "80";
-                                break;
-                            case ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ:
-                                channelWidthMhz = "80+80";
-                                break;
-                            case ScanResult.CHANNEL_WIDTH_160MHZ:
-                                channelWidthMhz = "160";
-                                break;
-                        }
-                        out.name("channel_bandwidth_mhz").value(channelWidthMhz);
-                        if (channelWidth != ScanResult.CHANNEL_WIDTH_20MHZ) {
-                            out.name("center_frequency_mhz").value(scan.centerFreq0);
-                        }
-                        if (!TextUtils.isEmpty(scan.capabilities)) {
-                            out.name("capabilities").value(scan.capabilities);
-                        }
-                        if (!TextUtils.isEmpty(scan.operatorFriendlyName)) {
-                            out.name("operator_name").value(scan.operatorFriendlyName.toString());
-                        }
-                        if (!TextUtils.isEmpty(scan.venueName)) {
-                            out.name("venue_name").value(scan.venueName.toString());
-                        }
-
-                        // ── New fields (Task 2) ──
-                        if (!TextUtils.isEmpty(scan.capabilities)) {
-                            out.name("security_type").value(getSecurityType(scan.capabilities));
-                        }
-                        out.name("channel").value(frequencyToChannel(scan.frequency));
-                        String generation = getScanResultGeneration(scan);
-                        if (generation != null) {
-                            out.name("wifi_generation").value(generation);
-                        }
-
-                        out.endObject();
+                    out.beginObject();
+                    out.name("API_ERROR").value(errorMessage);
+                    writeRadioFields(out, radio);
+                    out.endObject();
+                } else if (noResults && !current) {
+                    out.beginObject();
+                    out.name("API_ERROR").value(snapshot.requested
+                        ? "Wi-Fi scan did not finish within 6 s and nothing is cached"
+                        : "No scan results yet - the platform refused a new scan and the cache is empty");
+                    writeRadioFields(out, radio);
+                    out.name("scan_requested").value(snapshot.requested);
+                    out.endObject();
+                } else if (!current || intent.getBooleanExtra("verbose", false)) {
+                    // Cached (or explicitly verbose) answer: the radio state and the age of the
+                    // list travel with the results, so it cannot be read as a live scan.
+                    out.beginObject();
+                    writeRadioFields(out, radio);
+                    out.name("cached").value(!current);
+                    out.name("scan_requested").value(snapshot.requested);
+                    out.name("scan_completed").value(snapshot.completed);
+                    if (ageSeconds >= 0) {
+                        out.name("scan_age_seconds").value(ageSeconds);
                     }
-                    out.endArray();
+                    if (!current) {
+                        out.name("note").value("cached scan list: the platform did not complete a "
+                            + "new scan, so these networks are not verified to be current");
+                    }
+                    out.name("results");
+                    writeScanResults(out, scans);
+                    out.endObject();
+                } else {
+                    writeScanResults(out, scans);
                 }
             }
         });
@@ -636,50 +908,80 @@ public class WifiAPI {
     public static void onReceiveWifiEnable(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceiveWifiEnable");
 
-        ResultReturner.returnData(apiReceiver, intent, out -> {
-            WifiManager manager = (WifiManager) context.getApplicationContext()
-                .getSystemService(Context.WIFI_SERVICE);
-            boolean wanted = intent.getBooleanExtra("enabled", false);
-            if (manager == null) {
-                out.append("{\"API_ERROR\":\"WifiManager unavailable\"}\n");
-                return;
-            }
-            boolean applied;
-            try {
-                applied = manager.setWifiEnabled(wanted);
-            } catch (SecurityException e) {
-                String msg = e.getMessage() == null ? "permission denied" : e.getMessage();
-                out.append("{\"API_ERROR\":\"Android refused to change Wi-Fi state: ")
-                   .append(msg).append("\"}\n");
-                return;
-            }
-            if (!applied) {
-                // CHANGE_WIFI_STATE is declared and targetSdkVersion is 28, so a false here
-                // means the platform itself refused (some ROMs gate the toggle). Report it;
-                // the caller decides what to do.
-                out.append("{\"enabled\":").append(manager.isWifiEnabled() ? "true" : "false")
-                   .append(",\"API_ERROR\":\"setWifiEnabled returned false - the platform "
-                       + "refused the Wi-Fi toggle\"}\n");
-                return;
-            }
-            // setWifiEnabled() is asynchronous: read the radio back instead of echoing the
-            // argument, otherwise the CLI reports a state the device never reached.
-            long deadline = System.currentTimeMillis() + 4000;
-            while (manager.isWifiEnabled() != wanted && System.currentTimeMillis() < deadline) {
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
+        ResultReturner.returnData(apiReceiver, intent, new ResultJsonWriter() {
+            @Override
+            public void writeJson(JsonWriter out) throws Exception {
+                WifiManager manager = (WifiManager) context.getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
+                if (manager == null) {
+                    out.beginObject().name("API_ERROR").value("WifiManager unavailable").endObject();
+                    return;
                 }
+                if (!intent.hasExtra("enabled")) {
+                    // Defaulting a missing extra to false used to switch the radio off.
+                    out.beginObject();
+                    out.name("API_ERROR").value("Missing 'enabled' extra - pass true or false");
+                    out.endObject();
+                    return;
+                }
+                boolean wanted = intent.getBooleanExtra("enabled", false);
+                WifiRadio before = WifiRadio.read(manager);
+                out.beginObject();
+                out.name("requested").value(wanted);
+
+                // Already where the caller wants it: do not call setWifiEnabled() at all.
+                // It answers false for a no-op on several OEM builds, and that false was
+                // reported as "the platform refused" on a call that had nothing to do.
+                if (before.on() == wanted && !before.transitional()) {
+                    out.name("enabled").value(wanted);
+                    out.name("changed").value(false);
+                    out.name("already_in_state").value(true);
+                    out.name("previous_enabled").value(before.settingEnabled);
+                    writeRadioFields(out, before);
+                    out.endObject();
+                    return;
+                }
+
+                boolean requested;
+                try {
+                    if (before.transitional()) {
+                        // A toggle is already in flight; asking again would be a no-op.
+                        requested = true;
+                    } else {
+                        requested = manager.setWifiEnabled(wanted);
+                    }
+                } catch (SecurityException e) {
+                    String msg = e.getMessage() == null ? "permission denied" : e.getMessage();
+                    WifiRadio after = WifiRadio.read(manager);
+                    out.name("enabled").value(after.up());
+                    out.name("changed").value(false);
+                    out.name("previous_enabled").value(before.settingEnabled);
+                    writeRadioFields(out, after);
+                    out.name("API_ERROR").value("Android refused to change Wi-Fi state: " + msg);
+                    out.endObject();
+                    return;
+                }
+
+                // setWifiEnabled() is asynchronous and its return value is advisory: what
+                // counts is the radio read back, not the argument echoed.
+                waitForWifiState(manager, wanted, WIFI_TOGGLE_TIMEOUT_MS);
+                WifiRadio after = WifiRadio.read(manager);
+                boolean actual = after.up();
+                out.name("enabled").value(actual);
+                out.name("changed").value(actual != before.up());
+                out.name("previous_enabled").value(before.settingEnabled);
+                writeRadioFields(out, after);
+                if (actual != wanted) {
+                    out.name("API_ERROR").value(requested
+                        ? "Wi-Fi did not reach the requested state within 4 s"
+                        : "setWifiEnabled returned false - the platform refused the Wi-Fi toggle");
+                } else if (!requested) {
+                    out.name("note").value("setWifiEnabled() returned false although the radio "
+                        + "reached the requested state (several OEM builds answer false for a "
+                        + "toggle they did perform)");
+                }
+                out.endObject();
             }
-            boolean actual = manager.isWifiEnabled();
-            if (actual != wanted) {
-                out.append("{\"enabled\":").append(actual ? "true" : "false")
-                   .append(",\"API_ERROR\":\"Wi-Fi did not reach the requested state within 4 s\"}\n");
-                return;
-            }
-            out.append("{\"enabled\":").append(actual ? "true" : "false").append("}\n");
         });
     }
 
