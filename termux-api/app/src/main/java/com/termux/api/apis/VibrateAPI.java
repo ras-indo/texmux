@@ -1,7 +1,6 @@
 package com.termux.api.apis;
 
 import android.content.Context;
-import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.os.Build;
@@ -13,7 +12,6 @@ import com.termux.api.util.ResultReturner;
 import com.termux.shared.logger.Logger;
 
 public class VibrateAPI {
-
     private static final String LOG_TAG = "VibrateAPI";
 
     public static void onReceive(TermuxApiReceiver apiReceiver, Context context, Intent intent) {
@@ -30,7 +28,8 @@ public class VibrateAPI {
                     // A silent "success" on a device that cannot vibrate reads as a broken
                     // command, so answer instead of returning nothing.
                     ResultReturner.returnData(context, intent,
-                            out -> out.println("{\"API_ERROR\":\"No vibrator on this device\"}"));
+                            out -> out.println("{\"API_ERROR\":\"No vibrator on this device\"}");
+                    );
                     return;
                 }
 
@@ -38,7 +37,8 @@ public class VibrateAPI {
                 if (am == null) {
                     Logger.logError(LOG_TAG, "Audio service null");
                     ResultReturner.returnData(context, intent,
-                            out -> out.println("{\"API_ERROR\":\"Audio service unavailable\"}"));
+                            out -> out.println("{\"API_ERROR\":\"Audio service unavailable\"}")
+                    );
                     return;
                 }
 
@@ -47,10 +47,10 @@ public class VibrateAPI {
                     try {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             vibrator.vibrate(VibrationEffect.createOneShot(milliseconds, VibrationEffect.DEFAULT_AMPLITUDE),
-                                new AudioAttributes.Builder()
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                    .setUsage(AudioAttributes.USAGE_ALARM)
-                                    .build());
+                                    new AudioAttributes.Builder()
+                                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                            .setUsage(AudioAttributes.USAGE_ALARM)
+                                            .build());
                         } else {
                             vibrator.vibrate(milliseconds);
                         }
@@ -60,10 +60,13 @@ public class VibrateAPI {
                         Logger.logStackTraceWithMessage(LOG_TAG, "Failed to run vibrator", e);
                     }
                 }
+
+                // Always send a response so the client knows the outcome
+                ResultReturner.returnData(context, intent, out -> {
+                    out.println("{\"vibrated\":true,\"duration_ms\":" + milliseconds + "}");
+                });
             }
         }.start();
-
-        ResultReturner.noteDone(apiReceiver, intent);
     }
 
 }

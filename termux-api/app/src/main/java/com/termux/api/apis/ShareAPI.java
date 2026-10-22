@@ -63,7 +63,7 @@ public class ShareAPI {
                 @Override
                 public void writeResult(PrintWriter out) {
                     if (TextUtils.isEmpty(inputString)) {
-                        out.println("Error: Nothing to share");
+                        out.println("{\"API_ERROR\":\"Nothing to share\"}");
                         return;
                     }
 
@@ -77,6 +77,7 @@ public class ShareAPI {
 
                     context.startActivity(Intent.createChooser(sendIntent, context.getResources().getText(R.string.share_file_chooser_title)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
 
+                    out.println("{\"shared\":true,\"type\":\"text\"}");
                 }
             });
         } else {
@@ -121,6 +122,8 @@ public class ShareAPI {
                     sendIntent = Intent.createChooser(sendIntent, context.getResources().getText(R.string.share_file_chooser_title)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 }
                 context.startActivity(sendIntent);
+
+                out.println("{\"shared\":true,\"type\":\"" + contentTypeToUse + "\"}");
             });
         }
     }

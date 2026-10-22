@@ -146,6 +146,37 @@ check("stdin: base64 inlined", sent.get("stdin") == "cGlwZWQtZGF0YQ==", str(sent
 check("stdin: length recorded", sent.get("stdinLen") == 10, str(sent.get("stdinLen")))
 d.stop()
 
+# ── 8. -a is order independent: intentAction stays at the top level ───────
+# Regression: the client used to write the action into whatever buffer
+# position it had reached, so "-a record" placed AFTER an extra landed
+# inside "args" instead of at the top level. The app then never saw an
+# Intent action and answered "Unknown command: null".
+def action_case(label, args, expect_action):
+    d = MockDaemon(reply=b'{"ok":true}')
+    d.start()
+    d.ready.wait(2)
+    rc, out, err, _ = run_client(args)
+    d.join(5)
+    sent = json.loads(d.received) if d.received else {}
+    has_top = "intentAction" in sent
+    in_args = "intentAction" in (sent.get("args") or {})
+    if expect_action is None:
+        # No action requested: there must be no action anywhere.
+        ok = not has_top and not in_args
+    else:
+        # Action requested: it must be at the top level and nowhere else.
+        ok = has_top and not in_args and sent.get("intentAction") == expect_action
+    check(f"-a order: {label}", ok, d.received or "-")
+    d.stop()
+
+
+action_case("action first", ["MicRecorder", "-a", "record"], "record")
+action_case("action after one extra", ["MicRecorder", "--ei", "limit", "3000", "-a", "record"], "record")
+action_case("action after two extras",
+            ["MicRecorder", "--ei", "limit", "3000", "--es", "encoder", "aac", "-a", "record"], "record")
+action_case("action in the middle", ["MicRecorder", "-a", "record", "--ei", "limit", "3000"], "record")
+action_case("no action", ["MicRecorder", "--ei", "limit", "3000"], None)
+
 passed = sum(1 for _, ok, _ in results if ok)
 print(f"\n{passed}/{len(results)} checks passed")
 sys.exit(0 if passed == len(results) else 1)

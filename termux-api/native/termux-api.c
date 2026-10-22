@@ -344,6 +344,9 @@ char *build_json_command(int argc, char **argv, size_t *out_len) {
 
     /* Args */
     int first_arg = 1;
+    /* The action is a top-level field of the request, so it is collected
+     * here instead of being written where the flag happened to appear. */
+    char *intent_action = NULL;
     for (int i = 2; i < argc; i++) {
         const char *flag = argv[i];
 
@@ -435,9 +438,13 @@ char *build_json_command(int argc, char **argv, size_t *out_len) {
         else if (strcmp(flag, "-a") == 0) {
             if (i + 1 < argc) {
                 const char *val = argv[++i];
-                char *ev = json_escape(val);
-                pos += snprintf(buf + pos, cap - pos, ",\"intentAction\":%s", ev);
-                free(ev);
+                /* Kept aside: it is written as a top-level field once the
+                 * args object is closed. Writing it here put it inside
+                 * "args" whenever the flag followed an extra, and the app
+                 * then dispatched the request without an action and
+                 * answered "Unknown command: null". */
+                free(intent_action);
+                intent_action = strdup(val ? val : "");
             }
         }
         else {
@@ -457,6 +464,22 @@ char *build_json_command(int argc, char **argv, size_t *out_len) {
 
     if (!first_arg) {
         buf[pos++] = '}'; /* close args */
+    }
+
+    /* The action belongs to the request, not to its arguments. It is
+     * written here, after "args" is closed, so the order of the flags on
+     * the command line cannot change the shape of the request. */
+    if (intent_action) {
+        if (pos + 256 >= cap) {
+            char *grown = realloc(buf, cap * 2);
+            if (!grown) { free(buf); free(intent_action); *out_len = 0; return NULL; }
+            buf = grown;
+            cap *= 2;
+        }
+        char *ev = json_escape(intent_action);
+        pos += snprintf(buf + pos, cap - pos, ",\"intentAction\":%s", ev);
+        free(ev);
+        free(intent_action);
     }
 
     /* Inline stdin */

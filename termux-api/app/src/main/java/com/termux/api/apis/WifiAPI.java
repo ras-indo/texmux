@@ -103,7 +103,7 @@ public class WifiAPI {
 
         String command = intent.getStringExtra("command");
         if (command == null) {
-            Logger.logError(LOG_TAG, "Missing 'command' extra");
+            ResultReturner.returnData(context, intent, out -> out.println("{\"API_ERROR\":\"Missing 'command' extra. Valid commands are: connection-info, scan-info, enable, hotspot, hotspot-status, hotspot-stop, hotspot-enable, hotspot-disable, hotspot-clients, p2p-discover, p2p-connect, p2p-group, aware-attach, aware-publish, aware-subscribe, rtt-range, suggest\"}"));
             return;
         }
 
@@ -161,7 +161,7 @@ public class WifiAPI {
                     onReceiveNetworkSuggestion(apiReceiver, context, intent);
                     break;
                 default:
-                    Logger.logError(LOG_TAG, "Unrecognized wifi command: '" + command + "'");
+                    ResultReturner.returnData(context, intent, out -> out.println("{\"API_ERROR\":\"Unrecognized wifi command: '" + command + "'. Valid commands are: connection-info, scan-info, enable, hotspot, hotspot-status, hotspot-stop, hotspot-enable, hotspot-disable, hotspot-clients, p2p-discover, p2p-connect, p2p-group, aware-attach, aware-publish, aware-subscribe, rtt-range, suggest\"}"));
             }
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error in wifi command: " + command, e);

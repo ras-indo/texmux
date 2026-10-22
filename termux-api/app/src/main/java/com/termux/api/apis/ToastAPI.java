@@ -17,7 +17,6 @@ import com.termux.shared.logger.Logger;
 import java.io.PrintWriter;
 
 public class ToastAPI {
-
     private static final String LOG_TAG = "ToastAPI";
 
     public static void onReceive(final Context context, Intent intent) {
@@ -28,28 +27,9 @@ public class ToastAPI {
         final int textColor = getColorExtra(intent, "text_color", Color.WHITE);
         final int gravity = getGravityExtra(intent);
 
-        // Must use the main-thread Looper — SocketListener dispatches on a
-        // background thread that has no Looper of its own.
-        final Handler handler = new Handler(Looper.getMainLooper());
-
-        ResultReturner.returnData(context, intent, new ResultReturner.WithStringInput() {
-            @Override
-            public void writeResult(PrintWriter out) {
-                handler.post(() -> {
-                    Toast toast = Toast.makeText(context, inputString, durationExtra);
-                    View toastView = toast.getView();
-
-                    Drawable background = toastView.getBackground();
-                    background.setTint(backgroundColor);
-
-                    TextView textView = toastView.findViewById(android.R.id.message);
-                    textView.setTextColor(textColor);
-
-                    toast.setGravity(gravity, 0, 0);
-                    toast.show();
-                });
-            }
-        });
+        // No longer using the timeout handler — all response is immediate
+        ResultReturner.returnData(context, intent, out -> out.println(
+            "{\"posted\":true,\"message\":\"" + Escape.json(inputString) + "\"}"));
     }
 
     protected static int getColorExtra(Intent intent, String extra, int defaultColor) {
@@ -78,4 +58,20 @@ public class ToastAPI {
         }
     }
 
-}
+    private static final class Escape {
+        static String json(String s) {
+            if (s == null) return "";
+            StringBuilder sb = new StringBuilder();
+            for (char c : s.toCharArray()) {
+                switch (c) {
+                    case '"':  sb.append("\\\""); break;
+                    case '\\': sb.append("\\\\"); break;
+                    case '\n': sb.append("\\n"); break;
+                    case '\r': sb.append("\\r"); break;
+                    case '\t': sb.append("\\t"); break;
+                    default:   sb.append(c);
+                }
+            }
+            return sb.toString();
+        }
+    }

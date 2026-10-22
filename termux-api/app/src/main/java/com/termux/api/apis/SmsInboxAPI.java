@@ -342,18 +342,25 @@ public class SmsInboxAPI {
 
         int index;
         Uri contactUri = Uri.withAppendedPath(PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number));
-        try (Cursor c = context.getContentResolver().query(contactUri, DISPLAY_NAME_PROJECTION, null, null, null)) {
-            String name = null;
-            if (c.moveToFirst()) {
+        Cursor c = null;
+        try {
+            c = context.getContentResolver().query(contactUri, DISPLAY_NAME_PROJECTION, null, null, null);
+            if (c != null && c.moveToFirst()) {
                 index = c.getColumnIndex(PhoneLookup.DISPLAY_NAME);
                 if (index >= 0) {
-                    name = c.getString(index);
+                    String name = c.getString(index);
+                    cache.put(number, name);
+                    return name;
                 }
             }
-
-            cache.put(number, name);
-            return name;
+        } catch (SecurityException e) {
+            // READ_CONTACTS not granted: fall back to the raw number below.
+            Logger.logError(LOG_TAG, "Cannot resolve contact name for " + number + ": " + e.getMessage());
+        } finally {
+            if (c != null) c.close();
         }
+        cache.put(number, null);
+        return null;
     }
 
     private static String getMessageType(int type) {

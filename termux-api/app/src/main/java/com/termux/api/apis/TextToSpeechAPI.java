@@ -117,6 +117,7 @@ public class TextToSpeechAPI {
                         try {
                             if (!mTtsLatch.await(10, TimeUnit.SECONDS)) {
                                 Logger.logError(LOG_TAG, "Timeout waiting for TTS initialization");
+                                out.println("{\"success\":false,\"error\":\"TTS initialization timed out\"}");
                                 return;
                             }
                         } catch (InterruptedException e) {
@@ -142,7 +143,8 @@ public class TextToSpeechAPI {
                             return;
                         }
 
-                        final AtomicInteger ttsDoneUtterancesCount = new AtomicInteger();
+                        final AtomicInteger submittedUtterances = new AtomicInteger();
+                        final AtomicInteger completedUtterances = new AtomicInteger();
 
                         mTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                             @Override
@@ -152,18 +154,18 @@ public class TextToSpeechAPI {
 
                             @Override
                             public void onError(String utteranceId) {
-                                Logger.logError(LOG_TAG, "UtteranceProgressListener.onError() called");
-                                synchronized (ttsDoneUtterancesCount) {
-                                    ttsDoneUtterancesCount.incrementAndGet();
-                                    ttsDoneUtterancesCount.notify();
+                                Logger.logError(LOG_TAG, "UtteranceProgressListener.onError: " + utteranceId);
+                                synchronized (completedUtterances) {
+                                    completedUtterances.incrementAndGet();
+                                    completedUtterances.notify();
                                 }
                             }
 
                             @Override
                             public void onDone(String utteranceId) {
-                                synchronized (ttsDoneUtterancesCount) {
-                                    ttsDoneUtterancesCount.incrementAndGet();
-                                    ttsDoneUtterancesCount.notify();
+                                synchronized (completedUtterances) {
+                                    completedUtterances.incrementAndGet();
+                                    completedUtterances.notify();
                                 }
                             }
                         });
@@ -183,25 +185,68 @@ public class TextToSpeechAPI {
                         params.putInt(Engine.KEY_PARAM_STREAM, streamToUse);
                         params.putString(Engine.KEY_PARAM_UTTERANCE_ID, utteranceId);
 
-                        int submittedUtterances = 0;
-
+                        int submittedCount = 0;
                         try (BufferedReader reader = new BufferedReader(new InputStreamReader(in))) {
                             String line;
                             while ((line = reader.readLine()) != null) {
                                 if (!line.isEmpty()) {
-                                    submittedUtterances++;
-                                    mTts.speak(line, TextToSpeech.QUEUE_ADD, params, utteranceId);
+                                    submittedCount++;
+                                    // Speak returns TextToSpeech.SUCCESS (0),
+                                    // TextToSpeech.QUEUED (1), or an error code < 0.
+                                    // Check the return code — a value < 0 means the engine
+                                    // rejected this utterance (e.g. engine not ready). Report
+                                    // as JSON immediately instead of hanging on the wait.
+                                    int speakResult = mTts.speak(line, TextToSpeech.QUEUE_ADD, params, utteranceId);
+                                    if (speakResult < 0) {
+                                        // Engine returned an error — report as JSON
+                                        out.println("{\"success\":false,\"error\":\"TTS speak failed (code=" + speakResult + ")\"}");
+                                        return;
+                                    }
                                 }
                             }
                         }
 
-                        synchronized (ttsDoneUtterancesCount) {
-                            while (ttsDoneUtterancesCount.get() != submittedUtterances) {
-                                ttsDoneUtterancesCount.wait();
+                        if (submittedCount > 0) {
+                            // Wait with a bounded timeout for all onDone/onError callbacks.
+                            // Each speak() call increments completedUtterances via the listener;
+                            // we poll it with a timeout so a failed engine can never hang.
+                            long deadlineMs = System.currentTimeMillis() + 30000;
+                            boolean timedOut = false;
+                            synchronized (completedUtterances) {
+                                while (completedUtterances.get() < submittedCount) {
+                                    try {
+                                        long remainingMs = deadlineMs - System.currentTimeMillis();
+                                        if (remainingMs <= 0) {
+                                            timedOut = true;
+                                            break;
+                                        }
+                                        completedUtterances.wait(remainingMs);
+                                    } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                        break;
+                                    }
+                                }
                             }
+
+                            if (completedUtterances.get() < submittedCount) {
+                                // Speech did not complete in bounded time or engine failed.
+                                out.println("{\"success\":false,\"error\":\"TTS speech did not complete in time\"}");
+                                return;
+                            }
+                        }
+
+                        // Success: emit JSON ack.
+                        JSONObject ack = new JSONObject();
+                        try {
+                            ack.put("success", true);
+                            ack.put("message", "Speech completed: " + submittedCount);
+                            out.println(ack.toString());
+                        } catch (Exception e) {
+                            out.println("{\"success\":true}");
                         }
                     } catch (Exception e) {
                         Logger.logStackTraceWithMessage(LOG_TAG, "TTS error", e);
+                        out.println("{\"success\":false,\"error\":\"TTS error: " + e.getMessage() + "\"}");
                     }
                 }
             });

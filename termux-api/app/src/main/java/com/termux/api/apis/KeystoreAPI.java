@@ -48,7 +48,14 @@ public class KeystoreAPI {
     public static void onReceive(TermuxApiReceiver apiReceiver, Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceive");
 
-        switch (intent.getStringExtra("command")) {
+        String command = intent.getStringExtra("command");
+        if (command == null || command.isEmpty()) {
+            printErrorMessage(apiReceiver, intent,
+                "Command is required. Valid commands are: list, generate, delete, sign, verify");
+            return;
+        }
+
+        switch (command.toLowerCase()) {
             case "list":
                 listKeys(apiReceiver, intent);
                 break;
@@ -64,6 +71,9 @@ public class KeystoreAPI {
             case "verify":
                 verifyData(apiReceiver, intent);
                 break;
+            default:
+                printErrorMessage(apiReceiver, intent,
+                    "Unknown command: " + command + ". Valid commands are: list, generate, delete, sign, verify");
         }
     }
 
@@ -337,7 +347,7 @@ public class KeystoreAPI {
         return byteStream.toByteArray();
     }
 
-    private static void printErrorMessage(TermuxApiReceiver apiReceiver, Intent intent) {
-        ResultReturner.returnData(apiReceiver, intent, out -> out.println("termux-keystore requires at least Android 6.0 (Marshmallow)."));
+    private static void printErrorMessage(TermuxApiReceiver apiReceiver, Intent intent, String message) {
+        ResultReturner.returnData(apiReceiver, intent, out -> out.println(message));
     }
 }

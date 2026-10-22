@@ -97,8 +97,8 @@ public class LocationAPI {
                     request = REQUEST_ONCE;
                 switch (request) {
                     case REQUEST_LAST_KNOWN:
-                        Location lastKnownLocation = manager.getLastKnownLocation(provider);
-                        locationToJson(lastKnownLocation, out);
+                        Location lastKnownLocation = getLastKnownWithFallback(manager, provider);
+                        locationToJson(lastKnownLocation, out, provider);
                         break;
                     case REQUEST_ONCE:
                         // requestSingleUpdate() only calls back when a fix
@@ -216,9 +216,63 @@ public class LocationAPI {
         });
     }
 
+    /**
+     * Reads the last known fix, falling back to the other providers when the
+     * requested one has nothing cached.
+     *
+     * getLastKnownLocation() returns null whenever that provider has no
+     * cached fix, which is the normal case indoors for GPS and on a device
+     * where the network provider has never run. The old code answered
+     * "Failed to get location" for that, even though the platform did hold a
+     * perfectly good fix under a different provider. The newest fix across
+     * the enabled providers is returned instead, so the answer names the
+     * provider it actually came from.
+     */
+    private static Location getLastKnownWithFallback(LocationManager manager, String provider) {
+        Location best = null;
+        try {
+            best = manager.getLastKnownLocation(provider);
+        } catch (SecurityException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "getLastKnownLocation(" + provider + ")", e);
+        } catch (IllegalArgumentException e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "getLastKnownLocation(" + provider + ")", e);
+        }
+
+        String[] fallbacks = {LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER,
+                LocationManager.PASSIVE_PROVIDER};
+        for (String candidate : fallbacks) {
+            if (candidate.equals(provider)) continue;
+            Location other;
+            try {
+                other = manager.getLastKnownLocation(candidate);
+            } catch (SecurityException e) {
+                continue;
+            } catch (IllegalArgumentException e) {
+                continue;
+            }
+            if (other == null) continue;
+            if (best == null || other.getTime() > best.getTime()) {
+                best = other;
+            }
+        }
+        return best;
+    }
+
     static void locationToJson(Location lastKnownLocation, JsonWriter out) throws IOException {
+        locationToJson(lastKnownLocation, out, null);
+    }
+
+    static void locationToJson(Location lastKnownLocation, JsonWriter out, String requestedProvider)
+            throws IOException {
         if (lastKnownLocation == null) {
-            out.beginObject().name("API_ERROR").value("Failed to get location").endObject();
+            // Say which providers were asked and what to do instead: the old
+            // text named no way out of the dead end.
+            out.beginObject()
+                    .name("API_ERROR").value("Failed to get location")
+                    .name("hint").value("Tidak ada fix tersimpan di provider mana pun. "
+                            + "Pastikan Location menyala, lalu pakai 'termux-location -r once' "
+                            + "untuk meminta fix baru.")
+                    .endObject();
             return;
         }
         out.beginObject();
@@ -234,6 +288,13 @@ public class LocationAPI {
         long elapsedMs = (SystemClock.elapsedRealtimeNanos() - lastKnownLocation.getElapsedRealtimeNanos()) / 1000000;
         out.name("elapsedMs").value(elapsedMs);
         out.name("provider").value(lastKnownLocation.getProvider());
+        // The fix may have come from another provider than the one asked for;
+        // saying so keeps the answer honest instead of implying the requested
+        // provider produced it.
+        if (requestedProvider != null && !requestedProvider.equals(lastKnownLocation.getProvider())) {
+            out.name("provider_fallback").value(true);
+            out.name("requested_provider").value(requestedProvider);
+        }
         out.endObject();
     }
 }

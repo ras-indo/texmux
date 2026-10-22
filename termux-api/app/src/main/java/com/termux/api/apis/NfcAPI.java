@@ -55,9 +55,9 @@ public class NfcAPI {
                 public void writeJson(JsonWriter out) throws Exception {
                     NfcAdapter adapter = NfcAdapter.getDefaultAdapter(context);
                     out.beginObject();
-                    if (error.length() > 0)
-                        out.name("error").value(error);
                     out.name("nfcPresent").value(null != adapter);
+                    if(error != null && error.length() > 0)
+                        out.name("error").value(error);
                     if(null!=adapter)
                         out.name("nfcActive").value(adapter.isEnabled());
                     out.endObject();
@@ -83,7 +83,7 @@ public class NfcAPI {
                 if (null == socket_input) socket_input = intent.getStringExtra("socket_input");
                 if (null == socket_output) socket_output = intent.getStringExtra("socket_output");
                 if (mode.equals("noData")) {
-                    errorNfc(this, intent,"");
+                    errorNfc(this, intent, "No mode specified");
                     finish();
                     return;
                 }
@@ -91,7 +91,7 @@ public class NfcAPI {
 
             NfcAdapter adapter = NfcAdapter.getDefaultAdapter(this);
             if (adapter == null || !adapter.isEnabled()) {
-                errorNfc(this, intent,"");
+                errorNfc(this, intent, "NFC not available or disabled");
                 finish();
             }
         }
@@ -105,7 +105,7 @@ public class NfcAPI {
             mAdapter = NfcAdapter.getDefaultAdapter(this);
             if (mAdapter == null || !mAdapter.isEnabled()) {
                 if (mIntent != null)
-                    errorNfc(this, mIntent,"");
+                    errorNfc(this, mIntent, "NFC not available or disabled");
                 finish();
                 return;
             }
