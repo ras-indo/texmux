@@ -1030,7 +1030,7 @@ int transmit_socket_to_stdout(int input_server_fd) {
     if (pr <= 0) {
         if (pr == 0) {
             fprintf(stderr,
-                "ERROR: Termux API app never opened the streaming connection.\n"
+                "ERROR: no response from the Termux API app - it never opened the streaming connection.\n"
                 "       method       : %s\n"
                 "       socket_output: \"%s\"\n"
                 "       Waited %d s after the request was accepted. No data can arrive any\n"
