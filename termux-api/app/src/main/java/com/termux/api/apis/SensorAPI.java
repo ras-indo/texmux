@@ -34,52 +34,6 @@ public class SensorAPI {
     private static final String LOG_TAG = "SensorAPI";
 
     /**
-     * Returns the permission set required for the sensor request carried by
-     * {@code intent}. Only the permissions the requested sensor types actually
-     * need are returned, so requesting the accelerometer never asks for
-     * BODY_SENSORS or ACTIVITY_RECOGNITION.
-     *
-     * <ul>
-     *   <li>{@code TYPE_HEART_BEAT} needs {@code BODY_SENSORS}</li>
-     *   <li>{@code TYPE_STEP_DETECTOR} / {@code TYPE_STEP_COUNTER} need
-     *       {@code ACTIVITY_RECOGNITION} (declared in the manifest)</li>
-     *   <li>everything else needs no runtime permission</li>
-     * </ul>
-     */
-    public static String[] requiredPermissions(Context context, Intent intent) {
-        java.util.Set<String> perms = new java.util.HashSet<>();
-        String[] requestedSensors = getUserRequestedSensors(intent);
-        for (String sensorName : requestedSensors) {
-            if (sensorName == null) continue;
-            String normalized = sensorName.trim().toUpperCase(java.util.Locale.US)
-                    .replace("_", "").replace(" ", "");
-            Integer type = SENSOR_TYPE_NAME_MAP.get(normalized);
-            if (type == null) continue;
-            if (type == Sensor.TYPE_HEART_BEAT) {
-                perms.add(Manifest.permission.BODY_SENSORS);
-            } else if (type == Sensor.TYPE_STEP_DETECTOR
-                    || type == Sensor.TYPE_STEP_COUNTER) {
-                perms.add(Manifest.permission.ACTIVITY_RECOGNITION);
-            }
-        }
-        // -a "all" may include body/step sensors, so request what the device has.
-        if (intent.getBooleanExtra("all", false)) {
-            SensorManager sensorManager = getSensorManager(context);
-            if (sensorManager != null) {
-                for (Sensor sensor : sensorManager.getSensorList(Sensor.TYPE_ALL)) {
-                    if (sensor.getType() == Sensor.TYPE_HEART_BEAT) {
-                        perms.add(Manifest.permission.BODY_SENSORS);
-                    } else if (sensor.getType() == Sensor.TYPE_STEP_DETECTOR
-                            || sensor.getType() == Sensor.TYPE_STEP_COUNTER) {
-                        perms.add(Manifest.permission.ACTIVITY_RECOGNITION);
-                    }
-                }
-            }
-        }
-        return perms.toArray(new String[0]);
-    }
-
-    /**
      * Starts our SensorReader service
      */
     public static void onReceive(final Context context, final Intent intent) {

@@ -127,15 +127,17 @@ public final class DirectDispatcher {
                 BatteryStatusAPI.onReceive(handlerContext, context, intent);
                 break;
             case "Brightness":
-                // No hard gate on WRITE_SETTINGS here. It is a "special app
-                // access" permission: Android has no Allow/Deny dialog for it,
-                // and Termux:API never required it explicitly either - the
-                // write succeeds whenever the platform grants it and the
-                // readback proves it. Refusing up front broke the command on
-                // devices where the write is allowed but canWrite() answers
-                // false. BrightnessAPI does the write, reads the value back
-                // and reports the real outcome (including the missing
-                // special access) from that.
+                if (!Settings.System.canWrite(context)) {
+                    // WRITE_SETTINGS is a special permission — cannot be requested
+                    // via Activity.requestPermissions().  We return an error JSON
+                    // AND open the system settings page directly.
+                    TermuxApiPermissionActivity.returnPermissionError(context, intent, Manifest.permission.WRITE_SETTINGS);
+                    Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS);
+                    settingsIntent.setData(android.net.Uri.parse("package:" + context.getPackageName()));
+                    settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(settingsIntent);
+                    return;
+                }
                 BrightnessAPI.onReceive(handlerContext, context, intent);
                 break;
             case "CameraInfo":
@@ -235,18 +237,14 @@ public final class DirectDispatcher {
             case "SAF":
                 SAFAPI.onReceive(handlerContext, context, intent);
                 break;
-            case "Sensor": {
-                String[] sensorPerms = SensorAPI.requiredPermissions(context, intent);
-                if (TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent, sensorPerms)) {
-                    SensorAPI.onReceive(context, intent);
-                }
+            case "Sensor":
+                SensorAPI.onReceive(context, intent);
                 break;
-            }
             case "Share":
                 ShareAPI.onReceive(handlerContext, context, intent);
                 break;
             case "SmsInbox":
-                if (TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent, Manifest.permission.READ_SMS)) {
+                if (TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent, Manifest.permission.READ_SMS, Manifest.permission.READ_CONTACTS)) {
                     SmsInboxAPI.onReceive(handlerContext, context, intent);
                 }
                 break;
@@ -269,7 +267,7 @@ public final class DirectDispatcher {
                 }
                 break;
             case "TelephonyCellInfo":
-                if (TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent, Manifest.permission.ACCESS_FINE_LOCATION)) {
+                if (TermuxApiPermissionActivity.checkAndRequestPermissions(context, intent, Manifest.permission.ACCESS_COARSE_LOCATION)) {
                     TelephonyAPI.onReceiveTelephonyCellInfo(handlerContext, context, intent);
                 }
                 break;

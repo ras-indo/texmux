@@ -32,10 +32,7 @@ public class SmsSendAPI {
             @Override
             public void writeResult(PrintWriter out) {
                 final SmsManager smsManager = getSmsManager(context,intent);
-                if(smsManager == null) {
-                    out.append("{\"error\":\"SmsManager not available for the selected SIM slot\"}\\n");
-                    return;
-                }
+                if(smsManager == null) return;
 
                 String[] recipients = intent.getStringArrayExtra("recipients");
 
@@ -47,17 +44,10 @@ public class SmsSendAPI {
 
                 if (recipients == null || recipients.length == 0) {
                     Logger.logError(LOG_TAG, "No recipient given");
-                    out.append("{\"error\":\"No recipient given\"}\\n");
-                    return;
                 } else {
                     final ArrayList<String> messages = smsManager.divideMessage(inputString);
                     for (String recipient : recipients) {
-                        try {
-                            smsManager.sendMultipartTextMessage(recipient, null, messages, null, null);
-                        } catch (SecurityException e) {
-                            out.append("{\"error\":\"SEND_SMS permission required to send SMS\"}\\n");
-                            return;
-                        }
+                        smsManager.sendMultipartTextMessage(recipient, null, messages, null, null);
                     }
                 }
             }

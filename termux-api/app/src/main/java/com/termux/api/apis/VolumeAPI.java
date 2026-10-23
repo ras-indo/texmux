@@ -41,21 +41,13 @@ public class VolumeAPI {
             if (stream == STREAM_UNKNOWN) {
                 String error = "ERROR: Unknown stream: " + streamName;
                 printError(context, intent, error);
-            } else if (isDndStream(stream) && !audioManager.isNotificationPolicyAccessGranted()) {
-                printError(context, intent, "{\"error\":\"ACCESS_NOTIFICATION_POLICY permission required to set volume on DND-protected stream (ring/notification). Grant it in Settings > Apps > Special app access > Do Not Disturb.\"}");
             } else {
-                int volume = setStreamVolume(intent, audioManager, stream);
-                ResultReturner.returnData(context, intent, out -> {
-                    out.println("{\"volume\":" + volume + ",\"stream\":\"" + streamName + "\"}");
-                });
+                setStreamVolume(intent, audioManager, stream);
+                ResultReturner.noteDone(receiver, intent);
             }
         } else {
             printAllStreamInfo(context, intent, audioManager);
         }
-    }
-
-    private static boolean isDndStream(int stream) {
-        return stream == AudioManager.STREAM_RING || stream == AudioManager.STREAM_NOTIFICATION;
     }
 
     /**
@@ -72,7 +64,7 @@ public class VolumeAPI {
     /**
      * Set volume for the specified audio stream
      */
-    private static int setStreamVolume(Intent intent, AudioManager audioManager, int stream) {
+    private static void setStreamVolume(Intent intent, AudioManager audioManager, int stream) {
         int volume = intent.getIntExtra("volume", audioManager.getStreamVolume(stream));
         int maxVolume = audioManager.getStreamMaxVolume(stream);
 
@@ -82,7 +74,6 @@ public class VolumeAPI {
             volume = maxVolume;
         }
         audioManager.setStreamVolume(stream, volume, 0);
-        return volume;
     }
 
     /**

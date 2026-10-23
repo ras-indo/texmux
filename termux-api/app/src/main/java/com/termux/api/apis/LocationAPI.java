@@ -98,8 +98,14 @@ public class LocationAPI {
                 switch (request) {
                     case REQUEST_LAST_KNOWN:
                         Location lastKnownLocation = getLastKnownWithFallback(manager, provider);
-                        locationToJson(lastKnownLocation, out, provider);
-                        break;
+                        if (lastKnownLocation != null) {
+                            locationToJson(lastKnownLocation, out, provider);
+                            break;
+                        }
+                        // Tidak ada provider yang menyimpan fix. Dulu jawabannya
+                        // langsung "Failed to get location" walaupun radio masih
+                        // bisa memberi fix dalam beberapa detik; sekarang jatuh
+                        // ke permintaan fix baru di case berikutnya.
                     case REQUEST_ONCE:
                         // requestSingleUpdate() only calls back when a fix
                         // arrives. With the provider disabled it never does, and

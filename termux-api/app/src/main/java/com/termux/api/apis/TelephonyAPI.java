@@ -69,7 +69,8 @@ public class TelephonyAPI {
                 try {
                     cellInfoData = manager.getAllCellInfo();
                 } catch (SecurityException e) {
-                    throw new SecurityException("getAllCellInfo() requires android.permission.ACCESS_FINE_LOCATION; permission not granted", e);
+                    // Direct call of getAllCellInfo() doesn't work on Android 10 (Q).
+                    // https://developer.android.com/reference/android/telephony/TelephonyManager#getAllCellInfo().
                 }
 
                 if (cellInfoData != null) {
@@ -411,7 +412,7 @@ public class TelephonyAPI {
         String numberExtra = intent.getStringExtra("number");
         if (numberExtra == null) {
             Logger.logError(LOG_TAG, "No 'number' extra");
-            ResultReturner.returnData(apiReceiver, intent, out -> out.println("{\"API_ERROR\":\"No 'number' extra\"}"));
+            ResultReturner.noteDone(apiReceiver, intent);
             return;
         }
 
@@ -430,7 +431,7 @@ public class TelephonyAPI {
             Logger.logStackTraceWithMessage(LOG_TAG, "Exception in phone call", e);
         }
 
-        ResultReturner.returnData(apiReceiver, intent, out -> out.println("{\"dialed\":true,\"number\":\"" + numberExtra + "\"}"));
+        ResultReturner.noteDone(apiReceiver, intent);
     }
 
 }

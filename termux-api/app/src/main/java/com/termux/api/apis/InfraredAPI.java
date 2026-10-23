@@ -58,9 +58,7 @@ public class InfraredAPI {
                 int[] pattern = intent.getIntArrayExtra("pattern");
 
                 String error = null;
-                if (irManager == null) {
-                    error = "No infrared service available";
-                } else if (!irManager.hasIrEmitter()) {
+                if (!irManager.hasIrEmitter()) {
                     error = "No infrared emitter available";
                 } else if (carrierFrequency == -1) {
                     error = "Missing 'frequency' extra";
@@ -73,21 +71,7 @@ public class InfraredAPI {
                     return;
                 }
 
-                try {
-                    irManager.transmit(carrierFrequency, pattern);
-                } catch (Exception e) {
-                    // A throwing transmit() used to end the request with no bytes at all,
-                    // which the client cannot tell apart from a hang.
-                    Logger.logStackTraceWithMessage(LOG_TAG, "Failed to transmit infrared pattern", e);
-                    out.beginObject().name("API_ERROR").value("Failed to transmit infrared pattern: " + e.getMessage()).endObject();
-                    return;
-                }
-
-                out.beginObject()
-                        .name("transmitted").value(true)
-                        .name("frequency").value(carrierFrequency)
-                        .name("pattern_length").value(pattern.length)
-                        .endObject();
+                irManager.transmit(carrierFrequency, pattern);
             }
         });
     }

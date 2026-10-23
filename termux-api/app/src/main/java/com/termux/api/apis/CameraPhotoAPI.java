@@ -178,13 +178,8 @@ public class CameraPhotoAPI {
                     try (FileOutputStream output = new FileOutputStream(outputFile)) {
                         output.write(bytes);
                     } catch (Exception e) {
-                        stdout.println("{\"API_ERROR\":\"Error writing image: " + e.getMessage() + "}");
+                        stdout.println("Error writing image: " + e.getMessage());
                         Logger.logStackTraceWithMessage(LOG_TAG, "Error writing image", e);
-                    } finally {
-                        // Always report the outcome so the client does not hang.
-                        if (outputFile.length() > 0) {
-                            stdout.println("{\"photo\":\"" + outputFile.getAbsolutePath() + "\",\"bytes\":" + outputFile.length() + "}");
-                        }
                     }
                 } finally {
                     mImageReader.close();

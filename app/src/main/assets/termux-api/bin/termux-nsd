@@ -68,8 +68,10 @@ cmd_discover() {
         esac
     done
     if [ -z "$service_type" ]; then
-        echo "termux-nsd discover: butuh --service <tipe>, mis. _http._tcp." >&2
-        exit 1
+        # API yang menjawab, bukan skrip ini: satu respons JSON, bukan teks
+        # mentah lalu proses berhenti tanpa jawaban dari aplikasi.
+        call_api --es command discover --ei timeout "$timeout"
+        return
     fi
     call_api --es command discover --es service_type "$service_type" --ei timeout "$timeout"
 }

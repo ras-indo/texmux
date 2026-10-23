@@ -76,8 +76,6 @@ public class NotificationAPI {
                 }
 
                 manager.notify(notificationId, 0, notification.build());
-
-                out.println("{\"posted\":true,\"id\":" + notificationId + "}");
             }
         });
     }
@@ -331,12 +329,12 @@ public class NotificationAPI {
     public static void onReceiveRemoveNotification(TermuxApiReceiver apiReceiver, final Context context, final Intent intent) {
         Logger.logDebug(LOG_TAG, "onReceiveRemoveNotification");
 
+        ResultReturner.noteDone(apiReceiver, intent);
         String notificationId = intent.getStringExtra("id");
-        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (notificationId != null) {
+            NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             manager.cancel(notificationId, 0);
         }
-        ResultReturner.returnData(apiReceiver, intent, out -> out.println("{\"removed\":true,\"id\":\"" + notificationId + "\"}"));
     }
 
     static NotificationCompat.Action createReplyAction(final Context context, Intent intent,

@@ -19,8 +19,6 @@ import com.termux.api.util.ResultReturner;
 import com.termux.shared.data.IntentUtils;
 import com.termux.shared.logger.Logger;
 
-import org.json.JSONObject;
-
 import java.io.PrintWriter;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -31,6 +29,8 @@ public class SpeechToTextAPI {
 
     public static class SpeechToTextService extends IntentService {
 
+        private static final String STOP_ELEMENT = "";
+
         public SpeechToTextService() {
             this(SpeechToTextService.class.getSimpleName());
         }
@@ -40,12 +40,7 @@ public class SpeechToTextAPI {
         }
 
         protected SpeechRecognizer mSpeechRecognizer;
-        // Per-request queue, set by onHandleIntent before starting recognition.
-        // The RecognitionListener callbacks (which run on a different thread)
-        // push results/errors into this queue; onHandleIntent polls it with a
-        // bounded timeout so a stalled engine can never hang the command.
-        private volatile LinkedBlockingQueue<String> currentQueue;
-        private static final long WAIT_TIMEOUT_MS = 30000;
+        final LinkedBlockingQueue<String> queueu = new LinkedBlockingQueue<>();
 
         private static final String LOG_TAG = "SpeechToTextService";
 
@@ -68,8 +63,7 @@ public class SpeechToTextAPI {
                 public void onResults(Bundle results) {
                     List<String> recognitions = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     Logger.logError(LOG_TAG, "RecognitionListener#onResults(" + recognitions + ")");
-                    LinkedBlockingQueue<String> q = currentQueue;
-                    if (q != null && recognitions != null) q.addAll(recognitions);
+                    queueu.addAll(recognitions);
                 }
 
                 @Override
@@ -82,8 +76,7 @@ public class SpeechToTextAPI {
                     // Do nothing.
                     List<String> strings = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     Logger.logError(LOG_TAG, "RecognitionListener#onPartialResults(" + strings + ")");
-                    LinkedBlockingQueue<String> q = currentQueue;
-                    if (q != null && strings != null) q.addAll(strings);
+                    queueu.addAll(strings);
                 }
 
                 @Override
@@ -111,18 +104,13 @@ public class SpeechToTextAPI {
                             description = Integer.toString(error);
                     }
                     Logger.logError(LOG_TAG, "RecognitionListener#onError(" + description + ")");
-                    // Push a dedicated error slot carrying platform error code + message
-                    // so onHandleIntent can emit JSON instead of empty output.
-                    LinkedBlockingQueue<String> q = currentQueue;
-                    if (q != null) q.add("ERROR:" + error + ":" + description);
+                    queueu.add(STOP_ELEMENT);
                 }
 
                 @Override
                 public void onEndOfSpeech() {
                     Logger.logError(LOG_TAG, "RecognitionListener#onEndOfSpeech()");
-                    // Push dedicated END element so handler knows recognition ended
-                    LinkedBlockingQueue<String> q = currentQueue;
-                    if (q != null) q.add("END:");
+                    queueu.add(STOP_ELEMENT);
                 }
 
                 @Override
@@ -141,11 +129,14 @@ public class SpeechToTextAPI {
             boolean speechRecognitionInstalled = !installedList.isEmpty();
 
             if (!speechRecognitionInstalled) {
-                // confirm button / Install Button click handler
-                new AlertDialog.Builder(context).setMessage("For recognition it's necessary to install \\"Google Voice Search\\"")
+                // confirm
+// button
+// Install Button click handler
+                new AlertDialog.Builder(context).setMessage("For recognition it’s necessary to install \"Google Voice Search\"")
                         .setTitle("Install Voice Search from Google Play?").setPositiveButton("Install", (dialog, which) -> {
                             Intent installIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.voicesearch"));
-                            // setting flags to avoid going in application history (Activity call stack)
+                            // setting flags to avoid going in application history (Activity call
+                            // stack)
                             installIntent.setFlags(Intent.FLAG_ACTIVITY_NO_HISTORY | Intent.FLAG_ACTIVITY_NEW_DOCUMENT);
                             context.startActivity(installIntent);
                         }).setNegativeButton("Cancel", null) // cancel button
@@ -173,67 +164,20 @@ public class SpeechToTextAPI {
         protected void onHandleIntent(final Intent intent) {
             Logger.logDebug(LOG_TAG, "onHandleIntent:\n" + IntentUtils.getIntentString(intent));
 
-            currentQueue = new LinkedBlockingQueue<>();
             ResultReturner.returnData(this, intent, new ResultReturner.WithInput() {
                 @Override
                 public void writeResult(PrintWriter out) throws Exception {
-                    StringBuilder text = new StringBuilder();
-                    boolean errorSeen = false;
-                    String errorMsg = null;
-                    int errorCode = -1;
-
-                    long deadline = System.currentTimeMillis() + WAIT_TIMEOUT_MS;
                     while (true) {
-                        long remaining = deadline - System.currentTimeMillis();
-                        if (remaining <= 0) {
-                            // Bounded wait elapsed without result or error
-                            break;
+                        String s = queueu.take();
+                        if (s == STOP_ELEMENT) {
+                            return;
+                        } else {
+                            out.println(s);
                         }
-                        String s = currentQueue.poll(remaining, java.util.concurrent.TimeUnit.MILLISECONDS);
-                        if (s == null) {
-                            // Timeout: nothing arrived in remaining time
-                            break;
-                        }
-                        if (s.startsWith("ERROR:")) {
-                            // Dedicated error slot: platform error code + message
-                            String[] parts = s.split(":", 3);
-                            errorCode = parts.length > 1 ? Integer.parseInt(parts[1]) : -1;
-                            errorMsg = parts.length > 2 ? parts[2] : "";
-                            errorSeen = true;
-                            break;
-                        }
-                        if (s.equals("END:")) {
-                            // Recognition ended normally
-                            break;
-                        }
-                        // Regular recognition result text
-                        text.append(s).append("\n");
-                    }
-
-                    if (errorSeen) {
-                        JSONObject err = new JSONObject();
-                        try {
-                            err.put("success", false);
-                            err.put("error_code", errorCode);
-                            err.put("error", errorMsg);
-                            out.println(err.toString());
-                        } catch (Exception e) {
-                            out.println("{\"success\":false,\"error\":\"speech recognition failed\"}");
-                        }
-                        return;
-                    }
-
-                    String resultText = text.length() > 0 ? text.toString().trim() : "";
-                    JSONObject resp = new JSONObject();
-                    try {
-                        resp.put("success", true);
-                        resp.put("text", resultText);
-                        out.println(resp.toString());
-                    } catch (Exception e) {
-                        out.println("{\"success\":true,\"text\":\"\"}");
                     }
                 }
             });
+
         }
     }
 
@@ -261,8 +205,10 @@ public class SpeechToTextAPI {
             intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1); // quantity of results we want to receive
             // context.startActivityForResult(intent, VOICE_RECOGNITION_REQUEST_CODE);
         } else {
-            // confirm button / Install Button click handler
-            new AlertDialog.Builder(context).setMessage("For recognition it's necessary to install \\"Google Voice Search\\"")
+            // confirm
+// button
+// Install Button click handler
+            new AlertDialog.Builder(context).setMessage("For recognition it’s necessary to install \"Google Voice Search\"")
                     .setTitle("Install Voice Search from Google Play?").setPositiveButton("Install", (dialog, which) -> {
                         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.voicesearch"));
                         // setting flags to avoid going in application history (Activity call stack)
@@ -272,4 +218,5 @@ public class SpeechToTextAPI {
                     .create().show();
         }
     }
+
 }
