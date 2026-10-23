@@ -83,6 +83,7 @@ public class LocationAPI {
                 String provider = intent.getStringExtra("provider");
                 if (provider == null)
                     provider = LocationManager.GPS_PROVIDER;
+                final String finalProvider = provider;
                 if (!(provider.equals(LocationManager.GPS_PROVIDER) || provider.equals(LocationManager.NETWORK_PROVIDER) || provider
                         .equals(LocationManager.PASSIVE_PROVIDER))) {
                     out.beginObject()
@@ -135,7 +136,7 @@ public class LocationAPI {
                                 Location cached = cachedHolder[0];
                                 try {
                                     if (cached != null) {
-                                        locationToJson(cached, out, provider);
+                                        locationToJson(cached, out, finalProvider);
                                     } else {
                                         out.beginObject()
                                                 .name("API_ERROR").value("Location timeout after 20s")
