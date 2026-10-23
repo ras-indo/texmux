@@ -118,6 +118,13 @@ public class LocationAPI {
                             break;
                         }
 
+                        final Location[] cachedHolder = new Location[1];
+                        try {
+                            cachedHolder[0] = getLastKnownWithFallback(manager, provider);
+                        } catch (SecurityException e) {
+                            Logger.logStackTraceWithMessage(LOG_TAG, "Cached fix needs permission", e);
+                        }
+
                         Looper.prepare();
                         final boolean[] answered = {false};
                         final Handler timeoutHandler = new Handler();
@@ -125,12 +132,7 @@ public class LocationAPI {
                             @Override
                             public void run() {
                                 if (answered[0]) return;
-                                Location cached = null;
-                                try {
-                                    cached = getLastKnownWithFallback(manager, provider);
-                                } catch (SecurityException e) {
-                                    Logger.logStackTraceWithMessage(LOG_TAG, "Cached fix needs permission", e);
-                                }
+                                Location cached = cachedHolder[0];
                                 try {
                                     if (cached != null) {
                                         locationToJson(cached, out, provider);
