@@ -125,11 +125,21 @@ public class LocationAPI {
                             @Override
                             public void run() {
                                 if (answered[0]) return;
+                                Location cached = null;
                                 try {
-                                    out.beginObject()
-                                            .name("API_ERROR").value("Location timeout after 20s")
-                                            .name("hint").value("Belum ada fix. Coba di luar ruangan, atau pakai -r last / -p network.")
-                                            .endObject();
+                                    cached = getLastKnownWithFallback(manager, provider);
+                                } catch (SecurityException e) {
+                                    Logger.logStackTraceWithMessage(LOG_TAG, "Cached fix needs permission", e);
+                                }
+                                try {
+                                    if (cached != null) {
+                                        locationToJson(cached, out, provider);
+                                    } else {
+                                        out.beginObject()
+                                                .name("API_ERROR").value("Location timeout after 20s")
+                                                .name("hint").value("Belum ada fix. Coba di luar ruangan, atau pakai -r last / -p network.")
+                                                .endObject();
+                                    }
                                 } catch (IOException e) {
                                     Logger.logStackTraceWithMessage(LOG_TAG, "Writing timeout", e);
                                 } finally {

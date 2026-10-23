@@ -173,10 +173,29 @@ public class MicRecorderAPI {
             }
         }
 
-        protected static String getDefaultRecordingFilename() {
+        protected static String getDefaultRecordingFilename(Context context) {
             DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
-            Date date = new Date();
-            return Environment.getExternalStorageDirectory().getAbsolutePath() + "/TermuxAudioRecording_" + dateFormat.format(date);
+            String name = "TermuxAudioRecording_" + dateFormat.format(new Date());
+
+            // Cara lama selalu menulis ke /storage/emulated/0. Di Android 11+
+            // itu hanya jalan kalau "All files access" sudah diberikan; kalau
+            // tidak, MediaRecorder gagal dengan EPERM. Coba tulis probe dulu,
+            // lalu jatuh ke direktori milik aplikasi yang selalu bisa ditulis.
+            File publicDir = Environment.getExternalStorageDirectory();
+            if (publicDir != null) {
+                File probe = new File(publicDir, ".termux-api-write-probe");
+                try {
+                    if (probe.createNewFile() || probe.exists()) {
+                        probe.delete();
+                        return new File(publicDir, name).getAbsolutePath();
+                    }
+                } catch (IOException | SecurityException ignored) {
+                    // jatuh ke direktori aplikasi
+                }
+            }
+            File dir = context.getExternalFilesDir(null);
+            if (dir == null) dir = context.getFilesDir();
+            return new File(dir, name).getAbsolutePath();
         }
 
         protected static String getRecordingInfoJSONString() {
@@ -254,7 +273,7 @@ public class MicRecorderAPI {
                     extension_map.put(MediaRecorder.OutputFormat.OGG, ".ogg");
                 String extension = extension_map.get(format);
 
-                String filename = intent.hasExtra("file") ? intent.getStringExtra("file") : getDefaultRecordingFilename() + (extension != null ? extension : "");
+                String filename = intent.hasExtra("file") ? intent.getStringExtra("file") : getDefaultRecordingFilename(context) + (extension != null ? extension : "");
 
                 int source = intent.getIntExtra("source", MediaRecorder.AudioSource.MIC);
 
