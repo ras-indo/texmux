@@ -95,7 +95,7 @@ OPTIONS:
 
 EXAMPLES:
   # Schedule a script to run once
-  $SCRIPTNAME -s /data/data/com.termux/files/home/backup.sh --job-id 1
+  $SCRIPTNAME -s /data/data/texmux.app/files/home/backup.sh --job-id 1
 
   # Schedule a periodic backup every hour (network constrained)
   $SCRIPTNAME -s ~/backup.sh --job-id 2 --period-ms 3600000 --network unmetered
