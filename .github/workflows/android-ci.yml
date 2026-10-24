@@ -250,23 +250,23 @@ jobs:
           # The dialog answer must be acted on: without onRequestPermissionsResult
           # the flow stops at "allow the permission" and never reaches the radio.
           grep -q "onRequestPermissionsResult" \
-            termux-api/app/src/main/java/com/termux/api/activities/TermuxApiPermissionActivity.java \
+            termux-api/app/src/main/java/texmux/api/activities/TermuxApiPermissionActivity.java \
             || { echo "!! the permission result is never handled"; exit 1; }
           # requestPermissions() returns false without asking when the permission
           # is not declared in the manifest; ignoring that leaves the invisible
           # activity alive and the user waiting for a dialog that never comes.
           grep -q 'if (!asked) finish();' \
-            termux-api/app/src/main/java/com/termux/api/activities/TermuxApiPermissionActivity.java \
+            termux-api/app/src/main/java/texmux/api/activities/TermuxApiPermissionActivity.java \
             || { echo "!! a failed request leaves the activity alive"; exit 1; }
           # The follow-up must not depend on onRequestPermissionsResult() alone.
-          [ "$(grep -c 'runFollowUpAction();' termux-api/app/src/main/java/com/termux/api/activities/TermuxApiPermissionActivity.java)" -ge 2 ] \
+          [ "$(grep -c 'runFollowUpAction();' termux-api/app/src/main/java/texmux/api/activities/TermuxApiPermissionActivity.java)" -ge 2 ] \
             || { echo "!! the queued action is only reachable from one callback"; exit 1; }
           # A disabled provider must not block the command forever.
           grep -q "isProviderEnabled(provider)" \
-            termux-api/app/src/main/java/com/termux/api/apis/LocationAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/LocationAPI.java \
             || { echo "!! a disabled provider can hang the command"; exit 1; }
           grep -q 'Location timeout after 20s' \
-            termux-api/app/src/main/java/com/termux/api/apis/LocationAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/LocationAPI.java \
             || { echo "!! no timeout on requestSingleUpdate"; exit 1; }
           # The location switch has no dialog, only a settings page. The CLI must
           # be able to open it too, not just the app's activity chain.
@@ -283,71 +283,71 @@ jobs:
             || { echo "!! the location switch page is gone"; exit 1; }
           # A handler that throws used to answer with nothing at all: the client read
           # zero bytes, which looks exactly like a hang. The receiver must answer.
-          grep -q 'API_ERROR' termux-api/app/src/main/java/com/termux/api/TermuxApiReceiver.java \
+          grep -q 'API_ERROR' termux-api/app/src/main/java/texmux/api/TermuxApiReceiver.java \
             || { echo "!! a failed handler still answers with silence"; exit 1; }
           # openCamera() may never call back. Without a deadline the capture thread
           # sits in Looper.loop() forever and the command appears frozen.
           grep -q 'camera timed out after 15s' \
-            termux-api/app/src/main/java/com/termux/api/apis/CameraPhotoAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/CameraPhotoAPI.java \
             || { echo "!! camera capture has no deadline"; exit 1; }
-          [ "$(grep -c 'closeCamera(' termux-api/app/src/main/java/com/termux/api/apis/CameraPhotoAPI.java)" -ge 5 ] \
+          [ "$(grep -c 'closeCamera(' termux-api/app/src/main/java/texmux/api/apis/CameraPhotoAPI.java)" -ge 5 ] \
             || { echo "!! a camera callback path never quits the looper"; exit 1; }
           # `termux-usb <vendorId> <productId>` sends ids, not a path; ignoring them
           # made every such call answer "No such device."
-          grep -q 'parseUsbId' termux-api/app/src/main/java/com/termux/api/apis/UsbAPI.java \
+          grep -q 'parseUsbId' termux-api/app/src/main/java/texmux/api/apis/UsbAPI.java \
             || { echo "!! usb vendor/product id selection is gone"; exit 1; }
           # --trigger-content-uri is advertised by termux-job-scheduler; if the handler
           # ignores it the job becomes a plain job that fires immediately.
           grep -q 'addTriggerContentUri' \
-            termux-api/app/src/main/java/com/termux/api/apis/JobSchedulerAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/JobSchedulerAPI.java \
             || { echo "!! content trigger jobs are silently ignored"; exit 1; }
           # A streaming command (location, sensors, microphone, speech, tts) puts its
           # own socket_output in the request: the client is listening there and never
           # reads the request connection. Overwriting that address left both sides
           # waiting - the client printed "streaming connection never arrived" after 30 s.
-          grep -q 'clientStreams' termux-api/app/src/main/java/com/termux/api/SocketListener.java \
+          grep -q 'clientStreams' termux-api/app/src/main/java/texmux/api/SocketListener.java \
             || { echo "!! streaming replies are still redirected to a private socket"; exit 1; }
-          grep -q 'if (!clientStreams) {' termux-api/app/src/main/java/com/termux/api/SocketListener.java \
+          grep -q 'if (!clientStreams) {' termux-api/app/src/main/java/texmux/api/SocketListener.java \
             || { echo "!! the fallback socket is injected even for streaming requests"; exit 1; }
           # A BLE scan that cannot start (security exception, adapter turned off under
           # us) must say so; it used to end in a 30 s "no response" instead.
           grep -q 'BLE scan could not start' \
-            termux-api/app/src/main/java/com/termux/api/apis/BluetoothAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/BluetoothAPI.java \
             || { echo "!! a failing BLE scan answers with silence"; exit 1; }
           grep -q 'Bluetooth service could not start' \
-            termux-api/app/src/main/java/com/termux/api/apis/BluetoothAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/BluetoothAPI.java \
             || { echo "!! a refused startService hangs the caller for 30 s"; exit 1; }
           # setWifiEnabled() answers false on Android 10+ for apps without the
           # privilege; returning nothing made `termux-wifi-enable` look like it worked.
           grep -q 'setWifiEnabled returned false' \
-            termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/WifiAPI.java \
             || { echo "!! termux-wifi-enable can still exit silently"; exit 1; }
           # With Wi-Fi off getScanResults() is empty; reporting [] looks like
           # "no networks around" instead of "the radio is off".
           grep -q 'Wi-Fi is off - turn it on and retry' \
-            termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/WifiAPI.java \
             || { echo "!! wifi scans with the radio off are reported as empty"; exit 1; }
           # The toggle is asynchronous: the answer must be the radio read back, not the
           # argument echoed.
           grep -q 'Wi-Fi did not reach the requested state' \
-            termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/WifiAPI.java \
             || { echo "!! termux-wifi-enable reports a state it never verified"; exit 1; }
           # Cached scan lists are empty after boot / a toggle; the radio has to be asked.
           grep -q 'refreshScanResults' \
-            termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/WifiAPI.java \
             || { echo "!! wifi scan never refreshes an empty cache"; exit 1; }
           # termux-api should drive the platform API, not send the user to a settings panel.
           if grep -q 'ACTION_WIFI_SETTINGS\|panel.action.WIFI' \
-              termux-api/app/src/main/java/com/termux/api/apis/WifiAPI.java; then
+              termux-api/app/src/main/java/texmux/api/apis/WifiAPI.java; then
             echo "!! wifi is punted to a settings panel instead of the platform API"; exit 1
           fi
           # Empty BLE results have a cause worth naming (location off / adapter gone).
           grep -q 'bleEmptyReason' \
-            termux-api/app/src/main/java/com/termux/api/apis/BluetoothAPI.java \
+            termux-api/app/src/main/java/texmux/api/apis/BluetoothAPI.java \
             || { echo "!! empty BLE scans are still reported as a bare []"; exit 1; }
           # Every handler that needs a dangerous permission must go through the
           # requester instead of dying with a SecurityException.
-          gated=$(grep -la "checkAndRequestPermissions" termux-api/app/src/main/java/com/termux/api/apis/*.java | wc -l)
+          gated=$(grep -la "checkAndRequestPermissions" termux-api/app/src/main/java/texmux/api/apis/*.java | wc -l)
           [ "$gated" -ge 12 ] \
             || { echo "!! only $gated handlers gate permissions"; exit 1; }
           # No prompt of our own, not even in the docs: the platform dialog is
@@ -365,11 +365,11 @@ jobs:
           grep -q '^    scan)          le_scan_cmd start' app/src/main/assets/termux-api/bin/termux-bluetooth \
             || { echo "!! termux-bluetooth scan is gone"; exit 1; }
           # --duration must actually be read, or the option is silently ignored.
-          grep -q 'getIntExtra("duration"' termux-api/app/src/main/java/com/termux/api/apis/BluetoothAPI.java \
+          grep -q 'getIntExtra("duration"' termux-api/app/src/main/java/texmux/api/apis/BluetoothAPI.java \
             || { echo "!! --duration is not read by the LE scan"; exit 1; }
           # "request" must answer even when nothing is missing, or the client
           # waits on a socket that is never written.
-          grep -q "knownKey" termux-api/app/src/main/java/com/termux/api/apis/PermissionAPI.java \
+          grep -q "knownKey" termux-api/app/src/main/java/texmux/api/apis/PermissionAPI.java \
             || { echo "!! permission request can return without answering"; exit 1; }
           echo "OK: hotspot, wifi scan filters, bluetooth bond/battery/rssi, BT enable dialog, location switch page, $gated gated handlers, chained system dialogs"
 
@@ -414,7 +414,7 @@ jobs:
           # Extracting the scripts is not enough: they have to be deployed into
           # $PREFIX/bin at install time or the commands never exist on the device.
           for name in termux-nsd termux-companion; do
-            grep -q "\"$name\"" app/src/main/java/com/termux/app/TermuxInstaller.java \
+            grep -q "\"$name\"" app/src/main/java/texmux/app/TermuxInstaller.java \
               || { echo "!! $name is not deployed by the installer"; exit 1; }
           done
           # BLE advertising: the GATT server is useless without it, so both the
@@ -430,8 +430,8 @@ jobs:
           grep -q 'manufacturer_id' /tmp/apk-n/assets/termux-api/bin/termux-bluetooth \
             || { echo "!! advertise cannot carry a manufacturer payload"; exit 1; }
           # No settings detour here either: these are platform APIs, not panels.
-          if grep -q 'android.settings' termux-api/app/src/main/java/com/termux/api/apis/NsdAPI.java \
-                termux-api/app/src/main/java/com/termux/api/apis/CompanionAPI.java; then
+          if grep -q 'android.settings' termux-api/app/src/main/java/texmux/api/apis/NsdAPI.java \
+                termux-api/app/src/main/java/texmux/api/apis/CompanionAPI.java; then
             echo "!! a new API redirects to a settings panel"; exit 1
           fi
 
