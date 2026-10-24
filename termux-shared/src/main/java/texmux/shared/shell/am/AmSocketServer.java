@@ -7,7 +7,7 @@ import android.content.Intent;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import texmux.am.Am;
+import com.termux.am.Am;
 import texmux.shared.R;
 import texmux.shared.android.PackageUtils;
 import texmux.shared.android.PermissionUtils;
