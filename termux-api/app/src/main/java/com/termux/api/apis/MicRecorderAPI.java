@@ -141,11 +141,20 @@ public class MicRecorderAPI {
          * Releases MediaRecorder resources
          */
         protected static void cleanupMediaRecorder() {
+            if (mediaRecorder == null) return;
             if (isRecording) {
-                mediaRecorder.stop();
+                try {
+                    mediaRecorder.stop();
+                } catch (IllegalStateException ignored) {
+                    // Already stopped by the framework (max duration/filesize reached).
+                }
                 isRecording = false;
             }
-            mediaRecorder.reset();
+            try {
+                mediaRecorder.reset();
+            } catch (IllegalStateException ignored) {
+                // Recorder already released.
+            }
             mediaRecorder.release();
         }
 
@@ -169,6 +178,10 @@ public class MicRecorderAPI {
             switch (what) {
                 case MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED: // intentional fallthrough
                 case MEDIA_RECORDER_INFO_MAX_DURATION_REACHED:
+                    // The framework already stopped the recorder. Mark it so
+                    // cleanupMediaRecorder (run on service stop) does not call
+                    // mediaRecorder.stop() again and crash with IllegalStateException.
+                    isRecording = false;
                     this.stopSelf();
             }
         }
@@ -203,7 +216,7 @@ public class MicRecorderAPI {
             JSONObject info = new JSONObject();
             try {
                 info.put("isRecording", isRecording);
-                if (isRecording)
+                if (file != null)
                     info.put("outputFile", file.getAbsolutePath());
                 result = info.toString(2);
             } catch (JSONException e) {
@@ -331,6 +344,12 @@ public class MicRecorderAPI {
                 RecorderCommandResult result = new RecorderCommandResult();
 
                 if (isRecording) {
+                    try {
+                        mediaRecorder.stop();
+                    } catch (IllegalStateException ignored) {
+                        // Recorder already stopped by the framework.
+                    }
+                    isRecording = false;
                     result.message = "Recording finished: " + file.getAbsolutePath();
                 } else {
                     result.message = "No recording to stop";
