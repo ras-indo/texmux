@@ -43,7 +43,7 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
     <application
-        android:name="com.termux.app.TermuxApplication"
+        android:name="texmux.app.TermuxApplication"
         android:allowBackup="false"
         android:banner="@drawable/banner"
         android:extractNativeLibs="true"
@@ -58,7 +58,7 @@
         tools:targetApi="m">
 
         <activity
-            android:name="com.termux.app.TermuxActivity"
+            android:name="texmux.app.TermuxActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation"
             android:label="@string/application_name"
@@ -85,7 +85,7 @@
         <activity-alias
             android:name=".HomeActivity"
             android:exported="true"
-            android:targetActivity="com.termux.app.TermuxActivity">
+            android:targetActivity="texmux.app.TermuxActivity">
 
             <!-- Launch activity automatically on boot on Android Things devices -->
             <intent-filter>
@@ -97,26 +97,26 @@
         </activity-alias>
 
         <activity
-            android:name="com.termux.app.activities.HelpActivity"
+            android:name="texmux.app.activities.HelpActivity"
             android:exported="false"
             android:label="@string/application_name"
-            android:parentActivityName="com.termux.app.TermuxActivity"
+            android:parentActivityName="texmux.app.TermuxActivity"
             android:resizeableActivity="true"
             tools:targetApi="n" />
 
         <activity
-            android:name="com.termux.app.activities.SettingsActivity"
+            android:name="texmux.app.activities.SettingsActivity"
             android:exported="true"
             android:label="@string/title_activity_termux_settings"
             android:theme="@style/Theme.TermuxApp.DayNight.NoActionBar" />
 
         <activity
-            android:name="com.termux.shared.activities.ReportActivity"
+            android:name="texmux.shared.activities.ReportActivity"
             android:theme="@style/Theme.MarkdownViewActivity.DayNight"
             android:documentLaunchMode="intoExisting" />
 
         <activity
-            android:name="com.termux.app.api.file.FileReceiverActivity"
+            android:name="texmux.app.api.file.FileReceiverActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:noHistory="true"
@@ -126,9 +126,9 @@
         </activity>
 
         <activity-alias
-            android:name="com.termux.app.api.file.FileShareReceiverActivity"
+            android:name="texmux.app.api.file.FileShareReceiverActivity"
             android:exported="true"
-            android:targetActivity="com.termux.app.api.file.FileReceiverActivity">
+            android:targetActivity="texmux.app.api.file.FileReceiverActivity">
 
             <!-- Accept multiple file types when sending. -->
             <intent-filter>
@@ -147,9 +147,9 @@
         </activity-alias>
 
         <activity-alias
-            android:name="com.termux.app.api.file.FileViewReceiverActivity"
+            android:name="texmux.app.api.file.FileViewReceiverActivity"
             android:exported="true"
-            android:targetActivity="com.termux.app.api.file.FileReceiverActivity">
+            android:targetActivity="texmux.app.api.file.FileReceiverActivity">
 
             <!-- Accept multiple file types to let Termux be usable as generic file viewer. -->
             <intent-filter tools:ignore="AppLinkUrlError">
@@ -166,7 +166,7 @@
         </activity-alias>
 
         <provider
-            android:name="com.termux.filepicker.TermuxDocumentsProvider"
+            android:name="texmux.filepicker.TermuxDocumentsProvider"
             android:authorities="${TERMUX_PACKAGE_NAME}.documents"
             android:exported="true"
             android:grantUriPermissions="true"
@@ -177,7 +177,7 @@
         </provider>
 
         <provider
-            android:name="com.termux.app.TermuxOpenReceiver$ContentProvider"
+            android:name="texmux.app.TermuxOpenReceiver$ContentProvider"
             android:authorities="${TERMUX_PACKAGE_NAME}.files"
             android:exported="true"
             android:grantUriPermissions="true"
@@ -187,11 +187,11 @@
 
 
         <receiver
-            android:name="com.termux.app.TermuxOpenReceiver"
+            android:name="texmux.app.TermuxOpenReceiver"
             android:exported="false" />
 
         <receiver
-            android:name="com.termux.app.event.SystemEventReceiver"
+            android:name="texmux.app.event.SystemEventReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -199,21 +199,21 @@
         </receiver>
 
         <receiver
-            android:name="com.termux.shared.activities.ReportActivity$ReportActivityBroadcastReceiver"
+            android:name="texmux.shared.activities.ReportActivity$ReportActivityBroadcastReceiver"
             android:exported="false" />
 
         <!-- Termux:API broadcast receiver — handle API commands from termux-api-broadcast C binary -->
         <receiver
-            android:name="com.termux.api.TermuxApiReceiver"
+            android:name="texmux.api.TermuxApiReceiver"
             android:exported="true" />
 
 
         <service
-            android:name="com.termux.app.TermuxService"
+            android:name="texmux.app.TermuxService"
             android:exported="false" />
 
         <receiver
-            android:name="com.termux.app.RunCommandBroadcastReceiver"
+            android:name="texmux.app.RunCommandBroadcastReceiver"
             android:exported="true"
             android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND">
             <intent-filter>
@@ -222,7 +222,7 @@
         </receiver>
 
         <service
-            android:name="com.termux.app.RunCommandService"
+            android:name="texmux.app.RunCommandService"
             android:exported="true">
             <!-- Permission guard removed from manifest — Android system-level
                  permission check would block intents from apps signed with a

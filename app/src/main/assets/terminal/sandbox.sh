@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # sandbox.sh — Enter PRoot container (re:Terminal compatible)
 # No PREFIX directory — everything is under files/ directly.
-FILES_DIR="/data/data/com.termux/files"
+FILES_DIR="/data/data/texmux.app/files"
 ROOTFS_DIR="${FILES_DIR}/ROOTFS"
 APPS_BIN="${FILES_DIR}/apps/bin"
 TMP_DIR="${FILES_DIR}/tmp"
@@ -33,13 +33,13 @@ fi
 
 # ── PROOT_LOADER — resolve once, cache result ──────────────────────
 # The native lib dir follows a predictable pattern. Cache it so we
-# don't glob every session — that 'ls -d /data/app/com.termux*/...'
+# don't glob every session — that 'ls -d /data/app/texmux.app*/...'
 # can be slow (1-2 glob resolves) on some kernels.
 PROOT_LOADER_CACHE="${TMP_DIR}/.proot_loader_cache"
 if [ -f "$PROOT_LOADER_CACHE" ]; then
   . "$PROOT_LOADER_CACHE"
 else
-  NATIVE_LIB_DIR=$(/system/bin/ls -d /data/app/com.termux*/lib/arm64* 2>/dev/null | /system/bin/head -1)
+  NATIVE_LIB_DIR=$(/system/bin/ls -d /data/app/texmux.app*/lib/arm64* 2>/dev/null | /system/bin/head -1)
   if [ -n "$NATIVE_LIB_DIR" ]; then
     if [ -f "$NATIVE_LIB_DIR/libproot-loader.so" ]; then
       echo "export PROOT_LOADER='$NATIVE_LIB_DIR/libproot-loader.so'" > "$PROOT_LOADER_CACHE"
