@@ -27,11 +27,11 @@
 #define TERMUX_API_PACKAGE_VERSION "0.59.1"
 
 #ifndef PREFIX
-# define PREFIX "/data/data/com.termux/files/apps/com.termux"
+# define PREFIX "/data/data/texmux.app/files/apps/texmux.app"
 #endif
 
-#define LISTEN_SOCKET_ADDRESS "com.termux.api://listen"
-#define FILESYSTEM_SOCKET_PATH "/data/data/com.termux/files/termux-api.sock"
+#define LISTEN_SOCKET_ADDRESS "texmux.api://listen"
+#define FILESYSTEM_SOCKET_PATH "/data/data/texmux.app/files/termux-api.sock"
 #define SOCKET_TIMEOUT_SEC 30
 #define STDIN_MAX_BYTES (64 * 1024 * 1024)  /* 64 MB — safety cap for inline stdin */
 
@@ -1160,7 +1160,7 @@ _Noreturn void exec_am_broadcast(int argc, char** argv,
     child_argv[2]  = "--user";
     child_argv[3]  = "0";
     child_argv[4]  = "-n";
-    child_argv[5]  = "com.termux.api/.TermuxApiReceiver";
+    child_argv[5]  = "texmux.api/.TermuxApiReceiver";
     child_argv[6]  = "--es";
     child_argv[7]  = "socket_input";
     child_argv[8]  = output_address_string;

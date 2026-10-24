@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 
-LISTEN = "\0com.termux.api://listen"
+LISTEN = "\0texmux.api://listen"
 CLIENT = sys.argv[1] if len(sys.argv) > 1 else "/tmp/tapi"
 
 results = []

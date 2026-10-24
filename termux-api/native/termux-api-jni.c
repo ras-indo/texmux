@@ -35,7 +35,7 @@ static char* jstring_to_cstr(JNIEnv* env, jstring js) {
 /* ─── NativeBridge.generateUuid() → String ────────────────────── */
 
 JNIEXPORT jstring JNICALL
-Java_com_termux_api_NativeBridge_generateUuid(JNIEnv* env, jclass clazz) {
+Java_texmux_api_NativeBridge_generateUuid(JNIEnv* env, jclass clazz) {
     (void)clazz;
     char buf[64];
     generate_uuid(buf);
@@ -45,7 +45,7 @@ Java_com_termux_api_NativeBridge_generateUuid(JNIEnv* env, jclass clazz) {
 /* ─── NativeBridge.jsonEscape(String) → String ────────────────── */
 
 JNIEXPORT jstring JNICALL
-Java_com_termux_api_NativeBridge_jsonEscape(JNIEnv* env, jclass clazz, jstring input) {
+Java_texmux_api_NativeBridge_jsonEscape(JNIEnv* env, jclass clazz, jstring input) {
     (void)clazz;
     char* cstr = jstring_to_cstr(env, input);
     if (!cstr) return (*env)->NewStringUTF(env, "null");
@@ -60,7 +60,7 @@ Java_com_termux_api_NativeBridge_jsonEscape(JNIEnv* env, jclass clazz, jstring i
 /* ─── NativeBridge.b64Encode(byte[]) → String ─────────────────── */
 
 JNIEXPORT jstring JNICALL
-Java_com_termux_api_NativeBridge_b64Encode(JNIEnv* env, jclass clazz, jbyteArray data) {
+Java_texmux_api_NativeBridge_b64Encode(JNIEnv* env, jclass clazz, jbyteArray data) {
     (void)clazz;
     if (!data) return (*env)->NewStringUTF(env, "");
     jsize len = (*env)->GetArrayLength(env, data);
@@ -85,7 +85,7 @@ Java_com_termux_api_NativeBridge_b64Encode(JNIEnv* env, jclass clazz, jbyteArray
  */
 
 JNIEXPORT jstring JNICALL
-Java_com_termux_api_NativeBridge_buildJsonCommand(JNIEnv* env, jclass clazz,
+Java_texmux_api_NativeBridge_buildJsonCommand(JNIEnv* env, jclass clazz,
                                                    jobjectArray javaArgs) {
     (void)clazz;
     if (!javaArgs) return (*env)->NewStringUTF(env, "");
@@ -129,7 +129,7 @@ Java_com_termux_api_NativeBridge_buildJsonCommand(JNIEnv* env, jclass clazz,
  */
 
 JNIEXPORT jobject JNICALL
-Java_com_termux_api_NativeBridge_nativeCreateFileServerSocket(
+Java_texmux_api_NativeBridge_nativeCreateFileServerSocket(
     JNIEnv* env, jclass clazz, jstring path)
 {
     (void)clazz;
