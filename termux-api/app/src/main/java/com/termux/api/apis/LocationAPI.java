@@ -111,19 +111,30 @@ public class LocationAPI {
                         // requestSingleUpdate() only calls back when a fix
                         // arrives. With the provider disabled it never does, and
                         // the command sat on the socket forever printing nothing.
-                        if (!manager.isProviderEnabled(provider)) {
+                        Location cached = null;
+                        try {
+                            cached = getLastKnownWithFallback(manager, provider);
+                        } catch (SecurityException e) {
+                            Logger.logStackTraceWithMessage(LOG_TAG, "Cached fix needs permission", e);
+                        }
+                        if (cached != null) {
+                            locationToJson(cached, out, finalProvider);
+                            break;
+                        }
+
+                        boolean providerEnabled;
+                        try {
+                            providerEnabled = manager.isProviderEnabled(provider);
+                        } catch (SecurityException e) {
+                            Logger.logStackTraceWithMessage(LOG_TAG, "isProviderEnabled(" + provider + ")", e);
+                            providerEnabled = true;
+                        }
+                        if (!providerEnabled) {
                             out.beginObject()
                                     .name("API_ERROR").value("Provider '" + provider + "' is disabled")
                                     .name("hint").value("Nyalakan Location/GPS lalu jalankan ulang perintahnya.")
                                     .endObject();
                             break;
-                        }
-
-                        final Location[] cachedHolder = new Location[1];
-                        try {
-                            cachedHolder[0] = getLastKnownWithFallback(manager, provider);
-                        } catch (SecurityException e) {
-                            Logger.logStackTraceWithMessage(LOG_TAG, "Cached fix needs permission", e);
                         }
 
                         Looper.prepare();
@@ -133,16 +144,11 @@ public class LocationAPI {
                             @Override
                             public void run() {
                                 if (answered[0]) return;
-                                Location cached = cachedHolder[0];
                                 try {
-                                    if (cached != null) {
-                                        locationToJson(cached, out, finalProvider);
-                                    } else {
-                                        out.beginObject()
-                                                .name("API_ERROR").value("Location timeout after 20s")
-                                                .name("hint").value("Belum ada fix. Coba di luar ruangan, atau pakai -r last / -p network.")
-                                                .endObject();
-                                    }
+                                    out.beginObject()
+                                            .name("API_ERROR").value("Location timeout after 20s")
+                                            .name("hint").value("Belum ada fix. Coba di luar ruangan, atau pakai -r last / -p network.")
+                                            .endObject();
                                 } catch (IOException e) {
                                     Logger.logStackTraceWithMessage(LOG_TAG, "Writing timeout", e);
                                 } finally {
@@ -172,7 +178,7 @@ public class LocationAPI {
                                 try {
                                     answered[0] = true;
                                     timeoutHandler.removeCallbacksAndMessages(null);
-                                    locationToJson(location, out);
+                                    locationToJson(location, out, finalProvider);
                                 } catch (IOException e) {
                                     Logger.logStackTraceWithMessage(LOG_TAG, "Writing json", e);
                                 } finally {
