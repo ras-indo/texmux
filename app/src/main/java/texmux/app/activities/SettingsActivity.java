@@ -9,7 +9,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 
-import texmux.R;
+import texmux.app.R;
 import texmux.shared.activities.ReportActivity;
 import texmux.shared.file.FileUtils;
 import texmux.shared.models.ReportInfo;

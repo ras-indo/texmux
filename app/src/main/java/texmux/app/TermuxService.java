@@ -21,7 +21,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import texmux.R;
+import texmux.app.R;
 import texmux.app.event.SystemEventReceiver;
 import texmux.app.terminal.TermuxTerminalSessionActivityClient;
 import texmux.app.terminal.TermuxTerminalSessionServiceClient;

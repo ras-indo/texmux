@@ -3,7 +3,7 @@ package texmux.app;
 import android.app.Application;
 import android.content.Context;
 
-import texmux.BuildConfig;
+import texmux.app.BuildConfig;
 import texmux.shared.errors.Error;
 import texmux.shared.logger.Logger;
 import texmux.shared.termux.TermuxProot;

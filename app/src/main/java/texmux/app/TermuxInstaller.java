@@ -16,7 +16,7 @@ import android.graphics.Typeface;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import texmux.R;
+import texmux.app.R;
 import texmux.shared.file.FileUtils;
 import texmux.shared.termux.crash.TermuxCrashUtils;
 import texmux.shared.termux.file.TermuxFileUtils;

@@ -33,7 +33,7 @@ import androidx.dynamicanimation.animation.DynamicAnimation;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
 
-import texmux.R;
+import texmux.app.R;
 import texmux.app.api.file.FileReceiverActivity;
 import texmux.app.terminal.TermuxActivityRootView;
 import texmux.app.terminal.TermuxTerminalSessionActivityClient;

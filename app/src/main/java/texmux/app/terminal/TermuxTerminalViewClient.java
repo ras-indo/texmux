@@ -18,7 +18,7 @@ import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.Toast;
 
-import texmux.R;
+import texmux.app.R;
 import texmux.app.TermuxActivity;
 import texmux.app.terminal.StylePanelFragment;
 import texmux.shared.file.FileUtils;

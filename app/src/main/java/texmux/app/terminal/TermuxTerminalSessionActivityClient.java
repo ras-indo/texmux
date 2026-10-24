@@ -16,7 +16,7 @@ import android.widget.ListView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import texmux.R;
+import texmux.app.R;
 import texmux.shared.interact.ShareUtils;
 import texmux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import texmux.shared.termux.interact.TextInputDialogUtils;

@@ -8,7 +8,7 @@ import androidx.preference.PreferenceDataStore;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
-import texmux.R;
+import texmux.app.R;
 import texmux.shared.termux.settings.preferences.TermuxWidgetAppSharedPreferences;
 
 @Keep

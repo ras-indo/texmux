@@ -11,7 +11,7 @@ import android.provider.DocumentsContract.Root;
 import android.provider.DocumentsProvider;
 import android.webkit.MimeTypeMap;
 
-import texmux.R;
+import texmux.app.R;
 import texmux.shared.termux.TermuxConstants;
 
 import java.io.File;

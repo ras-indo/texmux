@@ -42,7 +42,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-import texmux.R;
+import texmux.app.R;
 
 public class StylePanelFragment extends Fragment {
 
