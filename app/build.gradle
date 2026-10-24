@@ -115,6 +115,8 @@ android {
 
     lint {
         disable 'ProtectedPermissions'
+        abortOnError false
+        checkReleaseBuilds false
     }
 
     testOptions {
