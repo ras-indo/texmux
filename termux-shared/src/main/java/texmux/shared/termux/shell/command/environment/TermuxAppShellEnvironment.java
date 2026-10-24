@@ -90,7 +90,7 @@ public class TermuxAppShellEnvironment {
 
     /** Set Termux app environment variables in {@link #termuxAppEnvironment}. */
     public synchronized static void setTermuxAppEnvironment(@NonNull Context currentPackageContext) {
-        boolean isTermuxApp = TermuxConstants.TERMUX_PACKAGE_NAME.equals(currentPackageContext.getPackageName());
+        boolean isTermuxApp = TermuxConstants.TERMUX_APP_PACKAGE_NAME.equals(currentPackageContext.getPackageName());
 
         // If current package context is of termux app and its environment is already set, then no need to set again since it won't change
         // Other apps should always set environment again since termux app may be installed/updated/deleted in background
@@ -99,7 +99,7 @@ public class TermuxAppShellEnvironment {
 
         termuxAppEnvironment = null;
 
-        String packageName = TermuxConstants.TERMUX_PACKAGE_NAME;
+        String packageName = TermuxConstants.TERMUX_APP_PACKAGE_NAME;
         PackageInfo packageInfo = PackageUtils.getPackageInfoForPackage(currentPackageContext, packageName);
         if (packageInfo == null) return;
         ApplicationInfo applicationInfo = PackageUtils.getApplicationInfoForPackage(currentPackageContext, packageName);
@@ -154,7 +154,7 @@ public class TermuxAppShellEnvironment {
     public static void putTermuxAPKSignature(@NonNull Context currentPackageContext,
                                              @NonNull HashMap<String, String> environment) {
         String signingCertificateSHA256Digest = PackageUtils.getSigningCertificateSHA256DigestForPackage(currentPackageContext,
-            TermuxConstants.TERMUX_PACKAGE_NAME);
+            TermuxConstants.TERMUX_APP_PACKAGE_NAME);
         if (signingCertificateSHA256Digest != null) {
             ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_TERMUX_APP__APK_RELEASE,
                 TermuxUtils.getAPKRelease(signingCertificateSHA256Digest).replaceAll("[^a-zA-Z]", "_").toUpperCase());

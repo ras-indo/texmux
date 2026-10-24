@@ -60,7 +60,7 @@ public class TermuxUtils {
      * @return Returns the {@link Context}. This will {@code null} if an exception is raised.
      */
     public static Context getTermuxPackageContext(@NonNull Context context) {
-        return PackageUtils.getContextForPackage(context, TermuxConstants.TERMUX_PACKAGE_NAME);
+        return PackageUtils.getContextForPackage(context, TermuxConstants.TERMUX_APP_PACKAGE_NAME);
     }
 
     /**
@@ -71,7 +71,7 @@ public class TermuxUtils {
      * @return Returns the {@link Context}. This will {@code null} if an exception is raised.
      */
     public static Context getTermuxPackageContextWithCode(@NonNull Context context) {
-        return PackageUtils.getContextForPackage(context, TermuxConstants.TERMUX_PACKAGE_NAME, Context.CONTEXT_INCLUDE_CODE);
+        return PackageUtils.getContextForPackage(context, TermuxConstants.TERMUX_APP_PACKAGE_NAME, Context.CONTEXT_INCLUDE_CODE);
     }
 
     /**
@@ -165,7 +165,7 @@ public class TermuxUtils {
      * or disabled, otherwise {@code null}.
      */
     public static String isTermuxAppInstalled(@NonNull final Context context) {
-        return PackageUtils.isAppInstalled(context, TermuxConstants.TERMUX_APP_NAME, TermuxConstants.TERMUX_PACKAGE_NAME);
+        return PackageUtils.isAppInstalled(context, TermuxConstants.TERMUX_APP_NAME, TermuxConstants.TERMUX_APP_PACKAGE_NAME);
     }
 
     /**
@@ -276,13 +276,13 @@ public class TermuxUtils {
 
     /** Returns {@code true} if {@link Uri} has `package:` scheme for {@link TermuxConstants#TERMUX_PACKAGE_NAME} or its sub plugin package. */
     public static boolean isUriDataForTermuxOrPluginPackage(@NonNull Uri data) {
-        return data.toString().equals("package:" + TermuxConstants.TERMUX_PACKAGE_NAME) ||
-            data.toString().startsWith("package:" + TermuxConstants.TERMUX_PACKAGE_NAME + ".");
+        return data.toString().equals("package:" + TermuxConstants.TERMUX_APP_PACKAGE_NAME) ||
+            data.toString().startsWith("package:" + TermuxConstants.TERMUX_APP_PACKAGE_NAME + ".");
     }
 
     /** Returns {@code true} if {@link Uri} has `package:` scheme for {@link TermuxConstants#TERMUX_PACKAGE_NAME} sub plugin package. */
     public static boolean isUriDataForTermuxPluginPackage(@NonNull Uri data) {
-        return data.toString().startsWith("package:" + TermuxConstants.TERMUX_PACKAGE_NAME + ".");
+        return data.toString().startsWith("package:" + TermuxConstants.TERMUX_APP_PACKAGE_NAME + ".");
     }
 
     /**
@@ -476,7 +476,7 @@ public class TermuxUtils {
 
         markdownString.append((AndroidUtils.getAppInfoMarkdownString(context)));
 
-        if (context.getPackageName().equals(TermuxConstants.TERMUX_PACKAGE_NAME)) {
+        if (context.getPackageName().equals(TermuxConstants.TERMUX_APP_PACKAGE_NAME)) {
             AndroidUtils.appendPropertyToMarkdown(markdownString, "TERMUX_APP_PACKAGE_MANAGER", TermuxProot.TERMUX_APP_PACKAGE_MANAGER);
             AndroidUtils.appendPropertyToMarkdown(markdownString, "TERMUX_APP_PACKAGE_VARIANT", TermuxProot.TERMUX_APP_PACKAGE_VARIANT);
         }
@@ -724,7 +724,7 @@ public class TermuxUtils {
      * @return Returns the process if found and running, otherwise {@code null}.
      */
     public static String getTermuxAppPID(final Context context) {
-        return PackageUtils.getPackagePID(context, TermuxConstants.TERMUX_PACKAGE_NAME);
+        return PackageUtils.getPackagePID(context, TermuxConstants.TERMUX_APP_PACKAGE_NAME);
     }
 
 }

@@ -349,6 +349,7 @@ public final class TermuxConstants {
     public static final String TERMUX_APP_NAME = "Termux"; // Default: "Termux"
     /** Termux package name */
     public static final String TERMUX_PACKAGE_NAME = "texmux"; // Default: "texmux"
+    public static final String TERMUX_APP_PACKAGE_NAME = "texmux.app"; // Actual Android application package name
     /** Termux GitHub repo name */
     public static final String TERMUX_GITHUB_REPO_NAME = "termux-app"; // Default: "termux-app"
     /** Termux GitHub repo url */
@@ -577,7 +578,7 @@ public final class TermuxConstants {
 
     /** Termux app internal private app data directory path */
     @SuppressLint("SdCardPath")
-    public static final String TERMUX_INTERNAL_PRIVATE_APP_DATA_DIR_PATH = "/data/data/" + TERMUX_PACKAGE_NAME; // Default: "/data/data/texmux"
+    public static final String TERMUX_INTERNAL_PRIVATE_APP_DATA_DIR_PATH = "/data/data/" + TERMUX_APP_PACKAGE_NAME; // Default: "/data/data/texmux"
     /** Termux app internal private app data directory */
     public static final File TERMUX_INTERNAL_PRIVATE_APP_DATA_DIR = new File(TERMUX_INTERNAL_PRIVATE_APP_DATA_DIR_PATH);
 

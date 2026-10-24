@@ -42,7 +42,7 @@ public class TermuxAppSharedPreferences extends AppSharedPreferences {
      */
     @Nullable
     public static TermuxAppSharedPreferences build(@NonNull final Context context) {
-        Context termuxPackageContext = PackageUtils.getContextForPackage(context, TermuxConstants.TERMUX_PACKAGE_NAME);
+        Context termuxPackageContext = PackageUtils.getContextForPackage(context, TermuxConstants.TERMUX_APP_PACKAGE_NAME);
         if (termuxPackageContext == null)
             return null;
         else
@@ -59,7 +59,7 @@ public class TermuxAppSharedPreferences extends AppSharedPreferences {
      * @return Returns the {@link TermuxAppSharedPreferences}. This will {@code null} if an exception is raised.
      */
     public static TermuxAppSharedPreferences build(@NonNull final Context context, final boolean exitAppOnError) {
-        Context termuxPackageContext = TermuxUtils.getContextForPackageOrExitApp(context, TermuxConstants.TERMUX_PACKAGE_NAME, exitAppOnError);
+        Context termuxPackageContext = TermuxUtils.getContextForPackageOrExitApp(context, TermuxConstants.TERMUX_APP_PACKAGE_NAME, exitAppOnError);
         if (termuxPackageContext == null)
             return null;
         else
