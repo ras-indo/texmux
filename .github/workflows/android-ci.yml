@@ -129,7 +129,7 @@ jobs:
           python3 termux-api/native/test-protocol.py /tmp/tapi-build/termux-api
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Verify APK output
         run: |
@@ -138,7 +138,7 @@ jobs:
 
       - name: Verify the APK ships the proot that was just built
         run: |
-          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
+          APK=$(ls app/build/outputs/apk/release/*_arm64-v8a.apk)
           unzip -p "$APK" assets/proot/proot > /tmp/apk-proot
           unzip -p "$APK" assets/proot/proot-legacy > /tmp/apk-legacy
           md5sum /tmp/apk-proot /tmp/apk-legacy
@@ -151,7 +151,7 @@ jobs:
       - name: Verify the APK ships a single, fixed termux-api client
         run: |
           set -euo pipefail
-          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
+          APK=$(ls app/build/outputs/apk/release/*_arm64-v8a.apk)
           unzip -p "$APK" assets/termux-api/bin/termux-api > /tmp/apk-termux-api
           file /tmp/apk-termux-api | grep -q 'ELF 64-bit' \
             || { echo "!! assets/termux-api/bin/termux-api is not an ELF binary"; exit 1; }
@@ -169,7 +169,7 @@ jobs:
       - name: Verify every shipped termux-api script is runnable inside the container
         run: |
           set -euo pipefail
-          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
+          APK=$(ls app/build/outputs/apk/release/*_arm64-v8a.apk)
           rm -rf /tmp/apk-api && mkdir -p /tmp/apk-api
           unzip -oq "$APK" -d /tmp/apk-api 'assets/termux-api/bin/*' 'assets/termux-api/libexec/*'
           # A script whose shebang names a path the container does not have dies
@@ -196,7 +196,7 @@ jobs:
       - name: Verify the wifi/bluetooth API additions are in the APK
         run: |
           set -euo pipefail
-          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
+          APK=$(ls app/build/outputs/apk/release/*_arm64-v8a.apk)
           rm -rf /tmp/apk-x && mkdir -p /tmp/apk-x
           unzip -oq "$APK" -d /tmp/apk-x 'classes*.dex' 'assets/termux-api/bin/termux-wifi' \
                      'assets/termux-api/bin/termux-bluetooth' 'assets/termux-api/bin/termux-permission'
@@ -376,7 +376,7 @@ jobs:
       - name: Verify the Nsd / Companion API additions are in the APK
         run: |
           set -euo pipefail
-          APK=$(ls app/build/outputs/apk/debug/*_arm64-v8a.apk)
+          APK=$(ls app/build/outputs/apk/release/*_arm64-v8a.apk)
           rm -rf /tmp/apk-n && mkdir -p /tmp/apk-n
           unzip -oq "$APK" -d /tmp/apk-n 'classes*.dex' \
             'assets/termux-api/bin/termux-nsd' 'assets/termux-api/bin/termux-companion' \
@@ -438,7 +438,7 @@ jobs:
       - name: Collect only the APK needed (arm64-v8a)
         run: |
           mkdir -p upload_apk
-          cp app/build/outputs/apk/debug/*_arm64-v8a.apk upload_apk/
+          cp app/build/outputs/apk/release/*_arm64-v8a.apk upload_apk/
           APK=$(ls upload_apk/*.apk)
           echo "=== Collected for upload (~41MB, arm64-v8a only) ==="
           ls -lh "$APK"

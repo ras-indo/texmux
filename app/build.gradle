@@ -81,10 +81,18 @@ android {
             storePassword 'xrj45yWGLbsO7W0v'
             keyPassword 'xrj45yWGLbsO7W0v'
         }
+        release {
+            storeFile file('texmux-release.p12')
+            storeType 'pkcs12'
+            keyAlias 'texmux'
+            storePassword 'texmux123'
+            keyPassword 'texmux123'
+        }
     }
 
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
