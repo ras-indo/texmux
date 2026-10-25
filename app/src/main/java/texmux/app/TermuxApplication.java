@@ -15,7 +15,6 @@ import texmux.shared.termux.settings.properties.TermuxAppSharedProperties;
 import texmux.shared.termux.shell.command.environment.TermuxShellEnvironment;
 import texmux.shared.termux.shell.am.TermuxAmSocketServer;
 import texmux.shared.termux.shell.TermuxShellManager;
-import texmux.api.SocketListener;
 import texmux.api.util.ResultReturner;
 import texmux.shared.termux.theme.TermuxThemeUtils;
 
@@ -60,7 +59,12 @@ public class TermuxApplication extends Application {
             // Start the socket listener so API tools can connect
             // via the abstract-namespace socket — no am, no daemon,
             // no filesystem socket.  Single path for all API calls.
-            SocketListener.createSocketListener(this);
+            try {
+                Class<?> sl = Class.forName("texmux.api.SocketListener");
+                sl.getMethod("createSocketListener", Application.class).invoke(null, this);
+            } catch (Exception e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "SocketListener not available", e);
+            }
         } else {
             Logger.logErrorExtended(LOG_TAG, "Termux files directory is not accessible\n" + error);
         }
