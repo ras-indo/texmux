@@ -348,7 +348,7 @@ public final class TermuxConstants {
     /** Termux app name */
     public static final String TERMUX_APP_NAME = "Termux"; // Default: "Termux"
     /** Termux package name */
-    public static final String TERMUX_PACKAGE_NAME = "texmux.app"; // Default: "texmux.app"
+    public static final String TERMUX_PACKAGE_NAME = "texmux"; // Default: "texmux"
     public static final String TERMUX_APP_PACKAGE_NAME = "texmux.app"; // Actual Android application package name
     /** Termux GitHub repo name */
     public static final String TERMUX_GITHUB_REPO_NAME = "termux-app"; // Default: "termux-app"
