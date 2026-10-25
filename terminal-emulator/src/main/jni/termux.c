@@ -217,7 +217,7 @@ JNIEXPORT void JNICALL Java_termux_terminal_JNI_close(JNIEnv* TERMUX_UNUSED(env)
     close(fileDescriptor);
 }
 
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* TERMUX_UNUSED(reserved)) {
     JNIEnv* env;
     if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK) {
         return JNI_ERR;
