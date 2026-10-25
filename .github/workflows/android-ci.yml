@@ -129,7 +129,7 @@ jobs:
           python3 termux-api/native/test-protocol.py /tmp/tapi-build/termux-api
 
       - name: Build debug APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --rerun-tasks --stacktrace
 
       - name: Verify APK output
         run: |
