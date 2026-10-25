@@ -216,3 +216,25 @@ JNIEXPORT void JNICALL Java_termux_terminal_JNI_close(JNIEnv* TERMUX_UNUSED(env)
 {
     close(fileDescriptor);
 }
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    JNIEnv* env;
+    if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK) {
+        return JNI_ERR;
+    }
+    jclass clazz = (*env)->FindClass(env, "texmux/terminal/JNI");
+    if (clazz == NULL) {
+        return JNI_ERR;
+    }
+    JNINativeMethod methods[] = {
+        {"createSubprocess", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;[IIIII)I", (void*)Java_termux_terminal_JNI_createSubprocess},
+        {"setPtyWindowSize", "(IIIII)V", (void*)Java_termux_terminal_JNI_setPtyWindowSize},
+        {"setPtyUTF8Mode", "(I)V", (void*)Java_termux_terminal_JNI_setPtyUTF8Mode},
+        {"waitFor", "(I)I", (void*)Java_termux_terminal_JNI_waitFor},
+        {"close", "(I)V", (void*)Java_termux_terminal_JNI_close},
+    };
+    if ((*env)->RegisterNatives(env, clazz, methods, 5) < 0) {
+        return JNI_ERR;
+    }
+    return JNI_VERSION_1_6;
+}
