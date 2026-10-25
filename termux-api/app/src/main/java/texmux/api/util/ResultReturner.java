@@ -491,6 +491,7 @@ public abstract class ResultReturner {
 
     public static void setContext(Context context) {
         ResultReturner.context = context.getApplicationContext();
+        android.util.Log.d("ResultReturner", "setContext called");
     }
 
     // ─── Direct (in-process) writer ────────────────────────────────────
