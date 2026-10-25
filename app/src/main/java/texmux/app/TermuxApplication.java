@@ -55,7 +55,7 @@ public class TermuxApplication extends Application {
 
             TermuxAmSocketServer.setupTermuxAmSocketServer(context);
 
-            ResultReturner.setContext(this);
+            ResultReturner.context = this.getApplicationContext();
 
             // Start the socket listener so API tools can connect
             // via the abstract-namespace socket — no am, no daemon,
