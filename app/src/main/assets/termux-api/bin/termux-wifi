@@ -669,7 +669,7 @@ EOF
 }
 
 call_api() {
-    /data/data/texmux.app/files/apps/texmux.app/bin/termux-api Wifi "$@"
+    /data/data/texmux.app/files/apps/texmux/bin/termux-api Wifi "$@"
 }
 
 cmd_connection_info() {

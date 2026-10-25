@@ -144,7 +144,7 @@ show_stop_usage() {
 }
 
 main() {
-    /data/data/texmux.app/files/apps/texmux.app/bin/termux-api MediaPlayer "$@"
+    /data/data/texmux.app/files/apps/texmux/bin/termux-api MediaPlayer "$@"
 }
 
 CMD="${1:-}"

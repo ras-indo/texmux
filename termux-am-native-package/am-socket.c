@@ -24,7 +24,7 @@
 #include <sys/un.h>
 
 /* Termux AM socket path (@TERMUX_APPS_DIR@/@TERMUX_PACKAGE@/termux-am/am.sock) */
-#define SOCKET_PATH "/data/data/texmux.app/files/apps/texmux.app/termux-am/am.sock"
+#define SOCKET_PATH "/data/data/texmux.app/files/apps/texmux/termux-am/am.sock"
 
 static void
 send_all(int fd, const char *data, int len)

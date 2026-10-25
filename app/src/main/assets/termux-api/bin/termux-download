@@ -28,7 +28,7 @@
 #     termux-download -t "My File" https://example.com/file.zip
 #
 #     # Download to a specific path
-#     termux-download -p /data/data/texmux.app/files/apps/texmux.app/tmp/downloaded/file https://example.com/file.zip
+#     termux-download -p /data/data/texmux.app/files/apps/texmux/tmp/downloaded/file https://example.com/file.zip
 #
 set -e -u
 
@@ -101,4 +101,4 @@ if [ -n "$ARG_T" ]; then set -- "$@" $ARG_T "$OPT_T"; fi
 if [ -n "$ARG_P" ]; then set -- "$@" $ARG_P "$OPT_P"; fi
 set -- "$@" "$URL_TO_DOWNLOAD"
 
-/data/data/texmux.app/files/apps/texmux.app/bin/termux-api Download "$@"
+/data/data/texmux.app/files/apps/texmux/bin/termux-api Download "$@"

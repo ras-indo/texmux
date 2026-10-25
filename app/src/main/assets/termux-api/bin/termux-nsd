@@ -43,7 +43,7 @@
 set -u
 
 call_api() {
-    /data/data/texmux.app/files/apps/texmux.app/bin/termux-api Nsd "$@"
+    /data/data/texmux.app/files/apps/texmux/bin/termux-api Nsd "$@"
 }
 
 show_usage() {

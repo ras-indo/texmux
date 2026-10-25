@@ -156,7 +156,7 @@ get_limit () {
 }
 
 call_api () {
-	/data/data/texmux.app/files/apps/texmux.app/bin/termux-api Sensor "$@"
+	/data/data/texmux.app/files/apps/texmux/bin/termux-api Sensor "$@"
 }
 
 set_flag () {

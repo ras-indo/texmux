@@ -82,4 +82,4 @@ if [ -z "$FREQUENCY" ]; then echo "$SCRIPTNAME: No frequency specified"; exit 1;
 if [ $# -lt 1 ]; then echo "$SCRIPTNAME: too few arguments"; exit 1; fi
 if [ $# -gt 1 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 
-/data/data/texmux.app/files/apps/texmux.app/bin/termux-api InfraredTransmit $FREQUENCY --eia pattern $1
+/data/data/texmux.app/files/apps/texmux/bin/termux-api InfraredTransmit $FREQUENCY --eia pattern $1

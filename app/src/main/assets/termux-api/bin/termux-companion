@@ -41,7 +41,7 @@
 set -u
 
 call_api() {
-    /data/data/texmux.app/files/apps/texmux.app/bin/termux-api Companion "$@"
+    /data/data/texmux.app/files/apps/texmux/bin/termux-api Companion "$@"
 }
 
 show_usage() {

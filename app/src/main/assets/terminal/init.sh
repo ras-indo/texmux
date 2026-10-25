@@ -1,6 +1,6 @@
 #!/bin/sh
 
-TERMUX_API_PREFIX="/data/data/texmux.app/files/apps/texmux.app"
+TERMUX_API_PREFIX="/data/data/texmux.app/files/apps/texmux"
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${TERMUX_API_PREFIX}/bin
 export HOME=/root
 export USER=root
@@ -103,16 +103,16 @@ fi
 # jalan kalo /system bind-mounted. Kalo gagal (crash/segfault), otomatis
 # fallback ke termux-am-socket (AF_UNIX ke AmSocketServer di app process).
 _AM_SCRIPT="/usr/local/bin/am"
-_AM_APK_PATH="/data/data/texmux.app/files/apps/texmux.app/libexec/am.apk"
-_AM_SOCKET_BIN="/data/data/texmux.app/files/apps/texmux.app/bin/termux-am-socket"
+_AM_APK_PATH="/data/data/texmux.app/files/apps/texmux/libexec/am.apk"
+_AM_SOCKET_BIN="/data/data/texmux.app/files/apps/texmux/bin/termux-am-socket"
 if [ ! -f "$_AM_SCRIPT" ] || ! grep -qs "app_process\|termux-am-socket" "$_AM_SCRIPT" 2>/dev/null; then
     cat > "$_AM_SCRIPT" << 'AM_SCRIPT'
 #!/system/bin/sh
 # am — kaya termux original + fallback socket untuk proot.
 # Priority: app_process > socket (termux-am-socket).
 TERMUX_AM_VERSION=0.8.0
-AM_APK_PATH="/data/data/texmux.app/files/apps/texmux.app/libexec/am.apk"
-AM_SOCKET_BIN="/data/data/texmux.app/files/apps/texmux.app/bin/termux-am-socket"
+AM_APK_PATH="/data/data/texmux.app/files/apps/texmux/libexec/am.apk"
+AM_SOCKET_BIN="/data/data/texmux.app/files/apps/texmux/bin/termux-am-socket"
 
 if [ "$1" = "--version" ]; then
     echo "$TERMUX_AM_VERSION"

@@ -101,4 +101,4 @@ else
 fi
 
 
-/data/data/texmux.app/files/apps/texmux.app/bin/termux-api NotificationChannel $ARGS
+/data/data/texmux.app/files/apps/texmux/bin/termux-api NotificationChannel $ARGS

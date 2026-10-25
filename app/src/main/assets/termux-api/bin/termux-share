@@ -113,7 +113,7 @@ if [ $# != 0 ]; then
     fi
 
     # Note that the file path can contain whitespace.
-    /data/data/texmux.app/files/apps/texmux.app/bin/termux-api Share $PARAMS --es file "$(realpath "$1")"
+    /data/data/texmux.app/files/apps/texmux/bin/termux-api Share $PARAMS --es file "$(realpath "$1")"
 else
-    /data/data/texmux.app/files/apps/texmux.app/bin/termux-api Share $PARAMS
+    /data/data/texmux.app/files/apps/texmux/bin/termux-api Share $PARAMS
 fi
