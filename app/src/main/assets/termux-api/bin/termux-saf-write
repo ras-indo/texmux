@@ -70,5 +70,5 @@ shift $((OPTIND-1))
 
 if [ $# != 1 ]; then echo "$SCRIPTNAME: Invalid argument count"; exit 1; fi
 
-/data/data/com.termux/files/apps/com.termux/bin/termux-api SAF --es safmethod writeDocument --es uri "$1"
+/data/data/texmux.app/files/apps/texmux.app/bin/termux-api SAF --es safmethod writeDocument --es uri "$1"
  

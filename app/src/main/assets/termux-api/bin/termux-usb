@@ -135,7 +135,7 @@ else
     fi
 fi
 
-CMD="/data/data/com.termux/files/apps/com.termux/bin/termux-api Usb -a $ACTION $PARAMS"
+CMD="/data/data/texmux.app/files/apps/texmux.app/bin/termux-api Usb -a $ACTION $PARAMS"
 
 if [[ "$ACTION" == "list" || "$ACTION" == "info" ]]; then
     $CMD

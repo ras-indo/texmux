@@ -119,4 +119,4 @@ case $1 in
         *) show_usage;;
 esac
 
-/data/data/com.termux/files/apps/com.termux/bin/termux-api WifiEnable --ez enabled "$1"
+/data/data/texmux.app/files/apps/texmux.app/bin/termux-api WifiEnable --ez enabled "$1"

@@ -81,4 +81,4 @@ shift $((OPTIND-1))
 
 if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 
-/data/data/com.termux/files/apps/com.termux/bin/termux-api ContactList
+/data/data/texmux.app/files/apps/texmux.app/bin/termux-api ContactList

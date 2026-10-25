@@ -108,4 +108,4 @@ set --
 [ -n "$OPT_LS" ]   && set -- "$@" --ez lockscreen "$OPT_LS"
 [ -n "$OPT_FILE" ] && set -- "$@" --es file "$OPT_FILE"
 [ -n "$OPT_URL" ]  && set -- "$@" --es url "$OPT_URL"
-/data/data/com.termux/files/apps/com.termux/bin/termux-api Wallpaper "$@"
+/data/data/texmux.app/files/apps/texmux.app/bin/termux-api Wallpaper "$@"

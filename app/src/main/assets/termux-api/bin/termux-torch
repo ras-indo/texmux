@@ -33,7 +33,7 @@
 set -e -u
 
 SCRIPTNAME=termux-torch
-TERMUX_API=/data/data/com.termux/files/apps/com.termux/bin/termux-api
+TERMUX_API=/data/data/texmux.app/files/apps/texmux.app/bin/termux-api
 
 show_usage () {
     cat <<EOF

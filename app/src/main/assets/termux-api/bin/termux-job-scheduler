@@ -95,7 +95,7 @@ OPTIONS:
 
 EXAMPLES:
   # Schedule a script to run once
-  $SCRIPTNAME -s /data/data/com.termux/files/home/backup.sh --job-id 1
+  $SCRIPTNAME -s /data/data/texmux.app/files/home/backup.sh --job-id 1
 
   # Schedule a periodic backup every hour (network constrained)
   $SCRIPTNAME -s ~/backup.sh --job-id 2 --period-ms 3600000 --network unmetered
@@ -175,4 +175,4 @@ if [ -n "$OPT_PERSISTED" ]; then set -- "$@" --ez persisted "$OPT_PERSISTED"; fi
 if [ -n "$OPT_TRIGGER_CONTENT_URI" ]; then set -- "$@" --es trigger_content_uri "$OPT_TRIGGER_CONTENT_URI"; fi
 if [ -n "$OPT_TRIGGER_CONTENT_FLAG" ]; then set -- "$@" --ez trigger_content_flag "$OPT_TRIGGER_CONTENT_FLAG"; fi
 
-/data/data/com.termux/files/apps/com.termux/bin/termux-api JobScheduler "$@"
+/data/data/texmux.app/files/apps/texmux.app/bin/termux-api JobScheduler "$@"

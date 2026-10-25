@@ -84,7 +84,7 @@ do
 done
 shift $((OPTIND-1))
 
-CMD="/data/data/com.termux/files/apps/com.termux/bin/termux-api Toast $PARAMS"
+CMD="/data/data/texmux.app/files/apps/texmux.app/bin/termux-api Toast $PARAMS"
 
 # If toast text was not passed as an argument, then attempt to read from STDIN with a 3s timeout
 # Toast text arguments takes precedence over STDIN

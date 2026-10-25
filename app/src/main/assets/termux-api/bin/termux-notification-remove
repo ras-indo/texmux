@@ -68,4 +68,4 @@ shift $((OPTIND-1))
 
 if [ $# != 1 ]; then echo "$SCRIPTNAME: no notification id specified"; exit 1; fi
 
-/data/data/com.termux/files/apps/com.termux/bin/termux-api NotificationRemove --es id "$1"
+/data/data/texmux.app/files/apps/texmux.app/bin/termux-api NotificationRemove --es id "$1"
