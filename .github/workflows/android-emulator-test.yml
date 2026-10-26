@@ -41,16 +41,15 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: |
-            ls -la
             if [ -d termux-app ]; then
               cd termux-app
+              ./gradlew connectedDebugAndroidTest --stacktrace
             elif [ -f gradlew ]; then
-              :
+              ./gradlew connectedDebugAndroidTest --stacktrace
             else
-              find . -name gradlew | head -1 | xargs -I{} sh -c 'cd $(dirname {}) && pwd && ./gradlew connectedDebugAndroidTest --stacktrace'
-              exit 0
+              g=$(find . -name gradlew | head -1)
+              [ -n "$g" ] && cd $(dirname $g) && ./gradlew connectedDebugAndroidTest --stacktrace
             fi
-            ./gradlew connectedDebugAndroidTest --stacktrace
 
       - name: Upload test reports
         if: always()
@@ -58,5 +57,7 @@ jobs:
         with:
           name: android-test-reports
           path: |
-            **/app/build/reports/androidTests/
-            **/app/build/outputs/androidTest-results/
+            termux-app/app/build/reports/androidTests/
+            termux-app/app/build/outputs/androidTest-results/
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
