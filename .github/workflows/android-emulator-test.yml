@@ -41,15 +41,9 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: |
-            if [ -d termux-app ]; then
-              cd termux-app
-              ./gradlew connectedDebugAndroidTest --stacktrace
-            elif [ -f gradlew ]; then
-              ./gradlew connectedDebugAndroidTest --stacktrace
-            else
-              g=$(find . -name gradlew | head -1)
-              [ -n "$g" ] && cd $(dirname $g) && ./gradlew connectedDebugAndroidTest --stacktrace
-            fi
+            cd $GITHUB_WORKSPACE
+            if [ -d termux-app ]; then cd termux-app; fi
+            ./gradlew connectedDebugAndroidTest --stacktrace
 
       - name: Upload test reports
         if: always()
