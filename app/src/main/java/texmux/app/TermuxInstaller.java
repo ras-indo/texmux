@@ -738,6 +738,18 @@ final class TermuxInstaller {
             }
             dst.setExecutable(true, false);
             Logger.logInfo(LOG_TAG, "Deployed termux-am to " + dst.getAbsolutePath());
+            // Backward-compat: ensure `am` exists for native termux-api fallback
+            File amBin = new File(comTexmuxBin, "am");
+            if (!amBin.exists()) {
+                try {
+                    java.nio.file.Files.copy(dst.toPath(), amBin.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    amBin.setExecutable(true, false);
+                    Logger.logInfo(LOG_TAG, "Copied termux-am to am at " + amBin.getAbsolutePath());
+                } catch (Exception e) {
+                    Logger.logWarn(LOG_TAG, "Failed to copy termux-am to am: " + e.getMessage());
+                }
+            }
         } catch (java.io.FileNotFoundException e) {
             Logger.logWarn(LOG_TAG, "termux-am not found in assets/am-socket/, skipping");
         }
