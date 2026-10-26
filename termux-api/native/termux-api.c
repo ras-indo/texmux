@@ -27,11 +27,11 @@
 #define TERMUX_API_PACKAGE_VERSION "0.59.1"
 
 #ifndef PREFIX
-# define PREFIX "/data/data/texmux.app/files/apps/texmux"
+# define PREFIX "/data/data/texmux/files/apps/texmux"
 #endif
 
 #define LISTEN_SOCKET_ADDRESS "texmux.api://listen"
-#define FILESYSTEM_SOCKET_PATH "/data/data/texmux.app/files/termux-api.sock"
+#define FILESYSTEM_SOCKET_PATH "/data/data/texmux/files/termux-api.sock"
 #define SOCKET_TIMEOUT_SEC 30
 #define STDIN_MAX_BYTES (64 * 1024 * 1024)  /* 64 MB — safety cap for inline stdin */
 
