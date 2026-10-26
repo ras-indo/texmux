@@ -33,3 +33,4 @@ target_link_libraries(termux-api PRIVATE
     # Android logging (__android_log_write, etc.)
     log
 )
+ 
