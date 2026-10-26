@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10.0)
 project(termux-api-native-package C)
 
-set(TERMUX_PREFIX "/data/data/texmux.app/files/apps/texmux.app")
+set(TERMUX_PREFIX "/data/data/texmux.app/files/apps/texmux")
 set(TERMUX_PACKAGE_NAME "texmux.app")
 
 # Build the termux-api-broadcast executable (no-fork, direct socket client).

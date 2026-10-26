@@ -27,7 +27,7 @@
 #define TERMUX_API_PACKAGE_VERSION "0.59.1"
 
 #ifndef PREFIX
-# define PREFIX "/data/data/texmux.app/files/apps/texmux.app"
+# define PREFIX "/data/data/texmux.app/files/apps/texmux"
 #endif
 
 #define LISTEN_SOCKET_ADDRESS "texmux.api://listen"
