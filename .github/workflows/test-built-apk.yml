@@ -24,7 +24,7 @@ jobs:
         uses: dawidd6/action-download-artifact@v6
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: android.yml
+          workflow: .github/workflows/android-ci.yml
           workflow_conclusion: success
           name: texmux-debug-apk
           run_id: ${{ github.event.inputs.run_id }}
@@ -56,7 +56,7 @@ jobs:
             adb install -r app-release.apk
             adb shell pm list packages | grep texmux
             sleep 30
-            adb logcat -d | tail -40
+            adb logcat -d | tail -60
 
       - name: Upload logs
         if: always()
