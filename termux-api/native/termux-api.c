@@ -690,11 +690,12 @@ int run_api_command(int argc, char **argv) {
      */
     int fd = connect_dispatcher();
     if (fd == -1) {
-        /* The legacy path shells out to $PREFIX/bin/am.  When that binary is
-         * missing (app not installed, or PREFIX not deployed) there is nothing
-         * to wait for, so fail immediately instead of burning the response
-         * timeout — scripts used to hang 30 s on every call in that state. */
-        if (access(PREFIX "/bin/am", X_OK) != 0) {
+        /* Legacy path shells out to $PREFIX/bin/am (or termux-am). */
+        char am_path[512];
+        char termux_am_path[512];
+        snprintf(am_path, sizeof(am_path), "%s/bin/am", PREFIX);
+        snprintf(termux_am_path, sizeof(termux_am_path), "%s/bin/termux-am", PREFIX);
+        if (access(am_path, X_OK) != 0 && access(termux_am_path, X_OK) != 0) {
             fprintf(stderr,
                 "ERROR: Termux API unreachable and " PREFIX "/bin/am is missing.\n"
                 "       Is the Termux app installed and running?\n");
@@ -1174,6 +1175,7 @@ _Noreturn void exec_am_broadcast(int argc, char** argv,
     child_argv[total] = NULL;
 
     execv(PREFIX "/bin/am", child_argv);
+    execv(PREFIX "/bin/termux-am", child_argv);
     free(child_argv);
     perror("execv(am)");
     exit(1);
