@@ -1093,14 +1093,27 @@ final class TermuxInstaller {
 
         // Backward-compat: `am` must exist at PREFIX/bin/am so the native
         // termux-api client's fallback path (access(PREFIX "/bin/am", X_OK))
-        // succeeds. Always copy (more reliable than symlink on Android).
+        // succeeds. Always ensure it exists.
         File amLink = new File(termuxAm.getParentFile(), "am");
         amLink.delete();
         try {
-            java.nio.file.Files.copy(termuxAm.toPath(), amLink.toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            amLink.setExecutable(true, false);
-            Logger.logInfo(LOG_TAG, "Copied termux-am to am at " + amLink.getAbsolutePath());
+            if (termuxAm.exists()) {
+                java.nio.file.Files.copy(termuxAm.toPath(), amLink.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                amLink.setExecutable(true, false);
+                Logger.logInfo(LOG_TAG, "Copied termux-am to am at " + amLink.getAbsolutePath());
+            } else {
+                // try termux-am-socket as last resort
+                File termuxAmSocket2 = new File(termuxAm.getParentFile(), "termux-am-socket");
+                if (termuxAmSocket2.exists()) {
+                    java.nio.file.Files.copy(termuxAmSocket2.toPath(), amLink.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    amLink.setExecutable(true, false);
+                    Logger.logInfo(LOG_TAG, "Copied termux-am-socket to am at " + amLink.getAbsolutePath());
+                } else {
+                    Logger.logWarn(LOG_TAG, "termux-am missing, cannot create am");
+                }
+            }
         } catch (Exception e) {
             Logger.logWarn(LOG_TAG, "Failed to copy am: " + e.getMessage());
         }
