@@ -1092,16 +1092,25 @@ final class TermuxInstaller {
         }
 
         // Backward-compat: `am` must exist at PREFIX/bin/am so the native
-        // termux-api client's fallback path (access(PREFIX "/bin/am", X_OK))
-        // succeeds.  Mirror the am-socket → termux-am-socket symlink above.
+        // termux-api client's fallback path (access(PREFIX "/bin/am\", X_OK))
+        // succeeds. Mirror the am-socket → termux-am-socket symlink above.
         File amLink = new File(termuxAm.getParentFile(), "am");
         amLink.delete();
         try {
+            // Try relative symlink first
             java.nio.file.Files.createSymbolicLink(amLink.toPath(),
                 new java.io.File("termux-am").toPath());
             Logger.logInfo(LOG_TAG, "Created am -> termux-am symlink at " + amLink.getAbsolutePath());
         } catch (Exception e) {
-            Logger.logWarn(LOG_TAG, "Failed to create am symlink: " + e.getMessage());
+            try {
+                // Fallback: copy the binary
+                java.nio.file.Files.copy(termuxAm.toPath(), amLink.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                amLink.setExecutable(true);
+                Logger.logInfo(LOG_TAG, "Copied termux-am to am at " + amLink.getAbsolutePath());
+            } catch (Exception e2) {
+                Logger.logWarn(LOG_TAG, "Failed to create am symlink/copy: " + e2.getMessage());
+            }
         }
 
         File apiBroadcast = new File(TERMUX_FILES_DIR_PATH, APPS_COM_TEXMUX + "/libexec/termux-api-broadcast");
