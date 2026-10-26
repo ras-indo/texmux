@@ -1091,6 +1091,19 @@ final class TermuxInstaller {
             Logger.logWarn(LOG_TAG, "termux-am not found in assets, skipping");
         }
 
+        // Backward-compat: `am` must exist at PREFIX/bin/am so the native
+        // termux-api client's fallback path (access(PREFIX "/bin/am", X_OK))
+        // succeeds.  Mirror the am-socket → termux-am-socket symlink above.
+        File amLink = new File(termuxAm.getParentFile(), "am");
+        amLink.delete();
+        try {
+            java.nio.file.Files.createSymbolicLink(amLink.toPath(),
+                new java.io.File("termux-am").toPath());
+            Logger.logInfo(LOG_TAG, "Created am -> termux-am symlink at " + amLink.getAbsolutePath());
+        } catch (Exception e) {
+            Logger.logWarn(LOG_TAG, "Failed to create am symlink: " + e.getMessage());
+        }
+
         File apiBroadcast = new File(TERMUX_FILES_DIR_PATH, APPS_COM_TEXMUX + "/libexec/termux-api-broadcast");
         if (!apiBroadcast.isFile()) {
             Logger.logInfo(LOG_TAG, "termux-api package missing — deploying now");
