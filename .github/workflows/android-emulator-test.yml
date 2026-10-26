@@ -40,7 +40,7 @@ jobs:
           profile: Nexus 6
           disable-animations: true
           emulator-boot-timeout: 600
-          working-directory: termux-app
+          working-directory: ./termux-app
           script: |
             ./gradlew connectedDebugAndroidTest --stacktrace
 
