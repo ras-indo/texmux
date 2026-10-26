@@ -54,9 +54,28 @@ jobs:
           emulator-boot-timeout: 900
           script: |
             adb install -r app-release.apk
-            adb shell pm list packages | grep texmux
-            sleep 30
-            adb logcat -d | tail -60
+            adb shell pm list packages | grep -E "texmux|termux" || true
+            adb logcat -c
+            echo "--- Starting TermuxActivity ---"
+            adb shell am start -n texmux.app/texmux.app.TermuxActivity || adb shell monkey -p texmux.app -c android.intent.category.LAUNCHER 1 || true
+            sleep 20
+            echo "--- Triggering termux-api ---"
+            # Try broadcast to TermuxApiReceiver (app module)
+            adb shell am broadcast -n texmux.app/texmux.api.TermuxApiReceiver -a com.termux.api.action.API --es api_method version 2>&1 | tail -10 || true
+            adb shell am broadcast -n texmux.app/texmux.api.TermuxApiReceiver -a com.termux.api.intent.action.API --es method version 2>&1 | tail -10 || true
+            # Try generic termux-api broadcast intents
+            adb shell am broadcast -a com.termux.api.BROADCAST --es cmd termux-battery-status 2>&1 | tail -10 || true
+            adb shell am broadcast -a com.termux.api.TERMUX_API --es cmd termux-battery-status 2>&1 | tail -10 || true
+            # Try termux-am style
+            adb shell am broadcast -a com.termux.broadcast.TERMUX_API --es cmd termux-battery-status 2>&1 | tail -10 || true
+            # Try calling termux-api binary if present in app data or via shell
+            adb shell "command -v termux-api 2>&1 | head -1; find /data/data/texmux.app -name termux-api 2>&1 | head -5; find /data/app -name termux-api 2>&1 | head -5" || true
+            adb shell "su -c 'termux-api battery-status' 2>&1 | tail -5" || true
+            adb shell "/data/data/texmux.app/files/usr/bin/termux-api battery-status 2>&1 | tail -5" || true
+            adb shell "/data/data/texmux.app/files/usr/libexec/termux-api 2>&1 | tail -2" || true
+            sleep 15
+            echo "--- Capturing filtered logcat ---"
+            adb logcat -d | grep -E "termux-api|TermuxAPI|termux_am|TermuxAm|am broadcast|TermuxApi|termux-am" | tail -150 || adb logcat -d | tail -80
 
       - name: Upload logs
         if: always()
