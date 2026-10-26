@@ -1,0 +1,67 @@
+name: Test Built APK (Emulator)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Build run id (leave empty to use latest successful build)'
+        required: false
+        type: string
+
+jobs:
+  test-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download APK from build run
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: android.yml
+          workflow_conclusion: success
+          name: texmux-debug-apk
+          run_id: ${{ github.event.inputs.run_id }}
+          path: ./artifacts
+
+      - name: Find APK
+        run: |
+          find artifacts -name "*.apk" | head -5
+          APK=$(find artifacts -name "*.apk" | head -1)
+          echo "APK=$APK" >> $GITHUB_ENV
+          cp "$APK" ./app-release.apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test APK on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis
+          arch: x86_64
+          profile: Nexus 6
+          disable-animations: true
+          emulator-boot-timeout: 900
+          script: |
+            adb install -r app-release.apk
+            adb shell pm list packages | grep texmux
+            sleep 30
+            adb logcat -d | tail -40
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-logs
+          path: |
+            *.log
