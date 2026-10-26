@@ -1,16 +1,20 @@
 name: Test Built APK (Emulator)
 
 on:
+  workflow_run:
+    workflows: ["Android CI - Texmux"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'Build run id (leave empty to use latest successful build)'
+        description: 'Build run id (leave empty to use triggering run / latest)'
         required: false
         type: string
 
 jobs:
   test-apk:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     timeout-minutes: 90
     permissions:
       actions: read
@@ -27,7 +31,7 @@ jobs:
           workflow: .github/workflows/android-ci.yml
           workflow_conclusion: success
           name: texmux-debug-apk
-          run_id: ${{ github.event.inputs.run_id }}
+          run_id: ${{ github.event.inputs.run_id || github.event.workflow_run.id }}
           path: ./artifacts
 
       - name: Find APK
