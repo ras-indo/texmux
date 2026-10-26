@@ -40,8 +40,16 @@ jobs:
           profile: Nexus 6
           disable-animations: true
           emulator-boot-timeout: 600
-          working-directory: ./termux-app
           script: |
+            ls -la
+            if [ -d termux-app ]; then
+              cd termux-app
+            elif [ -f gradlew ]; then
+              :
+            else
+              find . -name gradlew | head -1 | xargs -I{} sh -c 'cd $(dirname {}) && pwd && ./gradlew connectedDebugAndroidTest --stacktrace'
+              exit 0
+            fi
             ./gradlew connectedDebugAndroidTest --stacktrace
 
       - name: Upload test reports
@@ -50,5 +58,5 @@ jobs:
         with:
           name: android-test-reports
           path: |
-            termux-app/app/build/reports/androidTests/
-            termux-app/app/build/outputs/androidTest-results/
+            **/app/build/reports/androidTests/
+            **/app/build/outputs/androidTest-results/
