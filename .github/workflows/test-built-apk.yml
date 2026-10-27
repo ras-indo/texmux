@@ -61,19 +61,17 @@ jobs:
             adb shell pm list packages | grep texmux || true
             adb logcat -c || true
             adb shell am start -n texmux.app/texmux.app.TermuxActivity || adb shell monkey -p texmux.app -c android.intent.category.LAUNCHER 1 || true
-            sleep 30
-            echo "=== BIN DIR ==="
-            adb shell run-as texmux.app sh -c 'ls -la files/apps/texmux/bin/ 2>&1' || adb shell 'find /data/data/texmux.app/files/apps/texmux/bin -type f 2>&1' || true
-            echo "=== TRY NATIVE termux-api ==="
-            adb shell run-as texmux.app sh -c 'cd files/apps/texmux/bin && (./termux-api battery-status 2>&1 | tail -30)' || adb shell run-as texmux.app sh -c 'files/apps/texmux/bin/termux-api battery-status 2>&1 | tail -30' || true
-            sleep 15
+            sleep 45
             echo "=== FILTERED LOGCAT ==="
-            adb logcat -d | grep -E "termux-api|TermuxAPI|am is missing|Termux API unreachable|termux-am|execv\(am\)|PREFIX.*bin/am" | tail -80 || adb logcat -d | tail -40
+            adb logcat -d | grep -E "Cannot connect to Termux API|SocketListener|TermuxApi|am is missing|Termux API unreachable" | tail -40 || adb logcat -d | tail -60
+            echo "=== RAW TAIL ==="
+            adb logcat -d | tail -30
 
       - name: Upload logs
         if: always()
+        run: |
+          adb logcat -d > emulator-full.log 2>&1 || true
         uses: actions/upload-artifact@v4
         with:
           name: emulator-logs
-          path: |
-            *.log
+          path: emulator-full.log
