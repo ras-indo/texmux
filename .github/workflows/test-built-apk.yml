@@ -71,6 +71,8 @@ jobs:
         if: always()
         run: |
           adb logcat -d > emulator-full.log 2>&1 || true
+      - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: emulator-logs
